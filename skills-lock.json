@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "geckoui": {
+      "source": "GeckoUI/skills",
+      "sourceType": "github",
+      "skillPath": "skills/geckoui/SKILL.md",
+      "computedHash": "2085730089b659024dcbd65b12f521b6f61136ba0eed466bb4061740fdf0175b"
+    },
+    "spoosh-react": {
+      "source": "spooshdev/skills",
+      "sourceType": "github",
+      "skillPath": "skills/spoosh-react/SKILL.md",
+      "computedHash": "ddbe061bb85ad166c21fd58dce81e686c303d5d30e94ce2853b717e235cee51c"
+    }
+  }
+}

@@ -1,26 +1,108 @@
 @import "tailwindcss";
 
+@layer components {
+  @import "@geckoui/geckoui/styles.css";
+}
+
+@theme {
+  --color-bg: #070707;
+  --color-panel: #0d0d0d;
+  --color-panel-2: #121212;
+  --color-line: #1e1e1e;
+  --color-line-2: #2a2a2a;
+  --color-fg: #f2f2f2;
+  --color-fg-2: #9a9a9a;
+  --color-fg-3: #5c5c5c;
+  --color-accent: #e8e2d4;
+  --color-accent-dim: #2a2722;
+  --color-ok: #5f8f6a;
+  --color-warn: #8f7a4a;
+
+  --color-matched: #8fb99a;
+  --color-matched-bg: #152018;
+  --color-matched-border: #294232;
+  --color-isnew: #d9b978;
+  --color-isnew-bg: #241d10;
+  --color-isnew-border: #4a3c1e;
+  --color-style-badge: #c9b98a;
+  --color-style-badge-bg: #1a1608;
+  --color-style-badge-border: #3a331e;
+  --color-sys-badge: #8fa8c9;
+  --color-sys-badge-bg: #0c1218;
+  --color-sys-badge-border: #1e2c3a;
+  --color-danger: #e08585;
+  --color-danger-bg: #160f0f;
+  --color-danger-border: #3a1e1e;
+}
+
+/* GeckoUI theme — this app is always dark, so these are set directly on
+   :root (not under a .dark class). Values reuse the palette above. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-primary-50: #f4f2ec;
+  --color-primary-100: #ece7d9;
+  --color-primary-200: #e8e2d4;
+  --color-primary-300: #ded5c0;
+  --color-primary-400: #d0c4a8;
+  --color-primary-500: #c2b18e;
+  --color-primary-600: #e8e2d4;
+  --color-primary-700: #f2ede0;
+  --color-primary-800: #b8a37e;
+  --color-primary-900: #8f7a4a;
+  --color-primary-950: #2a2722;
+
+  --color-surface-primary: #121212;
+  --color-surface-secondary: #0d0d0d;
+  --color-surface-tertiary: #1a1a1a;
+  --color-surface-hover: #1c1c1c;
+  --color-surface-hover-strong: #232323;
+  --color-surface-active: #2a2a2a;
+  --color-surface-disabled: #161616;
+  --color-surface-overlay: #000000;
+  --color-surface-autofill: #0a0a0a;
+  --color-surface-emphasis: #2a2722;
+
+  --color-text-primary: #f2f2f2;
+  --color-text-secondary: #d8d8d8;
+  --color-text-tertiary: #9a9a9a;
+  --color-text-disabled: #5c5c5c;
+  --color-text-placeholder: #5c5c5c;
+  --color-text-inverse: #101010;
+  --color-text-muted: #9a9a9a;
+  --color-text-on-primary: #101010;
+
+  --color-border-primary: #1e1e1e;
+  --color-border-secondary: #2a2a2a;
+  --color-border-focus: #e8e2d4;
+  --color-border-hover: #5c5c5c;
+  --color-border-disabled: #1e1e1e;
+
+  --gecko-ui-scrollbar-track: #0a0a0a;
+  --gecko-ui-scrollbar-thumb: #2a2a2a;
+  --gecko-ui-scrollbar-thumb-hover: #3a3a3a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--color-bg); color:var(--color-fg);
+  font:14px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+@keyframes blink{50%{opacity:0}}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Tiptap renders arbitrary nested HTML we don't control node-by-node, so
+   this block stays plain CSS rather than per-node Tailwind classes. */
+.tiptap-doc{outline:none;min-height:400px;color:#d8d8d8;font-size:16px;line-height:1.6}
+.tiptap-doc [data-type="title"]{font-size:18px;text-align:center;letter-spacing:.08em;text-transform:uppercase;margin:0 0 34px;color:var(--color-fg);font-weight:700;line-height:1.35}
+.tiptap-doc [data-type="scene-heading"]{color:var(--color-fg);letter-spacing:.16em;text-transform:uppercase;font-size:17px;margin:28px 0 12px;font-weight:700;line-height:1.35}
+.tiptap-doc [data-type="character"]{text-align:center;letter-spacing:.08em;text-transform:uppercase;color:var(--color-fg);margin:16px 0 2px;font-weight:700}
+.tiptap-doc [data-type="parenthetical"]{text-align:center;font-style:italic;color:var(--color-fg-2);font-size:15px;margin:0 0 2px}
+.tiptap-doc [data-type="dialog"]{margin:0 0 14px 96px;color:#cfcfcf;max-width:560px}
+.tiptap-doc [data-type="transition"]{text-align:right;letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-2);margin:20px 0;font-size:13px;font-weight:600}
+.tiptap-doc p{margin:0 0 12px;font-size:16px;line-height:1.6}
+.tiptap-doc ul{margin:0 0 12px 22px}
+.tiptap-doc [data-type].is-editor-empty:first-child::before,
+.tiptap-doc p.is-editor-empty:first-child::before{
+  content:"Action";float:left;color:var(--color-fg-3);pointer-events:none;height:0;
 }

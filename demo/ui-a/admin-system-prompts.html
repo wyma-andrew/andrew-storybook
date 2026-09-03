@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI A · Admin — System Prompts</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app"><div class="frame">
+
+  <header class="top-simple">
+    <div class="crumb"><a href="stories.html">Stories</a> / <a href="settings.html">Settings</a> / <span style="color:var(--fg)">Admin · System Prompts</span></div>
+    <div class="r"><span class="adm" style="font-size:10px;letter-spacing:.06em;color:#8fa8c9;background:#0c1218;border:1px solid #1e2c3a;border-radius:999px;padding:4px 10px">ADMIN</span></div>
+  </header>
+
+  <div class="body"><div class="wrap-wide">
+
+    <div class="sec-sub" style="max-width:640px;margin-bottom:22px">
+      These presets are injected into <b style="color:var(--fg-2)">every</b> character and location prompt, platform-wide, for every story and every user. Story owners see them as a locked badge only — they cannot view or override this raw text. Changes apply immediately to new generations.
+    </div>
+
+    <div class="admin-block">
+      <div class="ah"><b>Character preset</b><span class="adm">EDITABLE</span></div>
+      <div class="abody">
+        <div class="prompt" contenteditable="true" style="border:1px solid var(--line-2);border-radius:8px;background:#080808;outline:none">Portrait composition, subject centered, shot on 50mm, natural or motivated key light, shallow depth of field. Maintain exact facial structure, hair, and wardrobe across every generation for this character.</div>
+        <div class="ft" style="padding-top:12px"><button class="pbtn" style="padding:8px 16px;font-size:13px">Save changes</button><button class="sbtn" style="padding:8px 16px;font-size:13px">Revert</button>
+          <span class="hint">last edited by admin@wyma.dev · 12 days ago</span></div>
+      </div>
+    </div>
+
+    <div class="admin-block" style="margin-top:16px">
+      <div class="ah"><b>Location preset</b><span class="adm">EDITABLE</span></div>
+      <div class="abody">
+        <div class="prompt" contenteditable="true" style="border:1px solid var(--line-2);border-radius:8px;background:#080808;outline:none">Environment establishing composition, wide or medium-wide framing, consistent geometry and materials across every generation for this location, no characters present unless specified.</div>
+        <div class="ft" style="padding-top:12px"><button class="pbtn" style="padding:8px 16px;font-size:13px">Save changes</button><button class="sbtn" style="padding:8px 16px;font-size:13px">Revert</button>
+          <span class="hint">last edited by admin@wyma.dev · 12 days ago</span></div>
+      </div>
+    </div>
+
+  </div></div>
+
+  <div class="foot">Mock demo · no AI is running · pure HTML + CSS</div>
+
+</div></div>
+</body></html>

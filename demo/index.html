@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Storybook — UI demos</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d0e;color:#f0f0ef;font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;padding:56px 24px}
+.w{max-width:900px;margin:0 auto}
+h1{font-size:24px;font-weight:600;letter-spacing:-.3px}
+.sub{color:#8b8b8f;margin:6px 0 34px;font-size:14px}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.g{grid-template-columns:1fr}}
+.c{border:1px solid #232326;border-radius:12px;background:#151517;padding:20px}
+.c h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.c .t{color:#8b8b8f;font-size:13px;margin-bottom:16px}
+.c ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.c a{display:flex;gap:10px;align-items:center;text-decoration:none;color:#e6e6e4;font-size:14px;
+  border:1px solid #26262a;border-radius:8px;padding:9px 12px;background:#0f0f11}
+.c a:hover{background:#1b1b1f}
+.c a span{font:600 11px/1 ui-monospace,monospace;color:#8b8b8f}
+.n{margin-top:30px;color:#5d5d62;font-size:13px}
+code{font:12.5px ui-monospace,monospace;color:#b6b6b2;background:#1b1b1f;padding:1px 5px;border-radius:4px}
+</style></head><body><div class="w">
+<h1>AI Storybook — UI demos</h1>
+<div class="sub">Static mock-ups. Pure HTML + CSS, no JS, no build. Same mock story in both: <em>The Last Lighthouse</em>.</div>
+<div class="g">
+  <div class="c"><h2>UI A · Studio Dark</h2>
+    <div class="t">Centered tab rail, full-bleed canvas, floating prompt dock. Closest to the reference screenshot.</div>
+    <ul>
+      <li><a href="ui-a/stories.html"><span>00</span> Story listing</a></li>
+      <li><a href="ui-a/create-story.html"><span>00a</span> Create Story flow</a></li>
+      <li><a href="ui-a/story-detail.html"><span>00b</span> Story detail — chapters + asset bible</a></li>
+      <li><a href="ui-a/story-detail-empty.html"><span>00b2</span> Story detail — empty state (0 chapters)</a></li>
+      <li><a href="ui-a/oneshot-script.html"><span>00b3</span> Collapsed workspace — story with 1 chapter</a></li>
+      <li><a href="ui-a/bible.html"><span>00c</span> Story Asset Bible — manage lock/edit</a></li>
+      <li><a href="ui-a/settings.html"><span>00d</span> Settings — visual styles + system prompts</a></li>
+      <li><a href="ui-a/admin-system-prompts.html"><span>00e</span> Admin — edit system prompts</a></li>
+      <li><a href="ui-a/script.html"><span>01</span> Script — Tiptap-style editor</a></li>
+      <li><a href="ui-a/assets.html"><span>02</span> Assets — Ch.01 (first extraction)</a></li>
+      <li><a href="ui-a/assets-ch2.html"><span>02b</span> Assets — Ch.02 (matched vs new against Story Bible)</a></li>
+      <li><a href="ui-a/storyboard.html"><span>03</span> Storyboard — scenes &rarr; shots</a></li>
+    </ul>
+  </div>
+  <div class="c"><h2>UI B · Workbench Light</h2>
+    <div class="t">Left rail, step progress, split panes with live outline, thumbnail shot strips.</div>
+    <ul>
+      <li><a href="ui-b/script.html"><span>01</span> Script — editor + outline pane</a></li>
+      <li><a href="ui-b/assets.html"><span>02</span> Assets — two-column prompt rows</a></li>
+      <li><a href="ui-b/storyboard.html"><span>03</span> Storyboard — strip + prompt list</a></li>
+    </ul>
+  </div>
+</div>
+<div class="n">Mock data lives in <code>demo/shared-mock.md</code>. Open with <code>open demo/index.html</code>.</div>
+</div></body></html>

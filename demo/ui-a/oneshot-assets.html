@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI A · Assets — The Quiet Orchard</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app"><div class="frame">
+
+  <header class="topbar">
+    <div class="title" style="font-size:16px;font-weight:500;display:flex;flex-direction:column;gap:2px">
+      <span style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--fg-3)">
+        <a href="stories.html" style="color:var(--fg-3);text-decoration:none">Stories</a> / The Quiet Orchard
+      </span>
+      <span style="font-size:15px;color:var(--fg-2);font-weight:400">2 CHARACTERS · 1 LOCATION</span>
+    </div>
+    <nav class="tabs">
+      <a href="oneshot-script.html">1. Script</a>
+      <a class="on" href="oneshot-assets.html">2. Assets</a>
+      <a href="oneshot-storyboard.html">3. Storyboard</a>
+    </nav>
+    <div class="tools">
+      <span class="lbl">Style</span>
+      <div class="select">Watercolour <span>&#9662;</span></div>
+      <a href="story-detail.html" style="color:var(--fg-2);text-decoration:none;font-size:12.5px;border:1px solid var(--line-2);border-radius:7px;padding:8px 12px">+ Add chapter</a>
+      <a class="kebab" style="text-decoration:none" href="story-settings.html">&#8942;</a>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <span class="lbl">Extracted from script:</span>
+    <button>Characters</button><button>Locations</button>
+    <span class="sep"></span>
+    <button class="ic">&#8635; Re-analyze</button>
+    <button class="ic">&#9634; Copy all</button>
+  </div>
+
+  <div class="body"><div class="wrap-wide">
+
+    <section class="sec">
+      <div class="sec-head"><h2>Character Prompts</h2><span class="count">2 detected</span>
+        <span class="act">+ Add character</span></div>
+      <div class="sec-sub">One-shot story — no bible matching needed, these prompts live only in this story.</div>
+      <div class="grid">
+
+        <article class="card">
+          <div class="hd"><div class="av">FX</div>
+            <div><div class="nm">Fox</div><div class="meta">Narrator · both scenes</div></div>
+            <span class="tag">LEAD</span></div>
+          <div class="inject-row"><span class="ibadge style">&#9889; Style &middot; Watercolour</span><span class="ibadge sys"><span class="lk">&#128274;</span> System &middot; Character preset</span></div>
+          <div class="prompt-real">Small red fox, seed pouch slung across one shoulder, soft expressive eyes, slightly scruffy tail. Gentle, wistful demeanor.</div>
+          <div class="ft"><button class="btn">Copy prompt</button><button class="btn ghost">Edit</button>
+            <span class="hint">seed 60214</span></div>
+        </article>
+
+        <article class="card">
+          <div class="hd"><div class="av">RB</div>
+            <div><div class="nm">Rabbit</div><div class="meta">Supporting · scene 2 only</div></div>
+            <span class="tag">SUPPORT</span></div>
+          <div class="inject-row"><span class="ibadge style">&#9889; Style &middot; Watercolour</span><span class="ibadge sys"><span class="lk">&#128274;</span> System &middot; Character preset</span></div>
+          <div class="prompt-real">Small brown rabbit, one ear folded, cautious posture, peeking from a hedge line.</div>
+          <div class="ft"><button class="btn">Copy prompt</button><button class="btn ghost">Edit</button>
+            <span class="hint">seed 60288</span></div>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><h2>Location Prompts</h2><span class="count">1 detected</span>
+        <span class="act">+ Add location</span></div>
+      <div class="sec-sub">Environment plates reused as background reference for every shot in that scene.</div>
+      <div class="grid">
+
+        <article class="card">
+          <div class="hd"><div class="av">L1</div>
+            <div><div class="nm">The Orchard</div><div class="meta">Exterior · both scenes</div></div>
+            <span class="tag">HERO SET</span></div>
+          <div class="inject-row"><span class="ibadge style">&#9889; Style &middot; Watercolour</span><span class="ibadge sys"><span class="lk">&#128274;</span> System &middot; Location preset</span></div>
+          <div class="prompt-real">Small fenced orchard at the edge of a wood, a crooked row of young saplings each tied to a stick, soft dusk-to-morning light across the grass.</div>
+          <div class="ft"><button class="btn">Copy prompt</button><button class="btn ghost">Edit</button>
+            <span class="hint">16:9 · plate A</span></div>
+        </article>
+
+      </div>
+    </section>
+
+  </div></div>
+
+  <div class="foot">Mock demo · no AI is running · pure HTML + CSS</div>
+
+</div></div>
+</body></html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI A · Settings</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app"><div class="frame">
+
+  <header class="top-simple">
+    <div class="crumb"><a href="stories.html">Stories</a> / <span style="color:var(--fg)">Settings</span></div>
+    <div class="r"><span style="color:var(--fg-3);font-size:12.5px">Signed in as info.wyma@gmail.com</span></div>
+  </header>
+
+  <div class="body"><div class="wrap-wide">
+
+    <section class="sec">
+      <div class="sec-head"><h2>Visual Styles</h2><span class="count">Global library · used across all your stories</span>
+        <span class="act">+ New style</span></div>
+      <div class="sec-sub">Applies as the [Style] injection on every character &amp; location prompt. Any story can also define a one-off custom style that overrides this locally.</div>
+
+      <div class="style-cards">
+        <div class="stylecard">
+          <div class="sh"><div class="swatch" style="background:#d9d3c2"></div><b>Realistic</b><span class="src">Built-in</span></div>
+          <p>Photorealistic, natural lighting, 50mm lens, shallow depth of field, true-to-life color.</p>
+          <div class="ft"><button class="btn ghost">View</button><button class="btn ghost">Duplicate</button></div>
+        </div>
+        <div class="stylecard">
+          <div class="sh"><div class="swatch" style="background:#e79a9a"></div><b>Anime</b><span class="src">Built-in</span></div>
+          <p>Cel-shaded anime illustration, clean linework, saturated flat color, dynamic camera angles.</p>
+          <div class="ft"><button class="btn ghost">View</button><button class="btn ghost">Duplicate</button></div>
+        </div>
+        <div class="stylecard">
+          <div class="sh"><div class="swatch" style="background:#9ac2d9"></div><b>Watercolour</b><span class="src">Built-in</span></div>
+          <p>Soft watercolour illustration, visible paper texture, loose linework, muted washes.</p>
+          <div class="ft"><button class="btn ghost">View</button><button class="btn ghost">Duplicate</button></div>
+        </div>
+        <div class="stylecard">
+          <div class="sh"><div class="swatch" style="background:#8f8f92"></div><b>Noir Comic</b><span class="src">Built-in</span></div>
+          <p>High-contrast black &amp; white ink, heavy shadow, halftone shading, comic panel framing.</p>
+          <div class="ft"><button class="btn ghost">View</button><button class="btn ghost">Duplicate</button></div>
+        </div>
+        <div class="stylecard">
+          <div class="sh"><div class="swatch" style="background:#3a3226"></div><b>Coastal Muted</b><span class="src" style="color:var(--accent);border-color:var(--line-2)">Yours</span></div>
+          <p>Custom: desaturated North Atlantic palette, overcast light, film grain, cold blue undertone.</p>
+          <div class="ft"><button class="btn ghost">Edit</button><button class="btn ghost">Delete</button></div>
+        </div>
+        <div class="newstylecard">+ New style</div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-head"><h2>System Prompts</h2><span class="count">Platform-wide · admin managed</span></div>
+      <div class="sec-sub">Fixed boilerplate injected into every character &amp; location prompt (camera, framing, technical defaults). Not editable by story owners — keeps every story on the same production baseline.</div>
+
+      <div class="admin-block">
+        <div class="ah"><b>Character preset</b><span class="adm">ADMIN ONLY</span></div>
+        <div class="abody">
+          <div class="locked-note">&#128274; You can view this preset but cannot edit it. Contact an admin to request a change.</div>
+          <div class="prompt">Portrait composition, subject centered, shot on 50mm, natural or motivated key light, shallow depth of field. Maintain exact facial structure, hair, and wardrobe across every generation for this character.</div>
+        </div>
+      </div>
+
+      <div class="admin-block" style="margin-top:14px">
+        <div class="ah"><b>Location preset</b><span class="adm">ADMIN ONLY</span></div>
+        <div class="abody">
+          <div class="locked-note">&#128274; You can view this preset but cannot edit it. Contact an admin to request a change.</div>
+          <div class="prompt">Environment establishing composition, wide or medium-wide framing, consistent geometry and materials across every generation for this location, no characters present unless specified.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px"><a href="admin-system-prompts.html" style="color:var(--fg-3);font-size:12.5px;text-decoration:none">Admin console (requires admin role) &#8250;</a></div>
+    </section>
+
+  </div></div>
+
+  <div class="foot">Mock demo · no AI is running · pure HTML + CSS</div>
+
+</div></div>
+</body></html>

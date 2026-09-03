@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI A · Story Settings</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app"><div class="frame">
+
+  <header class="top-simple">
+    <div class="crumb"><a href="stories.html">Stories</a> / <a href="story-detail.html">The Last Lighthouse</a> / <span style="color:var(--fg)">Story Settings</span></div>
+  </header>
+
+  <div class="body"><div class="wrap">
+
+    <div class="slisthead" style="margin-bottom:24px"><h1 style="font-size:18px">Story Settings</h1></div>
+
+    <div class="field">
+      <label>Story title</label>
+      <input type="text" value="The Last Lighthouse">
+    </div>
+
+    <div class="field">
+      <label>Description</label>
+      <textarea>A keeper, a stranger from the sea, and a light that shouldn't fail on the same night the horn sounds wrong. Consistent cast and coastal setting carried across every chapter.</textarea>
+    </div>
+
+    <div class="field">
+      <label>Cover image</label>
+      <div class="coverpick">+ Upload cover</div>
+    </div>
+
+    <div class="field">
+      <label>Default visual style</label>
+      <div class="styleblk2" style="max-width:560px">
+        <div><div class="v">Coastal Muted</div><div class="h">Custom, based on Realistic</div></div>
+        <div class="r"><a class="btn ghost" style="text-decoration:none" href="settings.html">Change</a></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Story type</label>
+      <div class="h" style="margin-top:0">Long-form &middot; multiple chapters, shared cast &amp; locations via the Asset Bible. One-shot stories can leave this on a single chapter.</div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="pbtn">Save changes</button>
+      <a class="sbtn" style="text-decoration:none" href="story-detail.html">Cancel</a>
+    </div>
+
+    <div class="danger">
+      <h3>Danger zone</h3>
+
+      <div class="row">
+        <div><div class="t">Export story</div><div class="d">Download script, asset bible, and all storyboard prompts as JSON.</div></div>
+        <div class="r"><button class="dbtn" style="color:var(--fg-2);border-color:var(--line-2)">Export</button></div>
+      </div>
+
+      <div class="row">
+        <div><div class="t">Archive story</div><div class="d">Hide from your story list. Chapters and assets are kept, nothing is deleted.</div></div>
+        <div class="r"><button class="dbtn" style="color:var(--fg-2);border-color:var(--line-2)">Archive</button></div>
+      </div>
+
+      <div class="row">
+        <div><div class="t">Delete story</div><div class="d">Permanently deletes all chapters, scripts, storyboards, and bible entries. Cannot be undone.</div></div>
+        <div class="r"><button class="dbtn">Delete story</button></div>
+      </div>
+    </div>
+
+  </div></div>
+
+  <div class="foot">Mock demo · no AI is running · pure HTML + CSS</div>
+
+</div></div>
+</body></html>

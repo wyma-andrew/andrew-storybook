@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI A · Create Story</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div class="app"><div class="frame">
+
+  <header class="top-simple">
+    <div class="crumb"><a href="stories.html">Stories</a> / <span style="color:var(--fg)">Create Story</span></div>
+  </header>
+
+  <div class="body"><div class="wrap">
+
+    <div class="slisthead" style="margin-bottom:24px"><h1 style="font-size:18px">Create Story</h1></div>
+
+    <div class="field">
+      <label>Story title</label>
+      <input type="text" placeholder="e.g. The Last Lighthouse">
+    </div>
+
+    <div class="field">
+      <label>Description <span style="text-transform:none;color:var(--fg-3)">(optional)</span></label>
+      <textarea placeholder="One or two lines about the story — helps AI keep tone consistent across chapters."></textarea>
+    </div>
+
+    <div class="field">
+      <label>Visual style</label>
+      <div class="stylepick">
+        <div class="spick sel"><div class="swatch" style="background:#d9d3c2"></div><div class="nm">Realistic</div></div>
+        <div class="spick"><div class="swatch" style="background:#e79a9a"></div><div class="nm">Anime</div></div>
+        <div class="spick"><div class="swatch" style="background:#9ac2d9"></div><div class="nm">Watercolour</div></div>
+        <div class="spick"><div class="swatch" style="background:#8f8f92"></div><div class="nm">Noir Comic</div></div>
+      </div>
+      <div class="h">You can switch to a custom style for this story later, from Story Settings.</div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <a class="pbtn" style="text-decoration:none;display:inline-block" href="story-detail-empty.html">Create story</a>
+      <a class="sbtn" style="text-decoration:none;display:inline-block" href="stories.html">Cancel</a>
+    </div>
+
+  </div></div>
+
+  <div class="foot">Mock demo · no AI is running · pure HTML + CSS</div>
+
+</div></div>
+</body></html>
