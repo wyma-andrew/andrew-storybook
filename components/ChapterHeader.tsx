@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft, Loader2, CircleCheck, CircleAlert } from "lucide-react";
 import { AccountMenu } from "@/components/AccountMenu";
 import { EditableLabel } from "@/components/ui/EditableLabel";
 import { useWrite } from "@/lib/spoosh";
+import type { SaveStatus } from "@/components/ScriptEditor";
 
 const TABS = [
   { key: "script", label: "1. Script" },
@@ -18,6 +20,7 @@ export function ChapterHeader({
   chapterTitle,
   active,
   styleName,
+  saveStatus = "idle",
 }: {
   storyId: string;
   storyTitle: string;
@@ -25,6 +28,7 @@ export function ChapterHeader({
   chapterTitle: string;
   active: (typeof TABS)[number]["key"];
   styleName: string;
+  saveStatus?: SaveStatus;
 }) {
   const { trigger: patchChapter } = useWrite((api) => api("chapters/:id").PATCH());
 
@@ -34,14 +38,18 @@ export function ChapterHeader({
 
   return (
     <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-line px-5 py-3.5">
-      <div className="flex flex-col gap-0.5 text-[16px] font-medium">
-        <span className="flex items-center gap-2 text-[12.5px] text-fg-3">
-          <Link href={`/stories/${storyId}`} className="text-fg-3 no-underline hover:text-fg">
-            {storyTitle}
-          </Link>
-          <span>/</span>
-        </span>
+      <div className="flex items-center gap-3 text-[16px] font-medium">
+        <Link
+          href={`/stories/${storyId}`}
+          aria-label={`Back to ${storyTitle}`}
+          className="flex shrink-0 items-center justify-center rounded-md p-1 text-fg-2 hover:bg-[#191919] hover:text-fg"
+        >
+          <ArrowLeft size={22} />
+        </Link>
         <EditableLabel value={chapterTitle} onSave={renameEpisode} className="text-[16px] font-medium text-fg" />
+        {saveStatus === "saving" && <Loader2 size={15} className="shrink-0 animate-spin text-fg-3" aria-label="Saving" />}
+        {saveStatus === "saved" && <CircleCheck size={15} className="shrink-0 text-ok" aria-label="Saved" />}
+        {saveStatus === "error" && <CircleAlert size={15} className="shrink-0 text-danger" aria-label="Failed to save" />}
       </div>
 
       <nav className="flex justify-self-center gap-1 rounded-full border border-line bg-[#111] p-1">

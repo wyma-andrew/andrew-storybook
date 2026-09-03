@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { RefreshCw, ArrowRight } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
@@ -97,6 +97,7 @@ export default function AssetsPage() {
           {!assets?.length && !analyzing && (
             <EmptyCta
               title="No assets yet"
+              icon={<Sparkles size={19} />}
               action={
                 <Button variant="primary" onClick={reanalyze} className="flex items-center gap-1.5">
                   Analyze script <ArrowRight size={15} />

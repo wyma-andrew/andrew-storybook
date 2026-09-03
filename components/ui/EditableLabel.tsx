@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
 import { Input } from "@geckoui/geckoui";
 
 export function EditableLabel({
@@ -45,7 +44,7 @@ export function EditableLabel({
 
   return (
     <span
-      className={`group inline-flex cursor-text items-center gap-1.5 ${className}`}
+      className={`cursor-text ${className}`}
       onClick={() => {
         setDraft(value);
         setEditing(true);
@@ -53,7 +52,6 @@ export function EditableLabel({
       title="Click to rename"
     >
       {value}
-      <Pencil size={12} className="shrink-0 text-fg-3 opacity-0 group-hover:opacity-100" />
     </span>
   );
 }

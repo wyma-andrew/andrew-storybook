@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton } from "@/components/ui/Button";
@@ -54,6 +54,7 @@ export default function StoryboardPage() {
           {!scenes?.length && !generating && (
             <EmptyCta
               title="No storyboard yet"
+              icon={<Clapperboard size={19} />}
               action={
                 <Button variant="primary" onClick={handleGenerate} className="flex items-center gap-1.5">
                   Generate storyboard <ArrowRight size={15} />
