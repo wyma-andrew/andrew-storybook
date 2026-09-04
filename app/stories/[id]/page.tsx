@@ -80,7 +80,7 @@ export default function StoryDetailPage() {
                   Start writing and this becomes Episode 1 — Script → Assets → Storyboard. Add more episodes
                   any time and they&apos;ll share this story&apos;s Asset Bible.
                 </p>
-                <Button variant="primary" onClick={startFirstChapter} disabled={creating} className="flex items-center gap-1.5">
+                <Button variant="primary" onClick={startFirstChapter} disabled={creating} className="mx-auto flex items-center gap-1.5">
                   {creating ? "Starting…" : <>Start Create Your Story <ArrowRight size={15} /></>}
                 </Button>
               </div>

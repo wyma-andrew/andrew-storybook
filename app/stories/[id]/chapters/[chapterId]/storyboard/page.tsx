@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton } from "@/components/ui/Button";
@@ -10,6 +10,21 @@ import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { withStyle } from "@/lib/prompt-copy";
+
+function PromptBox({ label, text, onCopy }: { label: string; text: string; onCopy: () => void }) {
+  return (
+    <div className="mb-2 last:mb-0">
+      <div className="mb-1 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">{label}</div>
+      <div className="relative rounded-lg border border-line-2 bg-[#080808] p-3 pr-[88px] font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">
+        {text}
+        <MiniButton className="absolute top-2.5 right-2.5" onClick={onCopy}>
+          Copy
+        </MiniButton>
+      </div>
+    </div>
+  );
+}
 
 export default function StoryboardPage() {
   const { id, chapterId } = useParams<{ id: string; chapterId: string }>();
@@ -44,7 +59,7 @@ export default function StoryboardPage() {
       <Toolbar>
         <span className="mr-1.5 text-fg-3">Storyboard:</span>
         <ToolbarButton onClick={handleGenerate} disabled={generating}>
-          {scenes?.length && <RefreshCw size={13} />}
+          {!!scenes?.length && <RefreshCw size={13} />}
           {generating ? "Generating…" : scenes?.length ? "Regenerate" : "Generate storyboard"}
         </ToolbarButton>
       </Toolbar>
@@ -92,15 +107,42 @@ export default function StoryboardPage() {
                         {shot.aspect && <span className="text-[11.5px] text-fg-3">{shot.aspect}</span>}
                         {shot.camera && <span className="text-[11.5px] text-fg-3">{shot.camera}</span>}
                       </div>
-                      <div className="relative rounded-lg border border-line-2 bg-[#080808] p-3 pr-[88px] font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">
-                        {shot.prompt}
-                        <MiniButton
-                          className="absolute top-2.5 right-2.5"
-                          onClick={() => navigator.clipboard.writeText(shot.prompt)}
-                        >
-                          Copy
-                        </MiniButton>
-                      </div>
+                      {!!shot.assetsUsed.length && (
+                        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-fg-3">
+                          <Paperclip size={12} className="shrink-0" />
+                          Attach:
+                          {shot.assetsUsed.map((a) => (
+                            <span
+                              key={`${a.kind}-${a.name}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-line-2 bg-panel-2 px-2 py-0.5 text-fg-2"
+                            >
+                              {a.kind === "character" ? <User size={11} /> : <MapPin size={11} />}
+                              {a.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <PromptBox
+                        label="Start Frame"
+                        text={shot.prompt}
+                        onCopy={() => navigator.clipboard.writeText(withStyle(shot.prompt, story.visualStyleDescription))}
+                      />
+                      {shot.frameMode === "start_and_end_frame" && shot.endFramePrompt && (
+                        <PromptBox
+                          label="End Frame"
+                          text={shot.endFramePrompt}
+                          onCopy={() =>
+                            navigator.clipboard.writeText(withStyle(shot.endFramePrompt!, story.visualStyleDescription))
+                          }
+                        />
+                      )}
+                      {shot.videoPrompt && (
+                        <PromptBox
+                          label="Video Prompt"
+                          text={shot.videoPrompt}
+                          onCopy={() => navigator.clipboard.writeText(shot.videoPrompt!)}
+                        />
+                      )}
                     </div>
                   </div>
                 ))}

@@ -13,9 +13,18 @@ import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { withAssetContext } from "@/lib/prompt-copy";
 import type { ChapterAsset } from "@/lib/api/types";
 
-function AssetCard({ asset }: { asset: ChapterAsset }) {
+function AssetCard({
+  asset,
+  systemPrompt,
+  styleContext,
+}: {
+  asset: ChapterAsset;
+  systemPrompt?: string | null;
+  styleContext?: string | null;
+}) {
   const { trigger: promote, loading } = useWrite((api) => api("chapter-assets/:id/promote").POST());
 
   const borderClass = asset.matchStatus === "new" ? "border-[#3a3226]" : "";
@@ -36,7 +45,11 @@ function AssetCard({ asset }: { asset: ChapterAsset }) {
       <div className="p-3.5 pt-2.5 font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]">{asset.realPrompt}</div>
 
       <CardFooter>
-        <MiniButton onClick={() => navigator.clipboard.writeText(asset.realPrompt)}>Copy prompt</MiniButton>
+        <MiniButton
+          onClick={() => navigator.clipboard.writeText(withAssetContext(asset.realPrompt, systemPrompt, styleContext))}
+        >
+          Copy prompt
+        </MiniButton>
         {asset.matchStatus === "new" && (
           <MiniButton className="ml-auto text-accent" onClick={() => promote({ params: { id: asset.id } })} disabled={loading}>
             {loading ? "Adding…" : "+ Add to bible"}
@@ -56,7 +69,11 @@ export default function AssetsPage() {
   const { data: assets, trigger: refetchAssets } = useRead((api) =>
     api("chapters/:id/assets").GET({ params: { id: chapterId } })
   );
+  const { data: systemPrompts } = useRead((api) => api("system-prompts").GET());
   const { trigger: analyze, loading: analyzing } = useWrite((api) => api("chapters/:id/analyze").POST());
+
+  const characterPreset = systemPrompts?.find((p) => p.kind === "character")?.prompt;
+  const locationPreset = systemPrompts?.find((p) => p.kind === "location")?.prompt;
 
   const characters = assets?.filter((a) => a.kind === "character") ?? [];
   const locations = assets?.filter((a) => a.kind === "location") ?? [];
@@ -121,7 +138,12 @@ export default function AssetsPage() {
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
                   {characters.map((a) => (
-                    <AssetCard key={a.id} asset={a} />
+                    <AssetCard
+                      key={a.id}
+                      asset={a}
+                      systemPrompt={characterPreset}
+                      styleContext={story?.visualStyleDescription}
+                    />
                   ))}
                 </div>
               </section>
@@ -130,7 +152,12 @@ export default function AssetsPage() {
                 <SectionHead title="Location Prompts" count={`${locations.length} detected`} />
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
                   {locations.map((a) => (
-                    <AssetCard key={a.id} asset={a} />
+                    <AssetCard
+                      key={a.id}
+                      asset={a}
+                      systemPrompt={locationPreset}
+                      styleContext={story?.visualStyleDescription}
+                    />
                   ))}
                 </div>
               </section>

@@ -24,13 +24,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Script is empty — write something first." }, { status: 400 });
   }
 
-  const { data: bible, error: bErr } = await db
-    .from("bible_entries")
-    .select("*")
-    .eq("story_id", chapter.story_id);
+  const [{ data: bible, error: bErr }, { data: story, error: stErr }] = await Promise.all([
+    db.from("bible_entries").select("*").eq("story_id", chapter.story_id),
+    db.from("stories").select("visual_styles!stories_visual_style_fk(description)").eq("id", chapter.story_id).single(),
+  ]);
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
+  if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
+  const styleContext = (story?.visual_styles as { description?: string } | null)?.description ?? null;
 
-  const extracted = await extractAssets(scriptText);
+  const extracted = await extractAssets(scriptText, styleContext);
 
   const rows = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const })),

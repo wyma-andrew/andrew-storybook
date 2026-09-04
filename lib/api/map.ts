@@ -33,13 +33,14 @@ export function mapSystemPrompt(r: Row): SystemPrompt {
 }
 
 export function mapStory(r: Row): Story {
-  const style = r.visual_styles as { name?: string } | null | undefined;
+  const style = r.visual_styles as { name?: string; description?: string } | null | undefined;
   return {
     id: r.id as string,
     title: r.title as string,
     description: (r.description as string) ?? null,
     visualStyleId: (r.visual_style_id as string) ?? null,
     visualStyleName: style?.name ?? null,
+    visualStyleDescription: style?.description ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -94,6 +95,10 @@ export function mapShot(r: Row): Shot {
     aspect: (r.aspect as string) ?? null,
     camera: (r.camera as string) ?? null,
     prompt: r.prompt as string,
+    endFramePrompt: (r.end_frame_prompt as string) ?? null,
+    videoPrompt: (r.video_prompt as string) ?? null,
+    frameMode: (r.frame_mode as Shot["frameMode"]) ?? "start_frame_only",
+    assetsUsed: (r.assets_used as Shot["assetsUsed"]) ?? [],
   };
 }
 

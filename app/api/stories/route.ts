@@ -7,7 +7,7 @@ export async function GET() {
   const db = await supabaseRoute();
   const { data, error } = await db
     .from("stories")
-    .select("*, visual_styles!stories_visual_style_fk(name), chapters(count)")
+    .select("*, visual_styles!stories_visual_style_fk(name, description), chapters(count)")
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const mapped = data.map((r) => ({
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       visual_style_id: body.visualStyleId ?? null,
       owner_id: user.id,
     })
-    .select("*, visual_styles!stories_visual_style_fk(name)")
+    .select("*, visual_styles!stories_visual_style_fk(name, description)")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(mapStory(data));

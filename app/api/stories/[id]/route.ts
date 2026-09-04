@@ -6,7 +6,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const db = await supabaseRoute();
   const [{ data: story, error: sErr }, { data: chapters, error: cErr }] = await Promise.all([
-    db.from("stories").select("*, visual_styles!stories_visual_style_fk(name)").eq("id", id).single(),
+    db.from("stories").select("*, visual_styles!stories_visual_style_fk(name, description)").eq("id", id).single(),
     db.from("chapters").select("*").eq("story_id", id).order("index"),
   ]);
   if (sErr) return NextResponse.json({ error: sErr.message }, { status: 404 });
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .from("stories")
     .update(patch)
     .eq("id", id)
-    .select("*, visual_styles!stories_visual_style_fk(name)")
+    .select("*, visual_styles!stories_visual_style_fk(name, description)")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(mapStory(data));

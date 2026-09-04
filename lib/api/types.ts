@@ -21,6 +21,7 @@ export type Story = {
   description: string | null;
   visualStyleId: string | null;
   visualStyleName: string | null;
+  visualStyleDescription: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -70,8 +71,14 @@ export type Shot = {
   durationS: number | null;
   aspect: string | null;
   camera: string | null;
-  prompt: string;
+  prompt: string; // Start Frame image prompt
+  endFramePrompt: string | null; // set only when frameMode is "start_and_end_frame"
+  videoPrompt: string | null; // Google Flow motion prompt (start->end or isolated action)
+  frameMode: "start_frame_only" | "start_and_end_frame";
+  assetsUsed: ShotAsset[]; // which known characters/locations to attach as reference when generating this shot
 };
+
+export type ShotAsset = { name: string; kind: "character" | "location" };
 
 export type Scene = {
   id: string;
