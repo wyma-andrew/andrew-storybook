@@ -95,7 +95,20 @@ export default function StoryboardPage() {
                 </div>
               </div>
               <div className="flex flex-col gap-3 px-4.5 py-4">
-                {scene.shots.map((shot) => (
+                {scene.shots.map((shot, shotIdx) => {
+                  const priorShots = scene.shots.slice(0, shotIdx);
+                  let masterShotIndex: number | null = null;
+                  // Only a recurring CHARACTER justifies reusing a prior shot's rendered image — location
+                  // continuity is already covered by the location's own reference sheet (in "Attach:" above),
+                  // and reusing a shot that has a different, unrelated character baked into it would leak
+                  // that character into this shot's generation.
+                  for (const asset of shot.assetsUsed) {
+                    if (asset.kind !== "character") continue;
+                    const prior = priorShots.find((s) => s.assetsUsed.some((a) => a.kind === "character" && a.name === asset.name));
+                    if (prior && (masterShotIndex === null || prior.index < masterShotIndex)) masterShotIndex = prior.index;
+                  }
+
+                  return (
                   <div key={shot.id} className="grid grid-cols-[56px_1fr] gap-3.5 rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
                     <div className="grid h-6.5 place-items-center rounded-md border border-line-2 font-mono text-[11px] font-semibold text-fg-2">
                       {scene.index}.{shot.index}
@@ -122,6 +135,13 @@ export default function StoryboardPage() {
                           ))}
                         </div>
                       )}
+                      {masterShotIndex !== null && (
+                        <div className="mb-2 flex items-center gap-1.5 text-[11.5px] text-isnew">
+                          <Paperclip size={12} className="shrink-0" />
+                          For continuity, also attach shot {scene.index}.{masterShotIndex}&apos;s generated image
+                          alongside the references above.
+                        </div>
+                      )}
                       <PromptBox
                         label="Start Frame"
                         text={shot.prompt}
@@ -145,7 +165,8 @@ export default function StoryboardPage() {
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))}

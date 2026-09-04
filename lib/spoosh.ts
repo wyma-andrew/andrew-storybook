@@ -74,10 +74,17 @@ type ApiSchema = {
   "chapters/:id/analyze": {
     POST: { data: ChapterAsset[] };
   };
+  "chapters/:id/sync": {
+    POST: { data: ChapterAsset[] };
+  };
   "chapter-assets/:id": {
     PATCH: { data: ChapterAsset; body: Partial<{ realPrompt: string; name: string; meta: string }> };
+    DELETE: { data: null };
   };
   "chapter-assets/:id/promote": {
+    POST: { data: ChapterAsset };
+  };
+  "chapter-assets/:id/regenerate": {
     POST: { data: ChapterAsset };
   };
   "chapters/:id/storyboard": {

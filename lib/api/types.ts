@@ -60,7 +60,7 @@ export type ChapterAsset = {
   name: string;
   meta: string | null;
   realPrompt: string;
-  matchStatus: "matched" | "new" | "local";
+  matchStatus: "matched" | "new" | "local" | "stale";
 };
 
 export type Shot = {

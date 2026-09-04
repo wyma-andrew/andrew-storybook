@@ -1,5 +1,9 @@
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <article className={`overflow-hidden rounded-[10px] border border-line bg-panel-2 ${className}`}>{children}</article>;
+  return (
+    <article className={`flex h-full flex-col overflow-hidden rounded-[10px] border border-line bg-panel-2 ${className}`}>
+      {children}
+    </article>
+  );
 }
 
 export function CardHeader({ children }: { children: React.ReactNode }) {
@@ -7,5 +11,5 @@ export function CardHeader({ children }: { children: React.ReactNode }) {
 }
 
 export function CardFooter({ children }: { children: React.ReactNode }) {
-  return <div className="flex gap-2 px-3.5 pb-3.5">{children}</div>;
+  return <div className="mt-auto flex gap-2 px-3.5 pb-3.5">{children}</div>;
 }

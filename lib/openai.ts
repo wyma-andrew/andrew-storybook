@@ -51,7 +51,8 @@ const ASSET_SCHEMA = {
           realPrompt: {
             type: "string",
             description:
-              "entity-specific visual description ONLY: structure, materials, props, layout. No camera, lighting, or style wording.",
+              "entity-specific visual description ONLY: structure, materials, props, layout, fixed signage/text. No camera, lighting, or style wording. " +
+              "Describe the EMPTY environment only — never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present. Character presence is added separately per-shot.",
           },
         },
         required: ["name", "meta", "realPrompt"],
@@ -65,12 +66,13 @@ const ASSET_SCHEMA = {
 
 export async function extractAssets(scriptText: string, styleContext?: string | null): Promise<ExtractedAssets> {
   const res = await openai().chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     messages: [
       {
         role: "system",
         content:
           "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
+          "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
           "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
           styleContextBlock(styleContext),
       },
@@ -83,6 +85,55 @@ export async function extractAssets(scriptText: string, styleContext?: string | 
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
   return JSON.parse(raw) as ExtractedAssets;
+}
+
+const REGENERATE_SCHEMA = {
+  type: "object",
+  properties: {
+    realPrompt: { type: "string", description: "entity-specific visual description ONLY, per the rules given." },
+  },
+  required: ["realPrompt"],
+  additionalProperties: false,
+} as const;
+
+// Regenerates a single already-extracted asset's realPrompt (per-card "Regenerate"
+// button) — same rules as extractAssets, scoped to one named character/location.
+export async function regenerateAssetPrompt(
+  scriptText: string,
+  kind: "character" | "location",
+  name: string,
+  meta: string,
+  styleContext?: string | null
+): Promise<string> {
+  const rules =
+    kind === "location"
+      ? "Describe the EMPTY environment only: structure, materials, props, layout, fixed signage/text. No camera, lighting, or style wording. " +
+        "Never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present."
+      : "Describe entity-specific visual facts only: hair, face, wardrobe, build, expression. No camera, lighting, or style wording.";
+
+  const res = await openai().chat.completions.create({
+    model: "gpt-5.6-luna",
+    messages: [
+      {
+        role: "system",
+        content:
+          `You regenerate the visual identity prompt for one ${kind} extracted from a story script for a storyboard tool. ` +
+          rules +
+          " The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+          styleContextBlock(styleContext),
+      },
+      {
+        role: "user",
+        content: `Script:\n${scriptText}\n\nRegenerate the realPrompt for ${kind} "${name}" (${meta}).`,
+      },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "regenerated_asset", schema: REGENERATE_SCHEMA, strict: true },
+    },
+  });
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { realPrompt: string }).realPrompt;
 }
 
 export type GeneratedShotAsset = { name: string; kind: "character" | "location" };
@@ -191,19 +242,24 @@ export async function generateStoryboard(
   styleContext?: string | null
 ): Promise<GeneratedScene[]> {
   const res = await openai().chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-5.6-luna",
     messages: [
       {
         role: "system",
         content:
           "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a full, self-contained, copyable image generation prompt that folds in the given character/location identity descriptions, plus a Google Flow (image-to-video) prompt. " +
           "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...) — start a new scene at each one, [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure.\n\n" +
-          "Video Generation Strategy (Start & End Frame Interpolation): for every shot, decide frameMode by checking continuity with the NEXT shot.\n" +
-          "1. Continuous motion (same scene/angle flowing into the next shot): frameMode = 'start_and_end_frame'. Set endFramePrompt to an image prompt matching the opening state of the NEXT shot (i.e. this shot's End Frame IS the next shot's Start Frame — repeat that next shot's Start Frame prompt here verbatim so this shot stays self-contained). videoPrompt should focus on the camera motion, subject movement, and transition bridging Start Frame to End Frame.\n" +
-          "2. Hard cuts / dramatic angle change / new location for the next shot: frameMode = 'start_frame_only', endFramePrompt = null. videoPrompt should focus purely on the isolated action/movement originating from the Start Frame — do not force an End Frame.\n" +
-          "If a shot depicts a character speaking (has an adjacent [CHARACTER]/[DIALOG] pair in the script), the videoPrompt must quote that line verbatim with a language tag matching the language it's actually written in, e.g. `in English Dialog: \"...\"` or `in Burmese Dialog: \"...\"`.\n\n" +
+          "Camera Variety: within a scene, do not repeat the same flat angle (e.g. plain medium shot) back-to-back across shots — vary coverage the way a real shot list does. When a shot continues a conversation or beat already established earlier in the scene, prefer 'Over-the-shoulder shot', 'Reaction shot', 'Panning shot', or a distinct new angle over repeating the previous shot's framing verbatim — this also hides small continuity drift between separately-generated shot images, since a deliberate angle change reads as a cut, not an error.\n\n" +
+          "Video Generation Strategy (Start & End Frame Interpolation): for every shot, decide frameMode by checking continuity with the NEXT shot. Default to 'start_frame_only' — most shot-to-shot transitions in a script are cuts (new angle, new beat, new speaker, new action), not continuous motion. Only use 'start_and_end_frame' when you can point to a specific, concrete reason the two shots are the SAME uninterrupted camera move (identical camera position/angle and framing, same subject, action physically continuing frame-to-frame with no cut). If in doubt, use 'start_frame_only'.\n" +
+          "1. 'start_and_end_frame' (same uninterrupted camera move into the next shot): set endFramePrompt to an image prompt matching the opening state of the NEXT shot (i.e. this shot's End Frame IS the next shot's Start Frame — repeat that next shot's Start Frame prompt here verbatim so this shot stays self-contained). videoPrompt should focus on the camera motion, subject movement, and transition bridging Start Frame to End Frame.\n" +
+          "2. 'start_frame_only' (cut, angle change, new beat, new location, or default when unsure): endFramePrompt = null. videoPrompt should focus purely on the isolated action/movement originating from the Start Frame — do not force an End Frame.\n" +
+          "If a shot depicts a character speaking (has an adjacent [CHARACTER]/[DIALOG] pair in the script), the videoPrompt must quote that line verbatim with a language tag matching the language it's actually written in, e.g. `in English Dialog: \"...\"` or `in Burmese Dialog: \"...\"`. If a single line of dialogue is long enough that speaking it naturally would need more than ~6-8 seconds, do NOT stretch one shot's duration to cover the whole line — split it into multiple shorter shots instead (e.g. cut to a reaction/listener shot partway through, or a new angle on the same speaker), each carrying only the portion of the line spoken during that shot. Splitting on cuts is the standard approach for AI-generated dialogue scenes — short, reliable clips edited together beat one long single-take generation.\n" +
+          "videoPrompt safety: AI video generators (e.g. Google Flow/Veo) run a separate IP/third-party-content filter that can block a prompt for describing a character with too many specific, iconic, signature-move-style gestures stacked in one action beat — this is especially likely for animal characters in speed/rivalry/competition contexts (a common trigger pattern resembles famous cartoon mascot behavior). Keep action description grounded in the scene's actual beat (what the script says happens) rather than piling on extra flourish gestures not needed to convey the action.\n\n" +
           "durationS is the recommended clip length for AI video generation — NEVER exceed 10 seconds, most AI video tools cannot export longer clips. Pick a realistic shorter duration (e.g. 2-6s) unless the action genuinely needs the full 10s.\n\n" +
-          "For every shot, also set assetsUsed: the exact-named Known Assets (characters and/or locations, given below) that actually appear in that shot — this tells the user which reference images/prompts to attach when generating. Only include assets truly present in the shot's content, not every asset in the scene." +
+          "ASSETS MATCHING:\n" +
+          "- You are provided with a list of Known Assets (characters and/or locations, given below) — this tells the user which reference images/prompts to attach when generating.\n" +
+          "- When generating `prompt` or `endFramePrompt`, check which Known Assets appear in your text description.\n" +
+          "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
           styleContextBlock(styleContext),
       },
       { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
