@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
-import { Button, LinkButton } from "@/components/ui/Button";
+import { LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { Input, Textarea, Select, SelectOption, ConfirmDialog } from "@geckoui/geckoui";
@@ -68,9 +68,9 @@ function SettingsForm({ id, story }: { id: string; story: Story }) {
       </Field>
 
       <div className="mt-2 flex gap-2.5">
-        <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save changes"}
-        </Button>
+        <LoadingButton variant="primary" onClick={handleSave} loading={saving}>
+          Save changes
+        </LoadingButton>
         <LinkButton variant="secondary" href={`/stories/${id}`}>
           Cancel
         </LinkButton>
@@ -86,9 +86,9 @@ function SettingsForm({ id, story }: { id: string; story: Story }) {
             </div>
           </div>
           <div className="ml-auto">
-            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete story"}
-            </Button>
+            <LoadingButton variant="danger" onClick={handleDelete} loading={deleting}>
+              Delete story
+            </LoadingButton>
           </div>
         </div>
       </div>

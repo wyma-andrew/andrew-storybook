@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Frame } from "@/components/Frame";
-import { Button, LinkButton } from "@/components/ui/Button";
+import { LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input, Textarea, Select, SelectOption } from "@geckoui/geckoui";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
@@ -65,9 +65,9 @@ export default function CreateStoryPage() {
           </Field>
 
           <div className="mt-2 flex gap-2.5">
-            <Button variant="primary" onClick={handleCreate} disabled={loading || !title.trim()}>
-              {loading ? "Creating…" : "Create story"}
-            </Button>
+            <LoadingButton variant="primary" onClick={handleCreate} loading={loading} disabled={!title.trim()}>
+              Create story
+            </LoadingButton>
             <LinkButton variant="secondary" href="/stories">
               Cancel
             </LinkButton>

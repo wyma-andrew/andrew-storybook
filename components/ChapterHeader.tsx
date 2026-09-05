@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, CircleCheck, CircleAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Loader2, CircleCheck, CircleAlert, Pencil } from "lucide-react";
+import { Select, SelectOption, Dialog, Input } from "@geckoui/geckoui";
 import { AccountMenu } from "@/components/AccountMenu";
-import { EditableLabel } from "@/components/ui/EditableLabel";
-import { useWrite } from "@/lib/spoosh";
+import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
+import { useRead, useWrite } from "@/lib/spoosh";
 import type { SaveStatus } from "@/components/ScriptEditor";
 
 const TABS = [
@@ -12,6 +15,46 @@ const TABS = [
   { key: "assets", label: "2. Assets" },
   { key: "storyboard", label: "3. Storyboard" },
 ] as const;
+
+function RenameChapterForm({
+  currentTitle,
+  onSave,
+  dismiss,
+}: {
+  currentTitle: string;
+  onSave: (next: string) => Promise<void>;
+  dismiss: () => void;
+}) {
+  const [title, setTitle] = useState(currentTitle);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit() {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    try {
+      await onSave(trimmed);
+      dismiss();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-4 text-[16px] font-semibold">Rename episode</h2>
+      <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Episode title" />
+      <div className="mt-4 flex justify-end gap-2.5">
+        <Button variant="secondary" onClick={dismiss}>
+          Cancel
+        </Button>
+        <LoadingButton variant="primary" loading={saving} disabled={!title.trim()} onClick={handleSubmit}>
+          Save
+        </LoadingButton>
+      </div>
+    </div>
+  );
+}
 
 export function ChapterHeader({
   storyId,
@@ -30,15 +73,35 @@ export function ChapterHeader({
   styleName: string;
   saveStatus?: SaveStatus;
 }) {
+  const router = useRouter();
   const { trigger: patchChapter } = useWrite((api) => api("chapters/:id").PATCH());
+  const { data: story } = useRead((api) => api("stories/:id").GET({ params: { id: storyId } }));
+  const chapters = story?.chapters ?? [];
 
   async function renameEpisode(next: string) {
-    await patchChapter({ params: { id: chapterId }, body: { title: next } });
+    await patchChapter({
+      params: { id: chapterId },
+      body: { title: next },
+      invalidate: [`stories/${storyId}`, "chapters"],
+    });
+  }
+
+  function handleChapterChange(nextChapterId: string) {
+    if (nextChapterId !== chapterId) router.push(`/stories/${storyId}/chapters/${nextChapterId}/${active}`);
+  }
+
+  function openRenameDialog() {
+    Dialog.show({
+      className: "max-w-[420px] w-full",
+      content: ({ dismiss }) => (
+        <RenameChapterForm currentTitle={chapterTitle} onSave={renameEpisode} dismiss={dismiss} />
+      ),
+    });
   }
 
   return (
     <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-line px-5 py-3.5">
-      <div className="flex items-center gap-3 text-[16px] font-medium">
+      <div className="flex items-center gap-2 text-[16px] font-medium">
         <Link
           href={`/stories/${storyId}`}
           aria-label={`Back to ${storyTitle}`}
@@ -46,7 +109,19 @@ export function ChapterHeader({
         >
           <ArrowLeft size={22} />
         </Link>
-        <EditableLabel value={chapterTitle} onSave={renameEpisode} className="text-[16px] font-medium text-fg" />
+        <Select
+          value={chapterId}
+          onChange={handleChapterChange}
+          wrapperClassName="w-[220px] max-w-[220px]"
+          placeholder={chapterTitle}
+        >
+          {chapters.map((c) => (
+            <SelectOption key={c.id} value={c.id} label={`${String(c.index).padStart(2, "0")} · ${c.title}`} />
+          ))}
+        </Select>
+        <MiniButton ghost onClick={openRenameDialog} aria-label="Rename episode">
+          <Pencil size={13} />
+        </MiniButton>
         {saveStatus === "saving" && <Loader2 size={15} className="shrink-0 animate-spin text-fg-3" aria-label="Saving" />}
         {saveStatus === "saved" && <CircleCheck size={15} className="shrink-0 text-ok" aria-label="Saved" />}
         {saveStatus === "error" && <CircleAlert size={15} className="shrink-0 text-danger" aria-label="Failed to save" />}

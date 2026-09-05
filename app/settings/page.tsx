@@ -8,7 +8,7 @@ import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { AdminBlock } from "@/components/ui/AdminBlock";
-import { Button, MiniButton } from "@/components/ui/Button";
+import { Button, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
@@ -73,9 +73,9 @@ function StyleForm({ style, dismiss }: { style?: VisualStyle; dismiss: () => voi
         <Button variant="secondary" onClick={dismiss}>
           Cancel
         </Button>
-        <Button variant="primary" disabled={loading || !name.trim()} onClick={handleSubmit}>
-          {loading ? "Saving…" : style ? "Save changes" : "+ Add style"}
-        </Button>
+        <LoadingButton variant="primary" loading={loading} disabled={!name.trim()} onClick={handleSubmit}>
+          {style ? "Save changes" : "+ Add style"}
+        </LoadingButton>
       </div>
     </div>
   );

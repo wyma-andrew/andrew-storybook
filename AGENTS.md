@@ -91,6 +91,15 @@ npx supabase db push --db-url "$DATABASE_URL"
 - Do **not** use bare `fetch`, `axios`, `react-query`, `swr`, or the Supabase client directly from React components.
 - Server-side Supabase access lives behind route handlers; the client reaches them only via the Spoosh client.
 - Caching, retry, polling, optimistic updates, invalidation: use Spoosh plugins, not hand-rolled logic.
+- **Invalidation gotcha**: Spoosh's auto-invalidation keys off the *mutated* path's first
+  segment (e.g. `PATCH chapters/:id` → invalidates `chapters` / `chapters/*`). It does
+  **not** know about other reads that embed that resource under a different path —
+  e.g. `stories/:id` returns `story.chapters[]`, so renaming/duplicating a chapter
+  leaves that cached `stories/:id` read stale. When a mutation needs to refresh a
+  parent/embedding read like that, pass `invalidate` explicitly on the `trigger()` call,
+  e.g. `invalidate: [\`stories/${storyId}\`, "chapters"]`. Check for this whenever a
+  mutation's effect should show up in a list/detail view fetched via a different
+  endpoint than the one being mutated.
 
 ## Demo
 

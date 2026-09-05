@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Frame } from "@/components/Frame";
-import { Button } from "@/components/ui/Button";
+import { LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@geckoui/geckoui";
 import { Body } from "@/components/ui/Layout";
@@ -39,9 +39,9 @@ export default function SignInPage() {
             <Field label="Password">
               <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </Field>
-            <Button variant="primary" type="submit" disabled={loading} className="w-full">
-              {loading ? "Signing in…" : "Sign in"}
-            </Button>
+            <LoadingButton variant="primary" type="submit" loading={loading} className="w-full">
+              Sign in
+            </LoadingButton>
           </form>
           <div className="mt-4.5 text-[13px] text-fg-3">
             No account? <Link href="/sign-up" className="text-fg no-underline">Create one</Link>

@@ -7,7 +7,7 @@ import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
-import { MiniButton } from "@/components/ui/Button";
+import { MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { Textarea, Switch } from "@geckoui/geckoui";
@@ -56,9 +56,9 @@ function BibleCard({ entry }: { entry: BibleEntry }) {
       <CardFooter>
         {editing ? (
           <>
-            <MiniButton onClick={save} disabled={loading}>
-              {loading ? "Saving…" : "Save"}
-            </MiniButton>
+            <MiniLoadingButton onClick={save} loading={loading}>
+              Save
+            </MiniLoadingButton>
             <MiniButton
               ghost
               onClick={() => {

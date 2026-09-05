@@ -7,9 +7,9 @@ import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MatchBadge, InjectRow } from "@/components/ui/Badge";
-import { Button, MiniButton } from "@/components/ui/Button";
+import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
-import { Toolbar, ToolbarButton, toolbarSep } from "@/components/ui/Toolbar";
+import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { ConfirmDialog } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
@@ -75,9 +75,9 @@ function AssetCard({
 
       <CardFooter>
         {asset.matchStatus === "stale" ? (
-          <MiniButton className="flex-1 justify-center text-danger" onClick={confirmRemove} disabled={removing}>
-            <Trash2 size={12} /> {removing ? "Removing…" : "Remove from chapter"}
-          </MiniButton>
+          <MiniLoadingButton className="flex-1 justify-center text-danger" onClick={confirmRemove} loading={removing}>
+            <Trash2 size={12} /> Remove from chapter
+          </MiniLoadingButton>
         ) : (
           <>
             <MiniButton
@@ -86,17 +86,17 @@ function AssetCard({
             >
               Copy prompt
             </MiniButton>
-            <MiniButton className="flex-1 justify-center" onClick={confirmRegenerate} disabled={regenerating}>
-              <RefreshCw size={12} /> {regenerating ? "Regenerating…" : "Regenerate"}
-            </MiniButton>
+            <MiniLoadingButton className="flex-1 justify-center" onClick={confirmRegenerate} loading={regenerating}>
+              <RefreshCw size={12} /> Regenerate
+            </MiniLoadingButton>
             {asset.matchStatus === "new" && (
-              <MiniButton
+              <MiniLoadingButton
                 className="flex-1 justify-center text-accent"
                 onClick={() => promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })}
-                disabled={loading}
+                loading={loading}
               >
-                {loading ? "Adding…" : "+ Add to bible"}
-              </MiniButton>
+                + Add to bible
+              </MiniLoadingButton>
             )}
           </>
         )}
@@ -177,12 +177,12 @@ export default function AssetsPage() {
 
       <Toolbar>
         <span className="mr-1.5 text-fg-3">Extracted from script:</span>
-        <ToolbarButton onClick={reanalyze} disabled={analyzing}>
-          <RefreshCw size={13} /> {analyzing ? "Re-analyzing…" : "Re-analyze"}
-        </ToolbarButton>
-        <ToolbarButton onClick={resync} disabled={syncing} title="Add script's new characters/locations without touching existing prompts">
-          <ListPlus size={13} /> {syncing ? "Syncing…" : "Re-Sync with story"}
-        </ToolbarButton>
+        <ToolbarLoadingButton onClick={reanalyze} loading={analyzing}>
+          <RefreshCw size={13} /> Re-analyze
+        </ToolbarLoadingButton>
+        <ToolbarLoadingButton onClick={resync} loading={syncing} title="Add script's new characters/locations without touching existing prompts">
+          <ListPlus size={13} /> Re-Sync with story
+        </ToolbarLoadingButton>
       </Toolbar>
 
       <Body>

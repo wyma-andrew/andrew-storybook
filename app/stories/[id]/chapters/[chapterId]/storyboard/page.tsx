@@ -1,13 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton } from "@/components/ui/Button";
 import { Tag, AccentTag } from "@/components/ui/Tag";
 import { EmptyCta } from "@/components/ui/EmptyCta";
-import { Toolbar, ToolbarButton } from "@/components/ui/Toolbar";
+import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle } from "@/lib/prompt-copy";
@@ -26,6 +27,10 @@ function PromptBox({ label, text, onCopy }: { label: string; text: string; onCop
   );
 }
 
+function collapsedStorageKey(chapterId: string) {
+  return `storyboard-collapsed:${chapterId}`;
+}
+
 export default function StoryboardPage() {
   const { id, chapterId } = useParams<{ id: string; chapterId: string }>();
 
@@ -38,10 +43,43 @@ export default function StoryboardPage() {
     api("chapters/:id/storyboard/generate").POST()
   );
 
+  // Default open for every scene; a scene id in this set is collapsed.
+  // Persisted per-chapter in localStorage so a viewer's fold state survives reloads.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(collapsedStorageKey(chapterId));
+      setCollapsed(raw ? new Set(JSON.parse(raw) as string[]) : new Set());
+    } catch {
+      setCollapsed(new Set());
+    }
+  }, [chapterId]);
+
+  function toggleScene(sceneId: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(sceneId)) next.delete(sceneId);
+      else next.add(sceneId);
+      try {
+        localStorage.setItem(collapsedStorageKey(chapterId), JSON.stringify([...next]));
+      } catch {
+        // ignore (private browsing / storage disabled) — fold state just won't persist
+      }
+      return next;
+    });
+  }
+
   async function handleGenerate() {
     await generate({ params: { id: chapterId } });
     refetchScenes();
   }
+
+  const sceneCount = scenes?.length ?? 0;
+  const shotCount = scenes?.reduce((sum, s) => sum + s.shots.length, 0) ?? 0;
+  const totalDurationS = scenes?.reduce((sum, s) => sum + s.shots.reduce((sSum, shot) => sSum + (shot.durationS ?? 0), 0), 0) ?? 0;
+  const totalDurationLabel =
+    totalDurationS >= 60 ? `${Math.floor(totalDurationS / 60)}m ${totalDurationS % 60}s` : `${totalDurationS}s`;
 
   if (!story || !chapter) return null;
 
@@ -58,10 +96,20 @@ export default function StoryboardPage() {
 
       <Toolbar>
         <span className="mr-1.5 text-fg-3">Storyboard:</span>
-        <ToolbarButton onClick={handleGenerate} disabled={generating}>
+        <ToolbarLoadingButton onClick={handleGenerate} loading={generating}>
           {!!scenes?.length && <RefreshCw size={13} />}
-          {generating ? "Generating…" : scenes?.length ? "Regenerate" : "Generate storyboard"}
-        </ToolbarButton>
+          {scenes?.length ? "Regenerate" : "Generate storyboard"}
+        </ToolbarLoadingButton>
+        {!!scenes?.length && (
+          <>
+            <div className={toolbarSep} />
+            <span>{sceneCount} scenes</span>
+            <div className={toolbarSep} />
+            <span>{shotCount} shots</span>
+            <div className={toolbarSep} />
+            <span>~{totalDurationLabel} total</span>
+          </>
+        )}
       </Toolbar>
 
       <Body>
@@ -80,9 +128,15 @@ export default function StoryboardPage() {
             </EmptyCta>
           )}
 
-          {scenes?.map((scene) => (
+          {scenes?.map((scene) => {
+            const isCollapsed = collapsed.has(scene.id);
+            return (
             <section key={scene.id} className="mb-4.5 overflow-hidden rounded-xl border border-line bg-panel-2">
-              <div className="flex items-center gap-3.5 border-b border-line bg-[#101010] px-4.5 py-4">
+              <button
+                type="button"
+                onClick={() => toggleScene(scene.id)}
+                className="flex w-full items-center gap-3.5 border-b border-line bg-[#101010] px-4.5 py-4 text-left"
+              >
                 <AccentTag className="font-mono text-xs font-semibold tracking-normal normal-case">
                   SC {String(scene.index).padStart(2, "0")}
                 </AccentTag>
@@ -90,10 +144,15 @@ export default function StoryboardPage() {
                   <h3 className="text-[15px] font-semibold">{scene.title}</h3>
                   <div className="text-xs tracking-wide text-fg-3 uppercase">{scene.slug}</div>
                 </div>
-                <div className="ml-auto flex gap-1.5">
+                <div className="ml-auto flex items-center gap-2.5">
                   <Tag>{scene.shots.length} shots</Tag>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-fg-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
                 </div>
-              </div>
+              </button>
+              {!isCollapsed && (
               <div className="flex flex-col gap-3 px-4.5 py-4">
                 {scene.shots.map((shot, shotIdx) => {
                   const priorShots = scene.shots.slice(0, shotIdx);
@@ -168,8 +227,10 @@ export default function StoryboardPage() {
                   );
                 })}
               </div>
+              )}
             </section>
-          ))}
+            );
+          })}
         </Wrap>
       </Body>
 

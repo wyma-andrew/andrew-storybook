@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
-import { Button as GeckoButton } from "@geckoui/geckoui";
+import { Button as GeckoButton, LoadingButton as GeckoLoadingButton } from "@geckoui/geckoui";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -23,6 +23,21 @@ type ButtonOwnProps = Omit<React.ComponentProps<typeof GeckoButton>, "variant" |
 export function Button({ variant = "secondary", className = "", ...props }: ButtonOwnProps) {
   return (
     <GeckoButton
+      variant={geckoVariant[variant]}
+      color="primary"
+      className={`${extraClass[variant]} ${className}`}
+      {...props}
+    />
+  );
+}
+
+type LoadingButtonOwnProps = Omit<React.ComponentProps<typeof GeckoLoadingButton>, "variant" | "color"> & {
+  variant?: Variant;
+};
+
+export function LoadingButton({ variant = "secondary", className = "", ...props }: LoadingButtonOwnProps) {
+  return (
+    <GeckoLoadingButton
       variant={geckoVariant[variant]}
       color="primary"
       className={`${extraClass[variant]} ${className}`}
@@ -57,6 +72,22 @@ export function MiniButton({
 }: React.ComponentProps<typeof GeckoButton> & { ghost?: boolean }) {
   return (
     <GeckoButton
+      variant={ghost ? "ghost" : "outlined"}
+      color="primary"
+      size="sm"
+      className={`text-xs ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function MiniLoadingButton({
+  ghost = false,
+  className = "",
+  ...props
+}: React.ComponentProps<typeof GeckoLoadingButton> & { ghost?: boolean }) {
+  return (
+    <GeckoLoadingButton
       variant={ghost ? "ghost" : "outlined"}
       color="primary"
       size="sm"

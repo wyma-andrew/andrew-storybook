@@ -62,6 +62,9 @@ type ApiSchema = {
     GET: { data: Chapter };
     PATCH: { data: Chapter; body: Partial<{ title: string; script: unknown; status: Chapter["status"] }> };
   };
+  "chapters/:id/duplicate": {
+    POST: { data: Chapter };
+  };
   "chapters/:id/assets": {
     GET: { data: ChapterAsset[] };
   };

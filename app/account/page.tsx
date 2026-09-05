@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { AdminBlock } from "@/components/ui/AdminBlock";
-import { Button } from "@/components/ui/Button";
+import { LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@geckoui/geckoui";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
@@ -71,9 +71,9 @@ export default function AccountPage() {
               <Field label="Confirm new password">
                 <Input type="password" required minLength={6} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
               </Field>
-              <Button variant="primary" type="submit" disabled={loading}>
-                {loading ? "Saving…" : "Update password"}
-              </Button>
+              <LoadingButton variant="primary" type="submit" loading={loading}>
+                Update password
+              </LoadingButton>
             </form>
           </AdminBlock>
         </Wrap>

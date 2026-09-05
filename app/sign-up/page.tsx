@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Frame } from "@/components/Frame";
-import { Button, LinkButton } from "@/components/ui/Button";
+import { LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@geckoui/geckoui";
 import { Body } from "@/components/ui/Layout";
@@ -70,9 +70,9 @@ export default function SignUpPage() {
             <Field label="Confirm password">
               <Input type="password" required minLength={6} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             </Field>
-            <Button variant="primary" type="submit" disabled={loading} className="w-full">
-              {loading ? "Creating…" : "Create account"}
-            </Button>
+            <LoadingButton variant="primary" type="submit" loading={loading} className="w-full">
+              Create account
+            </LoadingButton>
           </form>
           <div className="mt-4.5 text-[13px] text-fg-3">
             Already have an account? <Link href="/sign-in" className="text-fg no-underline">Sign in</Link>
