@@ -32,7 +32,6 @@ export function AccountMenu() {
 
       <div className="break-all border-b border-line px-3.5 py-3 text-[12.5px] text-fg-2">{me.email}</div>
       <MenuItem onClick={() => router.push("/account")}>Account</MenuItem>
-      {me.isAdmin && <MenuItem onClick={() => router.push("/admin/system-prompts")}>Admin console</MenuItem>}
       <MenuItem onClick={handleSignOut}>
         <span className="text-danger">Sign out</span>
       </MenuItem>

@@ -14,6 +14,7 @@ import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { ConfirmDialog } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
+import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
 import type { ChapterAsset } from "@/lib/api/types";
 
 function AssetCard({
@@ -138,12 +139,11 @@ export default function AssetsPage() {
   const { data: assets, trigger: refetchAssets } = useRead((api) =>
     api("chapters/:id/assets").GET({ params: { id: chapterId } })
   );
-  const { data: systemPrompts } = useRead((api) => api("system-prompts").GET());
   const { trigger: analyze, loading: analyzing } = useWrite((api) => api("chapters/:id/analyze").POST());
   const { trigger: sync, loading: syncing } = useWrite((api) => api("chapters/:id/sync").POST());
 
-  const characterPreset = systemPrompts?.find((p) => p.kind === "character")?.prompt;
-  const locationPreset = systemPrompts?.find((p) => p.kind === "location")?.prompt;
+  const characterPreset = SYSTEM_PROMPTS.character;
+  const locationPreset = SYSTEM_PROMPTS.location;
 
   const characters = assets?.filter((a) => a.kind === "character") ?? [];
   const locations = assets?.filter((a) => a.kind === "location") ?? [];

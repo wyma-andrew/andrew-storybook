@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { mapStory, mapChapter } from "@/lib/api/map";
+import { resolveVisualStyle } from "@/lib/visual-styles";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await supabaseRoute();
   const [{ data: story, error: sErr }, { data: chapters, error: cErr }] = await Promise.all([
-    db.from("stories").select("*, visual_styles!stories_visual_style_fk(name, description)").eq("id", id).single(),
+    db.from("stories").select("*").eq("id", id).single(),
     db.from("chapters").select("*").eq("story_id", id).order("index"),
   ]);
   if (sErr) return NextResponse.json({ error: sErr.message }, { status: 404 });
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
-  return NextResponse.json({ ...mapStory(story), chapters: chapters.map(mapChapter) });
+  const style = await resolveVisualStyle(db, story.visual_style_id);
+  return NextResponse.json({ ...mapStory(story, style), chapters: chapters.map(mapChapter) });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -22,14 +24,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.title !== undefined) patch.title = body.title;
   if (body.description !== undefined) patch.description = body.description;
   if (body.visualStyleId !== undefined) patch.visual_style_id = body.visualStyleId;
-  const { data, error } = await db
-    .from("stories")
-    .update(patch)
-    .eq("id", id)
-    .select("*, visual_styles!stories_visual_style_fk(name, description)")
-    .single();
+  const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(mapStory(data));
+  const style = await resolveVisualStyle(db, data.visual_style_id);
+  return NextResponse.json(mapStory(data, style));
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

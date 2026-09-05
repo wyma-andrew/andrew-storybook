@@ -16,7 +16,7 @@ function SettingsForm({ id, story }: { id: string; story: Story }) {
   const router = useRouter();
   const { trigger: patchStory, loading: saving } = useWrite((api) => api("stories/:id").PATCH());
   const { trigger: deleteStory, loading: deleting } = useWrite((api) => api("stories/:id").DELETE());
-  const { data: styles } = useRead((api) => api("visual-styles").GET({ query: { storyId: id } }));
+  const { data: styles } = useRead((api) => api("visual-styles").GET());
   const { trigger: patchStyle } = useWrite((api) => api("stories/:id").PATCH());
 
   const [title, setTitle] = useState(story.title);

@@ -6,7 +6,6 @@ import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import type {
   VisualStyle,
-  SystemPrompt,
   Story,
   StoryListItem,
   Chapter,
@@ -33,17 +32,12 @@ type ApiSchema = {
     PATCH: { data: null; body: { password: string } };
   };
   "visual-styles": {
-    GET: { data: VisualStyle[]; query?: { storyId?: string } };
-    POST: { data: VisualStyle; body: { storyId?: string; name: string; description?: string; swatch?: string } };
+    GET: { data: VisualStyle[] };
+    POST: { data: VisualStyle; body: { name: string; description?: string; swatch?: string } };
   };
   "visual-styles/:id": {
     PATCH: { data: VisualStyle; body: Partial<{ name: string; description: string; swatch: string }> };
-  };
-  "system-prompts": {
-    GET: { data: SystemPrompt[] };
-  };
-  "system-prompts/:kind": {
-    PATCH: { data: SystemPrompt; body: { prompt: string } };
+    DELETE: { data: null };
   };
   stories: {
     GET: { data: StoryListItem[] };

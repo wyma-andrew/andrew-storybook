@@ -3,6 +3,7 @@ import { supabaseRoute } from "@/lib/supabase/route";
 import { mapChapterAsset } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { regenerateAssetPrompt } from "@/lib/openai";
+import { resolveVisualStyle } from "@/lib/visual-styles";
 
 // Regenerates one chapter_asset's real_prompt only (per-card "Regenerate"), leaving
 // every other asset on the chapter untouched. If this asset is "matched", the new
@@ -28,11 +29,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: story, error: stErr } = await db
     .from("stories")
-    .select("visual_styles!stories_visual_style_fk(description)")
+    .select("visual_style_id")
     .eq("id", chapter.story_id)
     .single();
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const styleContext = (story?.visual_styles as { description?: string } | null)?.description ?? null;
+  const style = await resolveVisualStyle(db, story?.visual_style_id);
+  const styleContext = style?.description ?? null;
 
   const realPrompt = await regenerateAssetPrompt(scriptText, asset.kind, asset.name, asset.meta, styleContext);
 

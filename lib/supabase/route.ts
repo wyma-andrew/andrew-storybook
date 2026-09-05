@@ -3,8 +3,9 @@ import { cookies } from "next/headers";
 
 // Session-bound (anon key) client for Route Handlers — RLS applies, scoped
 // to whichever user's cookies are on the request. Use this for every
-// story-owned table; use supabaseAdmin() only for global tables
-// (visual_styles scope='global', system_prompts) and admin writes.
+// user-owned table, including visual_styles (owner_id-scoped). Admin-only
+// writes (e.g. system_prompts presets, now file constants — see
+// lib/constants/) use supabaseAdmin() instead.
 export async function supabaseRoute() {
   const cookieStore = await cookies();
   return createServerClient(

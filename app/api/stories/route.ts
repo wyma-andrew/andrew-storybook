@@ -2,16 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { requireUser } from "@/lib/api/auth-guard";
 import { mapStory } from "@/lib/api/map";
+import { resolveVisualStyle, resolveVisualStyles } from "@/lib/visual-styles";
 
 export async function GET() {
   const db = await supabaseRoute();
   const { data, error } = await db
     .from("stories")
-    .select("*, visual_styles!stories_visual_style_fk(name, description), chapters(count)")
+    .select("*, chapters(count)")
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const styles = await resolveVisualStyles(db, data.map((r) => r.visual_style_id as string | null));
   const mapped = data.map((r) => ({
-    ...mapStory(r),
+    ...mapStory(r, styles.get(r.visual_style_id as string) ?? null),
     chapterCount: (r.chapters as { count: number }[] | null)?.[0]?.count ?? 0,
   }));
   return NextResponse.json(mapped);
@@ -30,8 +33,9 @@ export async function POST(req: NextRequest) {
       visual_style_id: body.visualStyleId ?? null,
       owner_id: user.id,
     })
-    .select("*, visual_styles!stories_visual_style_fk(name, description)")
+    .select("*")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(mapStory(data));
+  const style = await resolveVisualStyle(db, data.visual_style_id);
+  return NextResponse.json(mapStory(data, style));
 }

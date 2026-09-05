@@ -1,18 +1,9 @@
 export type VisualStyle = {
   id: string;
-  scope: "global" | "story";
-  storyId: string | null;
   name: string;
   description: string | null;
   swatch: string | null;
-  source: "built_in" | "custom";
-};
-
-export type SystemPrompt = {
-  kind: "character" | "location";
-  prompt: string;
-  updatedBy: string | null;
-  updatedAt: string;
+  locked: boolean; // built-in (file-defined) — not editable/removable
 };
 
 export type Story = {

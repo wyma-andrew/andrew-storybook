@@ -19,7 +19,7 @@ export function StoryControlsMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const { data: styles } = useRead((api) => api("visual-styles").GET({ query: { storyId } }), { enabled: open });
+  const { data: styles } = useRead((api) => api("visual-styles").GET(), { enabled: open });
   const { trigger: patchStory } = useWrite((api) => api("stories/:id").PATCH());
 
   useEffect(() => {

@@ -1,6 +1,5 @@
 import type {
   VisualStyle,
-  SystemPrompt,
   Story,
   Chapter,
   BibleEntry,
@@ -8,32 +7,21 @@ import type {
   Scene,
   Shot,
 } from "./types";
+import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 
 type Row = Record<string, unknown>;
 
-export function mapVisualStyle(r: Row): VisualStyle {
+export function mapVisualStyle(r: ResolvedVisualStyle): VisualStyle {
   return {
-    id: r.id as string,
-    scope: r.scope as VisualStyle["scope"],
-    storyId: (r.story_id as string) ?? null,
-    name: r.name as string,
-    description: (r.description as string) ?? null,
-    swatch: (r.swatch as string) ?? null,
-    source: r.source as VisualStyle["source"],
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    swatch: r.swatch,
+    locked: r.locked,
   };
 }
 
-export function mapSystemPrompt(r: Row): SystemPrompt {
-  return {
-    kind: r.kind as SystemPrompt["kind"],
-    prompt: r.prompt as string,
-    updatedBy: (r.updated_by as string) ?? null,
-    updatedAt: r.updated_at as string,
-  };
-}
-
-export function mapStory(r: Row): Story {
-  const style = r.visual_styles as { name?: string; description?: string } | null | undefined;
+export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
   return {
     id: r.id as string,
     title: r.title as string,
