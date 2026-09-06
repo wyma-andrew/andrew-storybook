@@ -17,3 +17,11 @@ export function withAssetContext(realPrompt: string, systemPrompt?: string | nul
   const parts = [systemPrompt, realPrompt, styleContext ? `[Style] ${styleContext}` : null].filter(Boolean);
   return parts.join("\n\n");
 }
+
+// Video prompt describes motion only, so it's meaningless without the frame(s)
+// it's animating — stitch the start (and end, if present) frame description
+// in ahead of it at copy time.
+export function withFrameDescription(videoPrompt: string, startFramePrompt: string, endFramePrompt?: string | null): string {
+  const parts = [startFramePrompt, endFramePrompt, videoPrompt].filter(Boolean);
+  return parts.join("\n\n");
+}

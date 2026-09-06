@@ -11,7 +11,7 @@ import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
-import { withStyle } from "@/lib/prompt-copy";
+import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 
 function PromptBox({ label, text, onCopy }: { label: string; text: string; onCopy: () => void }) {
   return (
@@ -219,7 +219,11 @@ export default function StoryboardPage() {
                         <PromptBox
                           label="Video Prompt"
                           text={shot.videoPrompt}
-                          onCopy={() => navigator.clipboard.writeText(shot.videoPrompt!)}
+                          onCopy={() =>
+                            navigator.clipboard.writeText(
+                              withFrameDescription(shot.videoPrompt!, shot.prompt, shot.endFramePrompt)
+                            )
+                          }
                         />
                       )}
                     </div>
