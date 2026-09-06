@@ -56,7 +56,7 @@ export default function CreateStoryPage() {
             />
           </Field>
 
-          <Field label="Visual style" hint="You can switch to a custom style for this story later, from Story Settings.">
+          <Field label="Visual style" hint="You can switch to a custom style for this story later, from Story options.">
             <Select value={selected ?? ""} onChange={setStyleId} placeholder="Choose a style" disabled={!styles}>
               {styles?.map((s) => (
                 <SelectOption key={s.id} value={s.id} label={s.name} />

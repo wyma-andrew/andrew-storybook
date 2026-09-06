@@ -15,6 +15,7 @@ export type Story = {
   visualStyleDescription: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 };
 
 export type StoryListItem = Story & {

@@ -31,6 +31,7 @@ export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
     visualStyleDescription: style?.description ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
+    deletedAt: (r.deleted_at as string) ?? null,
   };
 }
 

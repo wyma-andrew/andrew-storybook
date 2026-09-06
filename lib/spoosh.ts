@@ -48,6 +48,15 @@ type ApiSchema = {
     PATCH: { data: Story; body: Partial<{ title: string; description: string; visualStyleId: string | null }> };
     DELETE: { data: null };
   };
+  "stories/trash": {
+    GET: { data: StoryListItem[] };
+  };
+  "stories/:id/restore": {
+    POST: { data: Story };
+  };
+  "stories/:id/permanent": {
+    DELETE: { data: null };
+  };
   "stories/:id/bible": {
     GET: { data: BibleEntry[] };
   };
@@ -61,6 +70,7 @@ type ApiSchema = {
   "chapters/:id": {
     GET: { data: Chapter };
     PATCH: { data: Chapter; body: Partial<{ title: string; script: unknown; status: Chapter["status"] }> };
+    DELETE: { data: null };
   };
   "chapters/:id/duplicate": {
     POST: { data: Chapter };

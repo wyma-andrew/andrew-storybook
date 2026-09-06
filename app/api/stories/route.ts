@@ -9,6 +9,7 @@ export async function GET() {
   const { data, error } = await db
     .from("stories")
     .select("*, chapters(count)")
+    .is("deleted_at", null)
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

@@ -1,26 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { Select, SelectOption } from "@geckoui/geckoui";
+import { Select, SelectOption, ConfirmDialog } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { useRead, useWrite } from "@/lib/spoosh";
 
 export function StoryControlsMenu({
   storyId,
+  storyTitle,
   currentStyleId,
   currentStyleName,
 }: {
   storyId: string;
+  storyTitle: string;
   currentStyleId: string | null;
   currentStyleName: string | null;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const { data: styles } = useRead((api) => api("visual-styles").GET(), { enabled: open });
   const { trigger: patchStory } = useWrite((api) => api("stories/:id").PATCH());
+  const { trigger: deleteStory } = useWrite((api) => api("stories/:id").DELETE());
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -32,6 +37,21 @@ export function StoryControlsMenu({
 
   async function handleStyleChange(value: string) {
     await patchStory({ params: { id: storyId }, body: { visualStyleId: value } });
+  }
+
+  function handleDelete() {
+    setOpen(false);
+    ConfirmDialog.show({
+      title: `Delete "${storyTitle}"?`,
+      content: "Moves the story to Trash. You can restore it later from Stories → Trash.",
+      confirmButtonLabel: "Delete",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        await deleteStory({ params: { id: storyId }, invalidate: ["stories", "stories/trash"] });
+        dismiss();
+        router.push("/stories");
+      },
+    });
   }
 
   return (
@@ -68,13 +88,13 @@ export function StoryControlsMenu({
             >
               Manage Bible
             </Link>
-            <Link
-              href={`/stories/${storyId}/settings`}
-              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-[#1c1c1c]"
-              onClick={() => setOpen(false)}
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-danger hover:bg-[#1c1c1c]"
             >
-              Story settings
-            </Link>
+              Delete story
+            </button>
           </div>
         </div>
       )}

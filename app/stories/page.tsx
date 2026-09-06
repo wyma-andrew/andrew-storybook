@@ -16,6 +16,9 @@ export default function StoriesPage() {
       <TopBar>
         <div className="text-[19px] font-medium">AI Storybook</div>
         <div className="ml-auto flex items-center gap-2.5">
+          <LinkButton variant="secondary" href="/stories/trash" className="flex h-9 items-center text-[13.5px]">
+            Trash
+          </LinkButton>
           <LinkButton variant="secondary" href="/settings" className="flex h-9 items-center text-[13.5px]">
             Settings
           </LinkButton>

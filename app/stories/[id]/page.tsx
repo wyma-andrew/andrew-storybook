@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronRight, ArrowRight, MoreVertical, Copy, Loader2 } from "lucide-react";
-import { Menu, MenuItem, MenuTrigger } from "@geckoui/geckoui";
+import { ChevronRight, ArrowRight, MoreVertical, Copy, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
+import { Menu, MenuItem, MenuTrigger, ConfirmDialog, Input, Textarea } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { StoryControlsMenu } from "@/components/StoryControlsMenu";
-import { LoadingButton } from "@/components/ui/Button";
+import { LoadingButton, MiniButton } from "@/components/ui/Button";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -17,11 +17,30 @@ export default function StoryDetailPage() {
   const router = useRouter();
 
   const { data: story, loading } = useRead((api) => api("stories/:id").GET({ params: { id } }));
+  const { trigger: patchStory, loading: savingDetails } = useWrite((api) => api("stories/:id").PATCH());
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+
+  function startEditDetails() {
+    if (!story) return;
+    setTitle(story.title);
+    setDescription(story.description ?? "");
+    setEditingDetails(true);
+  }
+
+  async function saveDetails() {
+    await patchStory({ params: { id }, body: { title, description } });
+    setEditingDetails(false);
+  }
+
   const { trigger: createChapter, loading: creating } = useWrite((api) =>
     api("stories/:id/chapters").POST()
   );
   const { trigger: duplicateChapter } = useWrite((api) => api("chapters/:id/duplicate").POST());
+  const { trigger: deleteChapter } = useWrite((api) => api("chapters/:id").DELETE());
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const chapters = story?.chapters ?? [];
 
@@ -42,6 +61,24 @@ export default function StoryDetailPage() {
     } finally {
       setDuplicatingId(null);
     }
+  }
+
+  function handleDelete(chapterId: string, chapterTitle: string) {
+    ConfirmDialog.show({
+      title: `Delete "${chapterTitle}"?`,
+      content: "This deletes the episode's script, assets, and storyboard. Cannot be undone.",
+      confirmButtonLabel: "Delete",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        setDeletingId(chapterId);
+        try {
+          await deleteChapter({ params: { id: chapterId }, invalidate: [`stories/${id}`, "chapters"] });
+        } finally {
+          setDeletingId(null);
+        }
+        dismiss();
+      },
+    });
   }
 
   if (loading && !story) {
@@ -71,21 +108,56 @@ export default function StoryDetailPage() {
       <Body>
         <Wrap wide>
           <div className="pt-6.5">
-            <div className="mb-1.5 flex items-center gap-2.5">
-              <h1 className="text-2xl font-semibold">{story.title}</h1>
-              <span className="rounded-full border border-line-2 bg-[#161616] px-2.5 py-1 text-[10.5px] text-fg-2">
-                {story.visualStyleName ?? "No style"}
-              </span>
-            </div>
-            <div className={`max-w-[640px] text-[13.5px] ${!story.description ? "text-fg-3" : "text-fg-2"}`}>
-              {story.description || "No description yet — add one from Story Settings."}
-            </div>
+            {editingDetails ? (
+              <div className="max-w-[640px]">
+                <Input
+                  className="mb-2.5"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Story title"
+                />
+                <Textarea
+                  className="mb-2.5"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Description"
+                />
+                <div className="flex gap-2">
+                  <LoadingButton
+                    variant="primary"
+                    className="flex h-8 items-center gap-1.5 text-[12.5px]"
+                    onClick={saveDetails}
+                    loading={savingDetails}
+                  >
+                    <Check size={14} /> Save
+                  </LoadingButton>
+                  <MiniButton onClick={() => setEditingDetails(false)}>
+                    <X size={14} /> Cancel
+                  </MiniButton>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-1.5 flex items-center gap-2.5">
+                  <h1 className="text-2xl font-semibold">{story.title}</h1>
+                  <span className="rounded-full border border-line-2 bg-[#161616] px-2.5 py-1 text-[10.5px] text-fg-2">
+                    {story.visualStyleName ?? "No style"}
+                  </span>
+                  <MiniButton ghost className="!h-7 !w-7 !p-0" onClick={startEditDetails} title="Edit title & description">
+                    <Pencil size={13} />
+                  </MiniButton>
+                </div>
+                <div className={`max-w-[640px] text-[13.5px] ${!story.description ? "text-fg-3" : "text-fg-2"}`}>
+                  {story.description || "No description yet."}
+                </div>
+              </>
+            )}
           </div>
 
           {chapters.length === 0 ? (
             <>
               <div className="mt-4 flex justify-end">
-                <StoryControlsMenu storyId={id} currentStyleId={story.visualStyleId} currentStyleName={story.visualStyleName} />
+                <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentStyleName={story.visualStyleName} />
               </div>
               <div className="mt-4 rounded-xl border border-dashed border-line-2 px-6 py-11 text-center">
                 <h3 className="mb-2 text-base font-semibold">Nothing here yet</h3>
@@ -108,7 +180,7 @@ export default function StoryDetailPage() {
               <div className="my-7.5 mb-3.5 flex items-center gap-3">
                 <h2 className="text-[15px] font-semibold">Episodes</h2>
                 <div className="ml-auto flex items-center gap-2.5">
-                  <StoryControlsMenu storyId={id} currentStyleId={story.visualStyleId} currentStyleName={story.visualStyleName} />
+                  <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentStyleName={story.visualStyleName} />
                   <LoadingButton variant="primary" onClick={addChapter} loading={creating} className="h-9 text-[13.5px]">
                     + New Episode
                   </LoadingButton>
@@ -141,11 +213,11 @@ export default function StoryDetailPage() {
                           <button
                             type="button"
                             onClick={toggleMenu}
-                            disabled={duplicatingId === c.id}
+                            disabled={duplicatingId === c.id || deletingId === c.id}
                             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-fg-3 hover:bg-[#1c1c1c] hover:text-fg disabled:opacity-60"
                             aria-label="Episode options"
                           >
-                            {duplicatingId === c.id ? (
+                            {duplicatingId === c.id || deletingId === c.id ? (
                               <Loader2 size={16} className="animate-spin" />
                             ) : (
                               <MoreVertical size={16} />
@@ -156,6 +228,11 @@ export default function StoryDetailPage() {
                       <MenuItem disabled={duplicatingId === c.id} onClick={() => handleDuplicate(c.id)}>
                         <span className="flex items-center gap-2 text-[13px]">
                           <Copy size={14} /> Duplicate
+                        </span>
+                      </MenuItem>
+                      <MenuItem disabled={deletingId === c.id} onClick={() => handleDelete(c.id, c.title)}>
+                        <span className="flex items-center gap-2 text-[13px] text-danger">
+                          <Trash2 size={14} /> Delete
                         </span>
                       </MenuItem>
                     </Menu>

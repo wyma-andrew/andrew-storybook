@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const db = await supabaseRoute();
   const [{ data: story, error: sErr }, { data: chapters, error: cErr }] = await Promise.all([
-    db.from("stories").select("*").eq("id", id).single(),
+    db.from("stories").select("*").eq("id", id).is("deleted_at", null).single(),
     db.from("chapters").select("*").eq("story_id", id).order("index"),
   ]);
   if (sErr) return NextResponse.json({ error: sErr.message }, { status: 404 });
@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await supabaseRoute();
-  const { error } = await db.from("stories").delete().eq("id", id);
+  const { error } = await db.from("stories").update({ deleted_at: new Date().toISOString() }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(null);
 }
