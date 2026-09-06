@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton } from "@/components/ui/Button";
@@ -56,15 +56,28 @@ export default function StoryboardPage() {
     }
   }, [chapterId]);
 
+  const sceneRefs = useRef<Map<string, HTMLElement>>(new Map());
+
   function toggleScene(sceneId: string) {
     setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(sceneId)) next.delete(sceneId);
-      else next.add(sceneId);
+      // Accordion: opening a scene collapses every other one, so only one
+      // scene's shots are ever on screen at a time — no more guessing which
+      // scene a shot list belongs to.
+      const wasCollapsed = prev.has(sceneId);
+      const allIds = (scenes ?? []).map((s) => s.id);
+      const next = wasCollapsed
+        ? new Set(allIds.filter((id) => id !== sceneId)) // was collapsed -> expand it, collapse rest
+        : new Set(allIds); // was expanded -> collapse it (and everything else already is)
       try {
         localStorage.setItem(collapsedStorageKey(chapterId), JSON.stringify([...next]));
       } catch {
         // ignore (private browsing / storage disabled) — fold state just won't persist
+      }
+      if (wasCollapsed) {
+        // Scrolled *into* view, not just onto screen — the header can otherwise
+        // land mid-viewport, leaving the card's top (and its "which scene" cue)
+        // scrolled past.
+        requestAnimationFrame(() => sceneRefs.current.get(sceneId)?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }
       return next;
     });
@@ -131,11 +144,22 @@ export default function StoryboardPage() {
           {scenes?.map((scene) => {
             const isCollapsed = collapsed.has(scene.id);
             return (
-            <section key={scene.id} className="mb-4.5 overflow-hidden rounded-xl border border-line bg-panel-2">
+            <section
+              key={scene.id}
+              ref={(el) => {
+                if (el) sceneRefs.current.set(scene.id, el);
+                else sceneRefs.current.delete(scene.id);
+              }}
+              className={`mb-4.5 overflow-hidden rounded-xl border bg-panel-2 ${
+                isCollapsed ? "border-line" : "border-accent/50"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => toggleScene(scene.id)}
-                className="flex w-full items-center gap-3.5 border-b border-line bg-[#101010] px-4.5 py-4 text-left"
+                className={`flex w-full items-center gap-3.5 border-b px-4.5 py-4 text-left ${
+                  isCollapsed ? "border-line bg-[#101010]" : "border-accent/30 bg-accent-dim"
+                }`}
               >
                 <AccentTag className="bg-accent font-mono text-xs font-bold tracking-normal text-[#101010] normal-case">
                   SC {String(scene.index).padStart(2, "0")}
@@ -167,14 +191,30 @@ export default function StoryboardPage() {
                     if (prior && (masterShotIndex === null || prior.index < masterShotIndex)) masterShotIndex = prior.index;
                   }
 
+                  const sceneName = scene.shots[0]?.label ?? scene.title;
+                  const shotTitle = `${scene.index}.${shot.index} ${sceneName}${
+                    shot.label && shot.label !== sceneName ? ` · ${shot.label}` : ""
+                  }`;
+
                   return (
-                  <div key={shot.id} className="grid grid-cols-[56px_1fr] gap-3.5 rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
-                    <div className="grid h-6.5 place-items-center rounded-md border border-line-2 font-mono text-[11px] font-semibold text-fg-2">
-                      {scene.index}.{shot.index}
-                    </div>
+                  <div key={shot.id} className="rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
-                        <b className="text-[13px] font-semibold">{shot.label}</b>
+                        <b className="text-[13px] font-semibold">
+                          <span className="font-mono text-accent">
+                            {scene.index}.{shot.index}
+                          </span>{" "}
+                          {sceneName}
+                          {shot.label && shot.label !== sceneName && <> · {shot.label}</>}
+                        </b>
+                        <MiniButton
+                          ghost
+                          className="!h-5.5 !w-5.5 !p-0"
+                          onClick={() => navigator.clipboard.writeText(shotTitle)}
+                          title="Copy shot title"
+                        >
+                          <Copy size={12} />
+                        </MiniButton>
                         {shot.durationS != null && <span className="text-[11.5px] text-fg-3">{shot.durationS}s</span>}
                         {shot.aspect && <span className="text-[11.5px] text-fg-3">{shot.aspect}</span>}
                         {shot.camera && <span className="text-[11.5px] text-fg-3">{shot.camera}</span>}
