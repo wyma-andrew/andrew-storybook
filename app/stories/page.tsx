@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Settings } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { LinkButton } from "@/components/ui/Button";
@@ -17,10 +18,10 @@ export default function StoriesPage() {
         <div className="text-[19px] font-medium">AI Storybook</div>
         <div className="ml-auto flex items-center gap-2.5">
           <LinkButton variant="secondary" href="/stories/trash" className="flex h-9 items-center text-[13.5px]">
-            Trash
+            Trash Bin
           </LinkButton>
-          <LinkButton variant="secondary" href="/settings" className="flex h-9 items-center text-[13.5px]">
-            Settings
+          <LinkButton variant="secondary" href="/settings" className="!h-9 !w-9 !p-0 flex items-center justify-center" title="Settings">
+            <Settings size={16} />
           </LinkButton>
           <LinkButton variant="primary" href="/stories/new" className="flex h-9 items-center text-[13.5px]">
             + Create Story
