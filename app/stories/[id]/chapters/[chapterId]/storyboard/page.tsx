@@ -137,11 +137,11 @@ export default function StoryboardPage() {
                 onClick={() => toggleScene(scene.id)}
                 className="flex w-full items-center gap-3.5 border-b border-line bg-[#101010] px-4.5 py-4 text-left"
               >
-                <AccentTag className="font-mono text-xs font-semibold tracking-normal normal-case">
+                <AccentTag className="bg-accent font-mono text-xs font-bold tracking-normal text-[#101010] normal-case">
                   SC {String(scene.index).padStart(2, "0")}
                 </AccentTag>
                 <div>
-                  <h3 className="text-[15px] font-semibold">{scene.title}</h3>
+                  <h3 className="text-[15px] font-semibold">{scene.shots[0]?.label ?? scene.title}</h3>
                   <div className="text-xs tracking-wide text-fg-3 uppercase">{scene.slug}</div>
                 </div>
                 <div className="ml-auto flex items-center gap-2.5">
