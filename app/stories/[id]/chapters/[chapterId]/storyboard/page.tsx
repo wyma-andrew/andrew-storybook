@@ -17,9 +17,9 @@ function PromptBox({ label, text, onCopy }: { label: string; text: string; onCop
   return (
     <div className="mb-2 last:mb-0">
       <div className="mb-1 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">{label}</div>
-      <div className="relative rounded-lg border border-line-2 bg-[#080808] p-3 pr-[88px] font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">
-        {text}
-        <MiniButton className="absolute top-2.5 right-2.5" onClick={onCopy}>
+      <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-[#080808] p-3">
+        <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">{text}</div>
+        <MiniButton className="shrink-0" onClick={onCopy}>
           Copy
         </MiniButton>
       </div>
