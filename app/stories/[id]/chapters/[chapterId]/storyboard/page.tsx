@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy, Square, Loader2 } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton } from "@/components/ui/Button";
 import { Tag, AccentTag } from "@/components/ui/Tag";
 import { EmptyCta } from "@/components/ui/EmptyCta";
-import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
+import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
@@ -39,7 +39,7 @@ export default function StoryboardPage() {
   const { data: scenes, trigger: refetchScenes } = useRead((api) =>
     api("chapters/:id/storyboard").GET({ params: { id: chapterId } })
   );
-  const { trigger: generate, loading: generating } = useWrite((api) =>
+  const { trigger: generate, loading: generating, abort: abortGenerate } = useWrite((api) =>
     api("chapters/:id/storyboard/generate").POST()
   );
 
@@ -84,8 +84,8 @@ export default function StoryboardPage() {
   }
 
   async function handleGenerate() {
-    await generate({ params: { id: chapterId } });
-    refetchScenes();
+    const { data } = await generate({ params: { id: chapterId } });
+    if (data) refetchScenes(); // skip on abort/error — nothing new to refetch
   }
 
   const sceneCount = scenes?.length ?? 0;
@@ -105,14 +105,26 @@ export default function StoryboardPage() {
         chapterTitle={chapter.title}
         active="storyboard"
         styleName={story.visualStyleName ?? "None"}
+        storyAspectRatio={story.aspectRatio}
+        chapterAspectRatio={chapter.aspectRatio}
       />
 
       <Toolbar>
         <span className="mr-1.5 text-fg-3">Storyboard:</span>
-        <ToolbarLoadingButton onClick={handleGenerate} loading={generating}>
-          {!!scenes?.length && <RefreshCw size={13} />}
-          {scenes?.length ? "Regenerate" : "Generate storyboard"}
-        </ToolbarLoadingButton>
+        {generating ? (
+          <ToolbarButton onClick={() => abortGenerate()} className="!text-danger">
+            <Loader2 size={13} className="animate-spin" />
+            Generating…
+            <span className="ml-1 inline-flex items-center gap-1 border-l border-danger/40 pl-2 text-[12.5px]">
+              <Square size={11} /> Stop
+            </span>
+          </ToolbarButton>
+        ) : (
+          <ToolbarLoadingButton onClick={handleGenerate} loading={false}>
+            {!!scenes?.length && <RefreshCw size={13} />}
+            {scenes?.length ? "Regenerate" : "Generate storyboard"}
+          </ToolbarLoadingButton>
+        )}
         {!!scenes?.length && (
           <>
             <div className={toolbarSep} />
@@ -215,8 +227,8 @@ export default function StoryboardPage() {
                         >
                           <Copy size={12} />
                         </MiniButton>
-                        {shot.durationS != null && <span className="text-[11.5px] text-fg-3">{shot.durationS}s</span>}
-                        {shot.aspect && <span className="text-[11.5px] text-fg-3">{shot.aspect}</span>}
+                        {shot.durationS != null && <Tag>{shot.durationS}s</Tag>}
+                        {shot.aspect && <AccentTag>{shot.aspect}</AccentTag>}
                         {shot.camera && <span className="text-[11.5px] text-fg-3">{shot.camera}</span>}
                       </div>
                       {!!shot.assetsUsed.length && (

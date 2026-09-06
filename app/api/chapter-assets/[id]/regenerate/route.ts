@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     .eq("id", chapter.story_id)
     .single();
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, story?.visual_style_id);
+  const style = await resolveVisualStyle(story?.visual_style_id);
   const styleContext = style?.description ?? null;
 
   const realPrompt = await regenerateAssetPrompt(scriptText, asset.kind, asset.name, asset.meta, styleContext);

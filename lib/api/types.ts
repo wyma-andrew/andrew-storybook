@@ -1,11 +1,3 @@
-export type VisualStyle = {
-  id: string;
-  name: string;
-  description: string | null;
-  swatch: string | null;
-  locked: boolean; // built-in (file-defined) — not editable/removable
-};
-
 export type Story = {
   id: string;
   title: string;
@@ -13,6 +5,7 @@ export type Story = {
   visualStyleId: string | null;
   visualStyleName: string | null;
   visualStyleDescription: string | null;
+  aspectRatio: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -29,6 +22,7 @@ export type Chapter = {
   title: string;
   status: "script" | "assets" | "storyboard" | "done";
   script: unknown | null;
+  aspectRatio: string | null; // null = use the story's default
   createdAt: string;
   updatedAt: string;
 };

@@ -13,6 +13,7 @@
     "@spoosh/core": "^0.18.3",
     "@spoosh/plugin-cache": "^0.7.0",
     "@spoosh/plugin-invalidation": "^0.11.0",
+    "@spoosh/plugin-optimistic": "^0.10.0",
     "@spoosh/react": "^0.15.4",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.114.0",

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, CircleCheck, CircleAlert, Pencil } from "lucide-react";
 import { Select, SelectOption, Dialog, Input } from "@geckoui/geckoui";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ChapterControlsMenu } from "@/components/ChapterControlsMenu";
 import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
 import { useRead, useWrite } from "@/lib/spoosh";
 import type { SaveStatus } from "@/components/ScriptEditor";
@@ -63,6 +64,8 @@ export function ChapterHeader({
   chapterTitle,
   active,
   styleName,
+  storyAspectRatio,
+  chapterAspectRatio,
   saveStatus = "idle",
 }: {
   storyId: string;
@@ -71,6 +74,8 @@ export function ChapterHeader({
   chapterTitle: string;
   active: (typeof TABS)[number]["key"];
   styleName: string;
+  storyAspectRatio: string;
+  chapterAspectRatio: string | null;
   saveStatus?: SaveStatus;
 }) {
   const router = useRouter();
@@ -82,7 +87,7 @@ export function ChapterHeader({
     await patchChapter({
       params: { id: chapterId },
       body: { title: next },
-      invalidate: [`stories/${storyId}`, "chapters"],
+      invalidate: [`stories/${storyId}`, "chapters/*", `chapters/${chapterId}`],
     });
   }
 
@@ -142,10 +147,13 @@ export function ChapterHeader({
       </nav>
 
       <div className="flex items-center justify-end gap-3">
-        <span className="text-[13px] text-fg-3">Style</span>
-        <div className="flex items-center gap-6 rounded-lg border border-line-2 px-3 py-2 text-sm font-medium text-fg">
-          {styleName}
-        </div>
+        <ChapterControlsMenu
+          storyId={storyId}
+          chapterId={chapterId}
+          styleName={styleName}
+          storyAspectRatio={storyAspectRatio}
+          chapterAspectRatio={chapterAspectRatio}
+        />
         <AccountMenu />
       </div>
     </header>

@@ -1,5 +1,4 @@
 import type {
-  VisualStyle,
   Story,
   Chapter,
   BibleEntry,
@@ -8,18 +7,9 @@ import type {
   Shot,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
+import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
 
 type Row = Record<string, unknown>;
-
-export function mapVisualStyle(r: ResolvedVisualStyle): VisualStyle {
-  return {
-    id: r.id,
-    name: r.name,
-    description: r.description,
-    swatch: r.swatch,
-    locked: r.locked,
-  };
-}
 
 export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
   return {
@@ -29,6 +19,7 @@ export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
     visualStyleId: (r.visual_style_id as string) ?? null,
     visualStyleName: style?.name ?? null,
     visualStyleDescription: style?.description ?? null,
+    aspectRatio: (r.aspect_ratio as string) ?? DEFAULT_ASPECT_RATIO,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
     deletedAt: (r.deleted_at as string) ?? null,
@@ -43,6 +34,7 @@ export function mapChapter(r: Row): Chapter {
     title: r.title as string,
     status: r.status as Chapter["status"],
     script: r.script ?? null,
+    aspectRatio: (r.aspect_ratio as string) ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };

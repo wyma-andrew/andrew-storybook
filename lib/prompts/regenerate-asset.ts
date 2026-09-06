@@ -3,7 +3,10 @@ import { styleContextBlock } from "./shared";
 export const REGENERATE_SCHEMA = {
   type: "object",
   properties: {
-    realPrompt: { type: "string", description: "entity-specific visual description ONLY, per the rules given." },
+    realPrompt: {
+      type: "string",
+      description: "entity-specific visual description ONLY, per the rules given.",
+    },
   },
   required: ["realPrompt"],
   additionalProperties: false,

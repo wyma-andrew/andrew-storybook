@@ -1,24 +1,24 @@
-// Admin-predefined visual styles (global built-ins). Was the DB-backed
-// `visual_styles` table rows with scope='global', source='built_in' —
-// extracted here verbatim from the live row(s). Locked: not user-editable
-// or removable. To change these, edit this file directly.
-//
-// `id` is a stable slug (not a uuid) so app code can address a built-in
-// style the same way it addresses a user-created (DB) style.
+// Admin-predefined visual styles — internal-use project, no self-serve style
+// editor. To add, edit, or remove a style, change this file directly (no DB,
+// no "+ New style" UI).
 
-export interface BuiltInVisualStyle {
-  id: string;
+export interface VisualStylePreset {
+  id: string; // stable slug — referenced by stories.visual_style_id
   name: string;
-  description: string;
   swatch: string;
+  description: string;
 }
 
-export const BUILT_IN_VISUAL_STYLES: BuiltInVisualStyle[] = [
+export const VISUAL_STYLES: VisualStylePreset[] = [
   {
     id: "3d-animation",
     name: "3D Animation",
+    swatch: "#7ea8d8",
     description:
       "Vibrant, premium cinematic 3D animation. Volumetric lighting, subsurface scattering, rich tactile textures. Exaggerated, highly expressive character designs with prominent facial features and vivid emotional depth. Characters ignore the camera. Uncropped full frame, textless, no letterboxing.",
-    swatch: "#7ea8d8",
   },
 ];
+
+export function findVisualStyle(id: string | null | undefined): VisualStylePreset | undefined {
+  return id ? VISUAL_STYLES.find((s) => s.id === id) : undefined;
+}

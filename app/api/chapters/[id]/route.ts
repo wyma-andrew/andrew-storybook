@@ -18,6 +18,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.title !== undefined) patch.title = body.title;
   if (body.script !== undefined) patch.script = body.script;
   if (body.status !== undefined) patch.status = body.status;
+  if (body.aspectRatio !== undefined) patch.aspect_ratio = body.aspectRatio;
   const { data, error } = await db.from("chapters").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(mapChapter(data));

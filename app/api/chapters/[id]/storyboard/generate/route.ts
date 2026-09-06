@@ -11,7 +11,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: chapter, error: chErr } = await db
     .from("chapters")
-    .select("id, story_id, script")
+    .select("id, story_id, script, aspect_ratio")
     .eq("id", id)
     .single();
   if (chErr) return NextResponse.json({ error: chErr.message }, { status: 404 });
@@ -23,18 +23,19 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }] = await Promise.all([
     db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", id),
-    db.from("stories").select("visual_style_id").eq("id", chapter.story_id).single(),
+    db.from("stories").select("visual_style_id, aspect_ratio").eq("id", chapter.story_id).single(),
   ]);
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, story?.visual_style_id);
+  const style = await resolveVisualStyle(story?.visual_style_id);
   const styleContext = style?.description ?? null;
 
   const assetContext = (assets ?? [])
     .map((a) => `${a.kind === "character" ? "Character" : "Location"} — ${a.name} (${a.meta}): ${a.real_prompt}`)
     .join("\n");
 
-  const scenes = await generateStoryboard(scriptText, assetContext, styleContext);
+  const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
+  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio);
 
   const { data: oldScenes } = await db.from("scenes").select("id").eq("chapter_id", id);
   if (oldScenes?.length) {

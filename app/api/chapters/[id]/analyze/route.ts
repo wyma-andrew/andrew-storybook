@@ -31,10 +31,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   ]);
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, story?.visual_style_id);
-  const styleContext = style?.description ?? null;
+  const style = await resolveVisualStyle(story?.visual_style_id);
 
-  const extracted = await extractAssets(scriptText, styleContext);
+  const extracted = await extractAssets(scriptText, style?.description ?? null);
 
   const rows = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const })),

@@ -1,4 +1,5 @@
 import { styleContextBlock } from "./shared";
+import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
 
 export const STORYBOARD_SCHEMA = {
   type: "object",
@@ -23,7 +24,10 @@ export const STORYBOARD_SCHEMA = {
                   description:
                     "Recommended clip duration in seconds for AI video generation (Google Flow etc). Hard cap at 10 — most AI video tools cannot export clips longer than 10s.",
                 },
-                aspect: { type: "string", description: "e.g. '16:9'" },
+                aspect: {
+                  type: "string",
+                  description: "Always set to this chapter's fixed aspect ratio, given below. Same value for every shot.",
+                },
                 camera: { type: "string", description: "e.g. 'static', 'slow push-in'" },
                 prompt: {
                   type: "string",
@@ -86,11 +90,14 @@ export const STORYBOARD_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export function storyboardSystemPrompt(styleContext?: string | null) {
+export function storyboardSystemPrompt(styleContext?: string | null, aspectRatio: string = DEFAULT_ASPECT_RATIO) {
   return (
     "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a full, self-contained, copyable image generation prompt that folds in the given character/location identity descriptions, plus a Google Flow (image-to-video) prompt. " +
     "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...) — start a new scene at each one, [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure.\n\n" +
-    "Camera Variety: within a scene, do not repeat the same flat angle (e.g. plain medium shot) back-to-back across shots — vary coverage the way a real shot list does. When a shot continues a conversation or beat already established earlier in the scene, prefer 'Over-the-shoulder shot', 'Reaction shot', 'Panning shot', or a distinct new angle over repeating the previous shot's framing verbatim — this also hides small continuity drift between separately-generated shot images, since a deliberate angle change reads as a cut, not an error.\n\n" +
+    `Aspect Ratio & Visual Composition: this chapter's fixed aspect ratio is '${aspectRatio}' — set every shot's \`aspect\` to exactly this value, no exceptions. Compose every shot's \`prompt\`/\`endFramePrompt\` for this ratio, don't just label it:\n` +
+    "- 9:16 (Vertical): frame subjects vertically — tight side margins, vertical/stacked composition (top-to-bottom motion, tall environments). Prioritize Medium Shots, Close-ups, Medium Close-ups, and vertical tilts/pan-ups; avoid Wide or Extreme Wide shots where the subject gets lost in the narrow horizontal frame. Do NOT include wide-horizontal composition language (e.g. 'wide panoramic view', 'expansive horizon line', 'sweeping landscape framing').\n" +
+    "- 16:9 (Widescreen): frame subjects horizontally using the Rule of Thirds — emphasize depth, background context, and horizontal scale. Prioritize Wide Shots, Extreme Wide Shots, Establishing Shots, and horizontal tracking shots to maximize environmental detail. Do NOT include constrained-vertical composition language (e.g. 'tight vertical crop', 'tall narrow framing').\n\n" +
+    "Camera Variety: within the ratio-appropriate shot types above, do not repeat the same flat angle back-to-back across shots in a scene — vary coverage the way a real shot list does. When a shot continues a conversation or beat already established earlier in the scene, prefer 'Over-the-shoulder shot', 'Reaction shot', 'Panning shot', or a distinct new angle (still within the ratio's favored shot types) over repeating the previous shot's framing verbatim — this also hides small continuity drift between separately-generated shot images, since a deliberate angle change reads as a cut, not an error.\n\n" +
     "Video Generation Strategy (Start & End Frame Interpolation): for every shot, decide frameMode by checking continuity with the NEXT shot. Default to 'start_frame_only' — most shot-to-shot transitions in a script are cuts (new angle, new beat, new speaker, new action), not continuous motion. Only use 'start_and_end_frame' when you can point to a specific, concrete reason the two shots are the SAME uninterrupted camera move (identical camera position/angle and framing, same subject, action physically continuing frame-to-frame with no cut). If in doubt, use 'start_frame_only'.\n" +
     "1. 'start_and_end_frame' (same uninterrupted camera move into the next shot): set endFramePrompt to an image prompt matching the opening state of the NEXT shot (i.e. this shot's End Frame IS the next shot's Start Frame — repeat that next shot's Start Frame prompt here verbatim so this shot stays self-contained). videoPrompt should focus on the camera motion, subject movement, and transition bridging Start Frame to End Frame.\n" +
     "2. 'start_frame_only' (cut, angle change, new beat, new location, or default when unsure): endFramePrompt = null. videoPrompt should focus purely on the isolated action/movement originating from the Start Frame — do not force an End Frame.\n" +

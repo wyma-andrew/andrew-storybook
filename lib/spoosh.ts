@@ -4,16 +4,8 @@ import { Spoosh } from "@spoosh/core";
 import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
-import type {
-  VisualStyle,
-  Story,
-  StoryListItem,
-  Chapter,
-  BibleEntry,
-  ChapterAsset,
-  Scene,
-  Me,
-} from "@/lib/api/types";
+import { optimisticPlugin } from "@spoosh/plugin-optimistic";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, Scene, Me } from "@/lib/api/types";
 
 type ApiSchema = {
   "auth/me": {
@@ -31,21 +23,21 @@ type ApiSchema = {
   "auth/password": {
     PATCH: { data: null; body: { password: string } };
   };
-  "visual-styles": {
-    GET: { data: VisualStyle[] };
-    POST: { data: VisualStyle; body: { name: string; description?: string; swatch?: string } };
-  };
-  "visual-styles/:id": {
-    PATCH: { data: VisualStyle; body: Partial<{ name: string; description: string; swatch: string }> };
-    DELETE: { data: null };
-  };
   stories: {
     GET: { data: StoryListItem[] };
     POST: { data: Story; body: { title: string; description?: string; visualStyleId?: string | null } };
   };
   "stories/:id": {
     GET: { data: Story & { chapters: Chapter[] } };
-    PATCH: { data: Story; body: Partial<{ title: string; description: string; visualStyleId: string | null }> };
+    PATCH: {
+      data: Story;
+      body: Partial<{
+        title: string;
+        description: string;
+        visualStyleId: string | null;
+        aspectRatio: string;
+      }>;
+    };
     DELETE: { data: null };
   };
   "stories/trash": {
@@ -69,7 +61,15 @@ type ApiSchema = {
   };
   "chapters/:id": {
     GET: { data: Chapter };
-    PATCH: { data: Chapter; body: Partial<{ title: string; script: unknown; status: Chapter["status"] }> };
+    PATCH: {
+      data: Chapter;
+      body: Partial<{
+        title: string;
+        script: unknown;
+        status: Chapter["status"];
+        aspectRatio: string | null;
+      }>;
+    };
     DELETE: { data: null };
   };
   "chapters/:id/duplicate": {
@@ -109,6 +109,7 @@ type ApiSchema = {
 const spoosh = new Spoosh<ApiSchema, { error: string }>("/api").use([
   cachePlugin(),
   invalidationPlugin(),
+  optimisticPlugin(),
 ]);
 
 export const { useRead, useWrite, usePages, useQueue, useSubscription } = create(spoosh);

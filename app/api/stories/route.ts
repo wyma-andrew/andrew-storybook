@@ -13,9 +13,9 @@ export async function GET() {
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const styles = await resolveVisualStyles(db, data.map((r) => r.visual_style_id as string | null));
+  const styles = await resolveVisualStyles(data.map((r) => r.visual_style_id as string | null));
   const mapped = data.map((r) => ({
-    ...mapStory(r, styles.get(r.visual_style_id as string) ?? null),
+    ...mapStory(r, styles.get((r.visual_style_id as string) ?? "") ?? null),
     chapterCount: (r.chapters as { count: number }[] | null)?.[0]?.count ?? 0,
   }));
   return NextResponse.json(mapped);
@@ -37,6 +37,6 @@ export async function POST(req: NextRequest) {
     .select("*")
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, data.visual_style_id);
+  const style = await resolveVisualStyle(data.visual_style_id);
   return NextResponse.json(mapStory(data, style));
 }

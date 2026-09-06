@@ -173,6 +173,8 @@ export default function AssetsPage() {
         chapterTitle={chapter.title}
         active="assets"
         styleName={story.visualStyleName ?? "None"}
+        storyAspectRatio={story.aspectRatio}
+        chapterAspectRatio={chapter.aspectRatio}
       />
 
       <Toolbar>

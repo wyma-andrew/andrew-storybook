@@ -72,12 +72,13 @@ export type GeneratedScene = { title: string; slug: string; shots: GeneratedShot
 export async function generateStoryboard(
   scriptText: string,
   assetContext: string,
-  styleContext?: string | null
+  styleContext?: string | null,
+  aspectRatio?: string
 ): Promise<GeneratedScene[]> {
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
-      { role: "system", content: storyboardSystemPrompt(styleContext) },
+      { role: "system", content: storyboardSystemPrompt(styleContext, aspectRatio) },
       { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
     ],
     response_format: {

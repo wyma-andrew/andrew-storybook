@@ -72,6 +72,8 @@ export default function ScriptPage() {
         chapterTitle={chapter.title}
         active="script"
         styleName={story.visualStyleName ?? "None"}
+        storyAspectRatio={story.aspectRatio}
+        chapterAspectRatio={chapter.aspectRatio}
         saveStatus={saveStatus}
       />
 

@@ -8,18 +8,18 @@ import { LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input, Textarea, Select, SelectOption } from "@geckoui/geckoui";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
-import { useRead, useWrite } from "@/lib/spoosh";
+import { useWrite } from "@/lib/spoosh";
+import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 
 export default function CreateStoryPage() {
   const router = useRouter();
-  const { data: styles } = useRead((api) => api("visual-styles").GET());
   const { trigger: createStory, loading } = useWrite((api) => api("stories").POST());
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [styleId, setStyleId] = useState<string | null>(null);
 
-  const selected = styleId ?? styles?.[0]?.id ?? null;
+  const selected = styleId ?? VISUAL_STYLES[0]?.id ?? null;
 
   async function handleCreate() {
     if (!title.trim()) return;
@@ -57,8 +57,8 @@ export default function CreateStoryPage() {
           </Field>
 
           <Field label="Visual style" hint="You can switch to a custom style for this story later, from Story options.">
-            <Select value={selected ?? ""} onChange={setStyleId} placeholder="Choose a style" disabled={!styles}>
-              {styles?.map((s) => (
+            <Select value={selected ?? ""} onChange={setStyleId} placeholder="Choose a style">
+              {VISUAL_STYLES.map((s) => (
                 <SelectOption key={s.id} value={s.id} label={s.name} />
               ))}
             </Select>

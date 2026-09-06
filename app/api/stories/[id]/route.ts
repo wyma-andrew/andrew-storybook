@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   ]);
   if (sErr) return NextResponse.json({ error: sErr.message }, { status: 404 });
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, story.visual_style_id);
+  const style = await resolveVisualStyle(story.visual_style_id);
   return NextResponse.json({ ...mapStory(story, style), chapters: chapters.map(mapChapter) });
 }
 
@@ -24,9 +24,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.title !== undefined) patch.title = body.title;
   if (body.description !== undefined) patch.description = body.description;
   if (body.visualStyleId !== undefined) patch.visual_style_id = body.visualStyleId;
+  if (body.aspectRatio !== undefined) patch.aspect_ratio = body.aspectRatio;
   const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const style = await resolveVisualStyle(db, data.visual_style_id);
+  const style = await resolveVisualStyle(data.visual_style_id);
   return NextResponse.json(mapStory(data, style));
 }
 

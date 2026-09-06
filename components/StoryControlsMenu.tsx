@@ -4,26 +4,34 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { Select, SelectOption, ConfirmDialog } from "@geckoui/geckoui";
+import { Select, SelectOption, ConfirmDialog, toast } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
-import { useRead, useWrite } from "@/lib/spoosh";
+import { useWrite } from "@/lib/spoosh";
+import { ASPECT_RATIOS } from "@/lib/constants/aspect-ratios";
+import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 
 export function StoryControlsMenu({
   storyId,
   storyTitle,
   currentStyleId,
-  currentStyleName,
+  currentAspectRatio,
 }: {
   storyId: string;
   storyTitle: string;
   currentStyleId: string | null;
-  currentStyleName: string | null;
+  currentAspectRatio: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const { data: styles } = useRead((api) => api("visual-styles").GET(), { enabled: open });
+  // A story's visualStyleId can be a leftover reference from before styles
+  // moved into code (e.g. a deleted DB row's uuid) — the server (see
+  // lib/visual-styles.ts resolveOrDefault) already falls back to the single
+  // default style for any id that doesn't resolve, so mirror that here
+  // rather than showing the raw dangling id or a false "None set".
+  const resolvedStyleId = VISUAL_STYLES.some((s) => s.id === currentStyleId) ? currentStyleId : VISUAL_STYLES[0]?.id ?? null;
+
   const { trigger: patchStory } = useWrite((api) => api("stories/:id").PATCH());
   const { trigger: deleteStory } = useWrite((api) => api("stories/:id").DELETE());
 
@@ -36,7 +44,27 @@ export function StoryControlsMenu({
   }, []);
 
   async function handleStyleChange(value: string) {
-    await patchStory({ params: { id: storyId }, body: { visualStyleId: value } });
+    const picked = VISUAL_STYLES.find((s) => s.id === value);
+    await patchStory({
+      params: { id: storyId },
+      body: { visualStyleId: value },
+      optimistic: (cache) =>
+        cache(`stories/${storyId}`).set((current) => ({
+          ...current,
+          visualStyleId: value,
+          visualStyleName: picked?.name ?? current.visualStyleName,
+          visualStyleDescription: picked?.description ?? current.visualStyleDescription,
+        })),
+    });
+  }
+
+  async function handleAspectChange(value: string) {
+    await patchStory({
+      params: { id: storyId },
+      body: { aspectRatio: value },
+      optimistic: (cache) => cache(`stories/${storyId}`).set((current) => ({ ...current, aspectRatio: value })),
+    });
+    toast.info("Aspect ratio updated — regenerate a chapter's storyboard to apply it to shots.");
   }
 
   function handleDelete() {
@@ -69,14 +97,17 @@ export function StoryControlsMenu({
         <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[260px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)]">
           <div className="px-3.5 py-3">
             <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
-            <Select
-              value={currentStyleId ?? ""}
-              onChange={handleStyleChange}
-              placeholder={currentStyleName ?? "None set"}
-              disabled={!styles}
-            >
-              {styles?.map((s) => (
+            <Select value={resolvedStyleId ?? ""} onChange={handleStyleChange} placeholder="None set">
+              {VISUAL_STYLES.map((s) => (
                 <SelectOption key={s.id} value={s.id} label={s.name} />
+              ))}
+            </Select>
+          </div>
+          <div className="border-t border-line px-3.5 py-3">
+            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Aspect ratio</label>
+            <Select value={currentAspectRatio} onChange={handleAspectChange}>
+              {ASPECT_RATIOS.map((r) => (
+                <SelectOption key={r.value} value={r.value} label={r.label} />
               ))}
             </Select>
           </div>
