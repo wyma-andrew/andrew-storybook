@@ -9,17 +9,20 @@ import { Button } from "@/components/ui/Button";
 import { useWrite } from "@/lib/spoosh";
 import { ASPECT_RATIOS } from "@/lib/constants/aspect-ratios";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
+import { REGIONS, type Region } from "@/lib/constants/regions";
 
 export function StoryControlsMenu({
   storyId,
   storyTitle,
   currentStyleId,
   currentAspectRatio,
+  currentRegion,
 }: {
   storyId: string;
   storyTitle: string;
   currentStyleId: string | null;
   currentAspectRatio: string;
+  currentRegion: Region;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -67,6 +70,16 @@ export function StoryControlsMenu({
     toast.info("Aspect ratio updated — regenerate a chapter's storyboard to apply it to shots.");
   }
 
+  async function handleRegionChange(value: string) {
+    const region = value as Region;
+    await patchStory({
+      params: { id: storyId },
+      body: { region },
+      optimistic: (cache) => cache(`stories/${storyId}`).set((current) => ({ ...current, region })),
+    });
+    toast.info("Region updated — re-run asset extraction/regeneration/storyboard to apply it.");
+  }
+
   function handleDelete() {
     setOpen(false);
     ConfirmDialog.show({
@@ -107,6 +120,14 @@ export function StoryControlsMenu({
             <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Aspect ratio</label>
             <Select value={currentAspectRatio} onChange={handleAspectChange}>
               {ASPECT_RATIOS.map((r) => (
+                <SelectOption key={r.value} value={r.value} label={r.label} />
+              ))}
+            </Select>
+          </div>
+          <div className="border-t border-line px-3.5 py-3">
+            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Region</label>
+            <Select value={currentRegion} onChange={handleRegionChange}>
+              {REGIONS.map((r) => (
                 <SelectOption key={r.value} value={r.value} label={r.label} />
               ))}
             </Select>

@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
+import { DEFAULT_REGION, isRegion } from "@/lib/constants/regions";
 
 type Row = Record<string, unknown>;
 
@@ -20,6 +21,7 @@ export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
     visualStyleName: style?.name ?? null,
     visualStyleDescription: style?.description ?? null,
     aspectRatio: (r.aspect_ratio as string) ?? DEFAULT_ASPECT_RATIO,
+    region: isRegion(r.region) ? r.region : DEFAULT_REGION,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
     deletedAt: (r.deleted_at as string) ?? null,

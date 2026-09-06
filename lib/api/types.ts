@@ -6,6 +6,7 @@ export type Story = {
   visualStyleName: string | null;
   visualStyleDescription: string | null;
   aspectRatio: string;
+  region: "english" | "myanmar";
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

@@ -4,6 +4,8 @@ import { mapChapterAsset } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { regenerateAssetPrompt } from "@/lib/openai";
 import { resolveVisualStyle } from "@/lib/visual-styles";
+import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 // Regenerates one chapter_asset's real_prompt only (per-card "Regenerate"), leaving
 // every other asset on the chapter untouched. If this asset is "matched", the new
@@ -29,14 +31,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: story, error: stErr } = await db
     .from("stories")
-    .select("visual_style_id")
+    .select("visual_style_id, region")
     .eq("id", chapter.story_id)
     .single();
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
   const style = await resolveVisualStyle(story?.visual_style_id);
-  const styleContext = style?.description ?? null;
+  const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
+  const styleContext = resolveStyleContext(region, style?.description);
 
-  const realPrompt = await regenerateAssetPrompt(scriptText, asset.kind, asset.name, asset.meta, styleContext);
+  const realPrompt = await regenerateAssetPrompt(scriptText, asset.kind, asset.name, asset.meta, styleContext, region);
 
   const { data, error } = await db
     .from("chapter_assets")

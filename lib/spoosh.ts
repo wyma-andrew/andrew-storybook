@@ -36,6 +36,7 @@ type ApiSchema = {
         description: string;
         visualStyleId: string | null;
         aspectRatio: string;
+        region: "english" | "myanmar";
       }>;
     };
     DELETE: { data: null };

@@ -2,8 +2,12 @@
 // the AI is told not to bake style keywords into them. The actual style tag
 // is appended here, at copy time, so switching a story's Style never
 // requires regenerating prompts.
+// Style leads (not trails) the prompt — image models tend to weight earlier
+// tokens more strongly, and a style tag stuck at the end was getting drowned
+// out by long, hyper-specific content (real materials/objects), especially
+// for Myanmar-adapted content pulling toward photorealism.
 export function withStyle(prompt: string, styleContext?: string | null): string {
-  return styleContext ? `${prompt}\n\n[Style] ${styleContext}` : prompt;
+  return styleContext ? `[Style] ${styleContext}\n\n${prompt}` : prompt;
 }
 
 // Character/location prompts (ChapterAsset.realPrompt) hold entity-specific
@@ -14,7 +18,7 @@ export function withStyle(prompt: string, styleContext?: string | null): string 
 // editing the constant takes effect immediately on every future copy, no
 // regeneration needed.
 export function withAssetContext(realPrompt: string, systemPrompt?: string | null, styleContext?: string | null): string {
-  const parts = [systemPrompt, realPrompt, styleContext ? `[Style] ${styleContext}` : null].filter(Boolean);
+  const parts = [styleContext ? `[Style] ${styleContext}` : null, systemPrompt, realPrompt].filter(Boolean);
   return parts.join("\n\n");
 }
 

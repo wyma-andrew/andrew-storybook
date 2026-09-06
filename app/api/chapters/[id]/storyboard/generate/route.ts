@@ -4,6 +4,8 @@ import { mapScene } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { generateStoryboard } from "@/lib/openai";
 import { resolveVisualStyle } from "@/lib/visual-styles";
+import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,19 +25,20 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }] = await Promise.all([
     db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", id),
-    db.from("stories").select("visual_style_id, aspect_ratio").eq("id", chapter.story_id).single(),
+    db.from("stories").select("visual_style_id, aspect_ratio, region").eq("id", chapter.story_id).single(),
   ]);
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
   const style = await resolveVisualStyle(story?.visual_style_id);
-  const styleContext = style?.description ?? null;
+  const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
+  const styleContext = resolveStyleContext(region, style?.description);
 
   const assetContext = (assets ?? [])
     .map((a) => `${a.kind === "character" ? "Character" : "Location"} — ${a.name} (${a.meta}): ${a.real_prompt}`)
     .join("\n");
 
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
-  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio);
+  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio, region);
 
   const { data: oldScenes } = await db.from("scenes").select("id").eq("chapter_id", id);
   if (oldScenes?.length) {

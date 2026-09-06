@@ -1,4 +1,4 @@
-import { styleContextBlock } from "./shared";
+import { styleContextBlock, myanmarAdaptationBlock, locationSpatialLayoutBlock } from "./shared";
 
 export const ASSET_SCHEMA = {
   type: "object",
@@ -30,7 +30,7 @@ export const ASSET_SCHEMA = {
           realPrompt: {
             type: "string",
             description:
-              "entity-specific visual description ONLY: structure, materials, props, layout, fixed signage/text. No camera, lighting, or style wording. " +
+              "Structured LOCATION / FIXED LAYOUT / SPATIAL RULES format (see system prompt) — entity-specific visual facts and a fixed, unambiguous spatial layout ONLY: structure, materials, props, and where each fixed object/anchor sits and faces. No camera, lighting, or style wording. " +
               "Describe the EMPTY environment only — never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present. Character presence is added separately per-shot.",
           },
         },
@@ -48,6 +48,20 @@ export function extractAssetsSystemPrompt(styleContext?: string | null) {
     "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
     "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
     "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+    locationSpatialLayoutBlock() +
     styleContextBlock(styleContext)
+  );
+}
+
+// Myanmar-region variant — separate function so the English flow above
+// stays untouched while this is iterated on independently.
+export function extractAssetsSystemPromptMyanmar(styleContext?: string | null) {
+  return (
+    "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
+    "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
+    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+    locationSpatialLayoutBlock() +
+    styleContextBlock(styleContext) +
+    myanmarAdaptationBlock()
   );
 }

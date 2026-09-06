@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
 import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset } from "@/lib/api/types";
 
 function AssetCard({
@@ -164,6 +165,8 @@ export default function AssetsPage() {
 
   if (!story || !chapter) return null;
 
+  const styleContext = resolveStyleContext(story.region, story.visualStyleDescription);
+
   return (
     <Frame>
       <ChapterHeader
@@ -218,7 +221,7 @@ export default function AssetsPage() {
                       key={a.id}
                       asset={a}
                       systemPrompt={characterPreset}
-                      styleContext={story?.visualStyleDescription}
+                      styleContext={styleContext}
                     />
                   ))}
                 </div>
@@ -236,7 +239,7 @@ export default function AssetsPage() {
                       key={a.id}
                       asset={a}
                       systemPrompt={locationPreset}
-                      styleContext={story?.visualStyleDescription}
+                      styleContext={styleContext}
                     />
                   ))}
                 </div>

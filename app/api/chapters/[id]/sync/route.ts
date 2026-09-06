@@ -5,6 +5,8 @@ import { tiptapToText } from "@/lib/tiptap-text";
 import { extractAssets } from "@/lib/openai";
 import { findMatch, normalizeName } from "@/lib/api/match";
 import { resolveVisualStyle } from "@/lib/visual-styles";
+import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 // Re-Sync with story: re-runs extraction against the current script.
 // - Characters/locations not already on this chapter (by name) are INSERTED.
@@ -32,15 +34,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const [{ data: bible, error: bErr }, { data: story, error: stErr }, { data: existing, error: exErr }] =
     await Promise.all([
       db.from("bible_entries").select("*").eq("story_id", chapter.story_id),
-      db.from("stories").select("visual_style_id").eq("id", chapter.story_id).single(),
+      db.from("stories").select("visual_style_id, region").eq("id", chapter.story_id).single(),
       db.from("chapter_assets").select("id, name, kind, match_status").eq("chapter_id", id),
     ]);
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
   if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
   const style = await resolveVisualStyle(story?.visual_style_id);
+  const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
 
-  const extracted = await extractAssets(scriptText, style?.description ?? null);
+  const extracted = await extractAssets(scriptText, resolveStyleContext(region, style?.description), region);
   const extractedAssets = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const })),
     ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),

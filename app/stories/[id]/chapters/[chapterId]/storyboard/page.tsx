@@ -12,6 +12,7 @@ import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/comp
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 function PromptBox({ label, text, onCopy }: { label: string; text: string; onCopy: () => void }) {
   return (
@@ -95,6 +96,8 @@ export default function StoryboardPage() {
     totalDurationS >= 60 ? `${Math.floor(totalDurationS / 60)}m ${totalDurationS % 60}s` : `${totalDurationS}s`;
 
   if (!story || !chapter) return null;
+
+  const styleContext = resolveStyleContext(story.region, story.visualStyleDescription);
 
   return (
     <Frame>
@@ -256,14 +259,14 @@ export default function StoryboardPage() {
                       <PromptBox
                         label="Start Frame"
                         text={shot.prompt}
-                        onCopy={() => navigator.clipboard.writeText(withStyle(shot.prompt, story.visualStyleDescription))}
+                        onCopy={() => navigator.clipboard.writeText(withStyle(shot.prompt, styleContext))}
                       />
                       {shot.frameMode === "start_and_end_frame" && shot.endFramePrompt && (
                         <PromptBox
                           label="End Frame"
                           text={shot.endFramePrompt}
                           onCopy={() =>
-                            navigator.clipboard.writeText(withStyle(shot.endFramePrompt!, story.visualStyleDescription))
+                            navigator.clipboard.writeText(withStyle(shot.endFramePrompt!, styleContext))
                           }
                         />
                       )}

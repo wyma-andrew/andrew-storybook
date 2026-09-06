@@ -25,6 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.description !== undefined) patch.description = body.description;
   if (body.visualStyleId !== undefined) patch.visual_style_id = body.visualStyleId;
   if (body.aspectRatio !== undefined) patch.aspect_ratio = body.aspectRatio;
+  if (body.region !== undefined) patch.region = body.region;
   const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const style = await resolveVisualStyle(data.visual_style_id);
