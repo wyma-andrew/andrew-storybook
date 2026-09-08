@@ -58,14 +58,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       scene_id: sceneRow.id,
       index: j + 1,
       label: sh.label,
+      beat: sh.beat,
       duration_s: Math.min(Math.max(sh.durationS, 1), 10), // hard cap: most AI video tools can't export past 10s
       aspect: sh.aspect,
       camera: sh.camera,
       prompt: sh.prompt,
-      end_frame_prompt: sh.endFramePrompt,
       video_prompt: sh.videoPrompt,
-      frame_mode: sh.frameMode,
       assets_used: sh.assetsUsed,
+      start_state: sh.startState,
+      end_state: sh.endState,
     }));
     if (shotRows.length) {
       const { error: shErr } = await db.from("shots").insert(shotRows);

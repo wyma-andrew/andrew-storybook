@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2 } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2 } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
 import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
+import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset } from "@/lib/api/types";
 
@@ -76,23 +77,39 @@ function AssetCard({
 
       <CardFooter>
         {asset.matchStatus === "stale" ? (
-          <MiniLoadingButton className="flex-1 justify-center text-danger" onClick={confirmRemove} loading={removing}>
+          <MiniLoadingButton className="justify-center text-danger" onClick={confirmRemove} loading={removing}>
             <Trash2 size={12} /> Remove from chapter
           </MiniLoadingButton>
         ) : (
           <>
+            {asset.kind === "location" && (
+              <MiniButton
+                className="justify-center"
+                title="Generate this first — the approved plan is the geometry the wide view must match"
+                onClick={() =>
+                  // No styleContext: the plan is a flat schematic, and rendering it
+                  // in the story's visual style would make it decorative, not spatial.
+                  copyText(
+                    withAssetContext(asset.realPrompt, SYSTEM_PROMPTS.locationFloorPlan, null),
+                    `${asset.name} floor plan prompt`
+                  )
+                }
+              >
+                <Grid2x2 size={12} /> Copy floor plan
+              </MiniButton>
+            )}
             <MiniButton
-              className="flex-1 justify-center"
-              onClick={() => navigator.clipboard.writeText(withAssetContext(asset.realPrompt, systemPrompt, styleContext))}
+              className="justify-center"
+              onClick={() => copyText(withAssetContext(asset.realPrompt, systemPrompt, styleContext), `${asset.name} prompt`)}
             >
               Copy prompt
             </MiniButton>
-            <MiniLoadingButton className="flex-1 justify-center" onClick={confirmRegenerate} loading={regenerating}>
+            <MiniLoadingButton className="justify-center" onClick={confirmRegenerate} loading={regenerating}>
               <RefreshCw size={12} /> Regenerate
             </MiniLoadingButton>
             {asset.matchStatus === "new" && (
               <MiniLoadingButton
-                className="flex-1 justify-center text-accent"
+                className="justify-center text-accent"
                 onClick={() => promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })}
                 loading={loading}
               >
@@ -166,6 +183,13 @@ export default function AssetsPage() {
   if (!story || !chapter) return null;
 
   const styleContext = resolveStyleContext(story.region, story.visualStyleDescription);
+  // A location's wide view is copied with its floor plan attached, and the plan
+  // is a schematic, not a render of the finished room — so the style's
+  // "match the reference image" clause has to come off, or the copy asks for
+  // the plan's look back.
+  const locationStyleContext = resolveStyleContext(story.region, story.visualStyleDescription, {
+    referenceImageAttached: false,
+  });
 
   return (
     <Frame>
@@ -239,7 +263,7 @@ export default function AssetsPage() {
                       key={a.id}
                       asset={a}
                       systemPrompt={locationPreset}
-                      styleContext={styleContext}
+                      styleContext={locationStyleContext}
                     />
                   ))}
                 </div>

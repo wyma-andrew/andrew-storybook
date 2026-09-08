@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, Scene, Me } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, Scene, Shot, Me } from "@/lib/api/types";
 
 type ApiSchema = {
   "auth/me": {
@@ -94,6 +94,27 @@ type ApiSchema = {
   };
   "chapter-assets/:id/regenerate": {
     POST: { data: ChapterAsset };
+  };
+  "chapter-assets/:id/images": {
+    POST: { data: ReferenceImage; body: { angleLabel: string; imageUrl?: string | null; isCanonical?: boolean } };
+  };
+  "chapter-asset-images/:id": {
+    PATCH: { data: ReferenceImage; body: Partial<{ angleLabel: string; imageUrl: string | null; isCanonical: boolean }> };
+    DELETE: { data: null };
+  };
+  "chapter-asset-images/:id/promote": {
+    POST: { data: ReferenceImage };
+  };
+  "bible-entry-images/:id": {
+    PATCH: { data: ReferenceImage; body: Partial<{ angleLabel: string; imageUrl: string | null; isCanonical: boolean }> };
+    DELETE: { data: null };
+  };
+  "shots/:id": {
+    // null on a field clears the edit and restores the generated prompt
+    PATCH: {
+      data: Shot;
+      body: Partial<{ prompt: string | null; videoPrompt: string | null }>;
+    };
   };
   "chapters/:id/storyboard": {
     GET: { data: Scene[] };

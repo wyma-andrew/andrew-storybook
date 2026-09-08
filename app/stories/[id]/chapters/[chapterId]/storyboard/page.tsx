@@ -2,30 +2,216 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy, Square, Loader2 } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target } from "lucide-react";
+import { Textarea } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
-import { Button, MiniButton } from "@/components/ui/Button";
+import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { Tag, AccentTag } from "@/components/ui/Tag";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
+import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
+import type { Scene, Shot } from "@/lib/api/types";
 
-function PromptBox({ label, text, onCopy }: { label: string; text: string; onCopy: () => void }) {
+function PromptBox({
+  label,
+  text,
+  edited,
+  onCopy,
+  onSave,
+  onRestore,
+  saving,
+}: {
+  label: string;
+  text: string;
+  edited: boolean;
+  onCopy: () => void;
+  onSave: (next: string) => Promise<void>;
+  onRestore: () => Promise<void>;
+  saving: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(text);
+
+  // The saved value comes back through the refetched read, so follow it
+  // whenever we're not mid-edit (covers save, restore and regenerate).
+  useEffect(() => {
+    if (!editing) setDraft(text);
+  }, [text, editing]);
+
   return (
     <div className="mb-2 last:mb-0">
-      <div className="mb-1 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">{label}</div>
+      <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+        {label}
+        {edited && <Tag>Edited</Tag>}
+      </div>
       <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-[#080808] p-3">
-        <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">{text}</div>
-        <MiniButton className="shrink-0" onClick={onCopy}>
-          Copy
-        </MiniButton>
+        {editing ? (
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="min-h-[120px] flex-1 font-mono text-[12.5px]"
+          />
+        ) : (
+          <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">{text}</div>
+        )}
+        <div className="flex shrink-0 flex-col gap-1.5">
+          {editing ? (
+            <>
+              <MiniLoadingButton
+                loading={saving}
+                onClick={async () => {
+                  await onSave(draft);
+                  setEditing(false);
+                }}
+              >
+                Save
+              </MiniLoadingButton>
+              <MiniButton
+                ghost
+                onClick={() => {
+                  setDraft(text);
+                  setEditing(false);
+                }}
+              >
+                Cancel
+              </MiniButton>
+            </>
+          ) : (
+            <>
+              <MiniButton onClick={onCopy}>Copy</MiniButton>
+              <MiniButton ghost onClick={() => setEditing(true)} className="flex items-center gap-1">
+                <Pencil size={12} /> Edit
+              </MiniButton>
+              {edited && (
+                <MiniLoadingButton
+                  ghost
+                  loading={saving}
+                  onClick={onRestore}
+                  className="flex items-center gap-1"
+                  title="Restore generated version"
+                >
+                  <Undo2 size={12} /> Restore
+                </MiniLoadingButton>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+function ShotPrompts({
+  shot,
+  chapterId,
+  styleContext,
+}: {
+  shot: Shot;
+  chapterId: string;
+  styleContext: string | null;
+}) {
+  const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
+
+  // The storyboard is read as chapters/:id/storyboard, so a shots/:id mutation
+  // doesn't auto-invalidate it — name it explicitly.
+  const invalidate = [`chapters/${chapterId}/storyboard`];
+  const write = (body: Record<string, string | null>) => patchShot({ params: { id: shot.id }, body, invalidate });
+
+  return (
+    <>
+      <PromptBox
+        label="Start Frame"
+        text={shot.prompt}
+        edited={shot.promptEdited}
+        saving={saving}
+        onCopy={() => copyText(withStyle(shot.prompt, styleContext), "Start Frame prompt")}
+        onSave={async (next) => void (await write({ prompt: next }))}
+        onRestore={async () => void (await write({ prompt: null }))}
+      />
+      {shot.videoPrompt && (
+        <PromptBox
+          label="Video Prompt"
+          text={shot.videoPrompt}
+          edited={shot.videoPromptEdited}
+          saving={saving}
+          onCopy={() =>
+            copyText(withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext), "Video prompt")
+          }
+          onSave={async (next) => void (await write({ videoPrompt: next }))}
+          onRestore={async () => void (await write({ videoPrompt: null }))}
+        />
+      )}
+    </>
+  );
+}
+
+// Which already-generated shot images are worth attaching alongside this shot's
+// reference sheets. Reference sheets pin identity; a previously rendered shot
+// pins what the sheets can't — lighting, wardrobe as actually drawn, proportions
+// as the model resolved them — so a recurring CHARACTER is the only thing that
+// justifies one. Locations are already covered by their own reference sheet in
+// the "Attach:" row.
+//
+// Picking rules, in order:
+// - Search the whole chapter up to this shot, not just this scene: a character
+//   drifts hardest ACROSS scenes, which is exactly where a scene-scoped search
+//   goes silent.
+// - Never suggest a shot that contains a character this shot doesn't have —
+//   that character leaks into the generation.
+// - Prefer closer framing. The first shot of a scene is the establishing wide
+//   (see the storyboard prompt's Establishing Master Shot rule), where the
+//   character is smallest and least usable as an identity reference.
+// - Tie-break to the EARLIEST such shot, so every later shot keeps pointing at
+//   the same master rather than chaining copy-of-a-copy drift.
+const FRAMING_RANK: [RegExp, number][] = [
+  [/\b(close-?up|close|macro|insert|detail)\b/, 3],
+  [/\b(medium|two-?shot|over-?the-?shoulder|ots|reaction|portrait)\b/, 2],
+  [/\b(wide|establishing|extreme|aerial|master|panorama)\b/, 1],
+];
+
+function framingScore(shot: Shot): number {
+  const text = `${shot.label ?? ""} ${shot.camera ?? ""}`.toLowerCase();
+  for (const [re, score] of FRAMING_RANK) if (re.test(text)) return score;
+  return 2;
+}
+
+type ReferenceHint = { sceneIndex: number; shotIndex: number; names: string[] };
+
+function characterReferenceHints(scenes: Scene[], sceneIdx: number, shotIdx: number): ReferenceHint[] {
+  const shot = scenes[sceneIdx].shots[shotIdx];
+  const characters = shot.assetsUsed.filter((a) => a.kind === "character").map((a) => a.name);
+  if (!characters.length) return [];
+
+  const here = new Set(characters);
+  const prior: { sceneIndex: number; shot: Shot }[] = [];
+  for (let i = 0; i <= sceneIdx; i++) {
+    const shots = i === sceneIdx ? scenes[i].shots.slice(0, shotIdx) : scenes[i].shots;
+    for (const s of shots) prior.push({ sceneIndex: scenes[i].index, shot: s });
+  }
+
+  const byShot = new Map<string, ReferenceHint>();
+  for (const name of characters) {
+    const candidates = prior.filter(
+      ({ shot: s }) =>
+        s.assetsUsed.some((a) => a.kind === "character" && a.name === name) &&
+        s.assetsUsed.every((a) => a.kind !== "character" || here.has(a.name))
+    );
+    if (!candidates.length) continue;
+    const best = candidates.reduce((a, b) => {
+      const d = framingScore(b.shot) - framingScore(a.shot);
+      return d > 0 ? b : a; // ties keep `a`, the earlier shot
+    });
+    const key = `${best.sceneIndex}.${best.shot.index}`;
+    const hint = byShot.get(key) ?? { sceneIndex: best.sceneIndex, shotIndex: best.shot.index, names: [] };
+    hint.names.push(name);
+    byShot.set(key, hint);
+  }
+  return [...byShot.values()];
 }
 
 function collapsedStorageKey(chapterId: string) {
@@ -156,7 +342,7 @@ export default function StoryboardPage() {
             </EmptyCta>
           )}
 
-          {scenes?.map((scene) => {
+          {scenes?.map((scene, sceneIdx) => {
             const isCollapsed = collapsed.has(scene.id);
             return (
             <section
@@ -194,17 +380,7 @@ export default function StoryboardPage() {
               {!isCollapsed && (
               <div className="flex flex-col gap-3 px-4.5 py-4">
                 {scene.shots.map((shot, shotIdx) => {
-                  const priorShots = scene.shots.slice(0, shotIdx);
-                  let masterShotIndex: number | null = null;
-                  // Only a recurring CHARACTER justifies reusing a prior shot's rendered image — location
-                  // continuity is already covered by the location's own reference sheet (in "Attach:" above),
-                  // and reusing a shot that has a different, unrelated character baked into it would leak
-                  // that character into this shot's generation.
-                  for (const asset of shot.assetsUsed) {
-                    if (asset.kind !== "character") continue;
-                    const prior = priorShots.find((s) => s.assetsUsed.some((a) => a.kind === "character" && a.name === asset.name));
-                    if (prior && (masterShotIndex === null || prior.index < masterShotIndex)) masterShotIndex = prior.index;
-                  }
+                  const referenceHints = characterReferenceHints(scenes, sceneIdx, shotIdx);
 
                   const sceneName = scene.shots[0]?.label ?? scene.title;
                   const shotTitle = `${scene.index}.${shot.index} ${sceneName}${
@@ -225,7 +401,7 @@ export default function StoryboardPage() {
                         <MiniButton
                           ghost
                           className="!h-5.5 !w-5.5 !p-0"
-                          onClick={() => navigator.clipboard.writeText(shotTitle)}
+                          onClick={() => copyText(shotTitle, "Shot title")}
                           title="Copy shot title"
                         >
                           <Copy size={12} />
@@ -249,38 +425,42 @@ export default function StoryboardPage() {
                           ))}
                         </div>
                       )}
-                      {masterShotIndex !== null && (
-                        <div className="mb-2 flex items-center gap-1.5 text-[11.5px] text-isnew">
+                      {referenceHints.map((hint) => (
+                        <div
+                          key={`${hint.sceneIndex}.${hint.shotIndex}`}
+                          className="mb-2 flex items-center gap-1.5 text-[11.5px] text-isnew"
+                        >
                           <Paperclip size={12} className="shrink-0" />
-                          For continuity, also attach shot {scene.index}.{masterShotIndex}&apos;s generated image
-                          alongside the references above.
+                          For {hint.names.join(" and ")}&apos;s continuity, also attach shot {hint.sceneIndex}.
+                          {hint.shotIndex}&apos;s generated image alongside the references above.
+                        </div>
+                      ))}
+                      {shot.beat && (
+                        <div className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
+                          <Target size={12} className="mt-[3px] shrink-0" />
+                          <div>
+                            <span className="text-fg-2">Beat:</span> {shot.beat}
+                          </div>
                         </div>
                       )}
-                      <PromptBox
-                        label="Start Frame"
-                        text={shot.prompt}
-                        onCopy={() => navigator.clipboard.writeText(withStyle(shot.prompt, styleContext))}
-                      />
-                      {shot.frameMode === "start_and_end_frame" && shot.endFramePrompt && (
-                        <PromptBox
-                          label="End Frame"
-                          text={shot.endFramePrompt}
-                          onCopy={() =>
-                            navigator.clipboard.writeText(withStyle(shot.endFramePrompt!, styleContext))
-                          }
-                        />
+                      {(shot.startState || shot.endState) && (
+                        <div className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
+                          <GitCommitHorizontal size={12} className="mt-[3px] shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            {shot.startState && (
+                              <div>
+                                <span className="text-fg-2">Opens:</span> {shot.startState}
+                              </div>
+                            )}
+                            {shot.endState && shot.endState !== shot.startState && (
+                              <div>
+                                <span className="text-fg-2">Ends:</span> {shot.endState}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
-                      {shot.videoPrompt && (
-                        <PromptBox
-                          label="Video Prompt"
-                          text={shot.videoPrompt}
-                          onCopy={() =>
-                            navigator.clipboard.writeText(
-                              withFrameDescription(shot.videoPrompt!, shot.prompt, shot.endFramePrompt)
-                            )
-                          }
-                        />
-                      )}
+                      <ShotPrompts shot={shot} chapterId={chapterId} styleContext={styleContext} />
                     </div>
                   </div>
                   );

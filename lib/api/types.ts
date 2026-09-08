@@ -28,6 +28,16 @@ export type Chapter = {
   updatedAt: string;
 };
 
+// Locked reference image for a location asset (URL-only — no upload/Storage).
+// See ChapterAsset.images (chapter-scoped, pending) vs BibleEntry.images
+// (promoted, shared across every chapter reusing that location).
+export type ReferenceImage = {
+  id: string;
+  angleLabel: string;
+  imageUrl: string | null;
+  isCanonical: boolean;
+};
+
 export type BibleEntry = {
   id: string;
   storyId: string;
@@ -37,6 +47,7 @@ export type BibleEntry = {
   realPrompt: string;
   seed: string | null;
   locked: boolean;
+  images: ReferenceImage[];
 };
 
 export type ChapterAsset = {
@@ -48,20 +59,40 @@ export type ChapterAsset = {
   meta: string | null;
   realPrompt: string;
   matchStatus: "matched" | "new" | "local" | "stale";
+  images: ReferenceImage[];
 };
 
+// The shots table still carries frame_mode / end_frame_prompt /
+// end_frame_prompt_override columns from the removed start+end-frame
+// interpolation feature. It was generated for 0 of 154 shots — the model never
+// met its "same uninterrupted camera move into the next shot" condition — so
+// generation and UI for it are gone. Columns kept (all null) in case a
+// redesigned version returns: an end frame pinned to the shot's OWN closing
+// state, reused as the next shot's start image when the ledger says the state
+// carries over.
 export type Shot = {
   id: string;
   sceneId: string;
   index: number;
   label: string | null;
+  // Why this shot exists: the script line(s) it covers and what it adds over
+  // the previous shot. Generated metadata, read-only in the UI.
+  beat: string | null;
   durationS: number | null;
   aspect: string | null;
   camera: string | null;
+  // Effective prompts: the user's edit when there is one, else the generated text.
   prompt: string; // Start Frame image prompt
-  endFramePrompt: string | null; // set only when frameMode is "start_and_end_frame"
   videoPrompt: string | null; // Google Flow motion prompt (start->end or isolated action)
-  frameMode: "start_frame_only" | "start_and_end_frame";
+  // True while an edit overrides the generated text — the generated version is
+  // still on the row and comes back by clearing the override.
+  promptEdited: boolean;
+  videoPromptEdited: boolean;
+  // Continuity ledger: startState should match the previous shot's endState
+  // unless the script changes something between them. Generated metadata —
+  // read-only in the UI, so no *_override counterpart like the prompts have.
+  startState: string | null;
+  endState: string | null;
   assetsUsed: ShotAsset[]; // which known characters/locations to attach as reference when generating this shot
 };
 

@@ -57,7 +57,11 @@ function ImportScreenplayDialog({
       </div>
 
       <p className="text-[12.5px] text-fg-3">
-        Paste screenplay-formatted text below — it&apos;ll be inserted as Title, Scene, Character, Dialog, etc.
+        Paste screenplay text below. Prefix each line with its block label —{" "}
+        <code className="text-fg-2">Title:</code>, <code className="text-fg-2">Scene:</code>,{" "}
+        <code className="text-fg-2">Action:</code>, <code className="text-fg-2">Character:</code>,{" "}
+        <code className="text-fg-2">Dialog:</code>, <code className="text-fg-2">Transition:</code> — so it works in any
+        language. Copy the format guide for an example. Plain screenplay text is imported too, best-effort.
       </p>
 
       <Textarea

@@ -9,6 +9,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 import { ChapterControlsMenu } from "@/components/ChapterControlsMenu";
 import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { DEFAULT_REGION } from "@/lib/constants/regions";
 import type { SaveStatus } from "@/components/ScriptEditor";
 
 const TABS = [
@@ -151,6 +152,7 @@ export function ChapterHeader({
           storyId={storyId}
           chapterId={chapterId}
           styleName={styleName}
+          region={story?.region ?? DEFAULT_REGION}
           storyAspectRatio={storyAspectRatio}
           chapterAspectRatio={chapterAspectRatio}
         />

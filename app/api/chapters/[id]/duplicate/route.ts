@@ -78,10 +78,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           aspect: s.aspect,
           camera: s.camera,
           prompt: s.prompt,
-          end_frame_prompt: s.end_frame_prompt,
           video_prompt: s.video_prompt,
-          frame_mode: s.frame_mode,
           assets_used: s.assets_used,
+          beat: s.beat,
+          start_state: s.start_state,
+          end_state: s.end_state,
         }))
       );
       if (shotsInsErr) return NextResponse.json({ error: shotsInsErr.message }, { status: 500 });

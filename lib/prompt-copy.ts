@@ -22,10 +22,16 @@ export function withAssetContext(realPrompt: string, systemPrompt?: string | nul
   return parts.join("\n\n");
 }
 
-// Video prompt describes motion only, so it's meaningless without the frame(s)
-// it's animating — stitch the start (and end, if present) frame description
-// in ahead of it at copy time.
-export function withFrameDescription(videoPrompt: string, startFramePrompt: string, endFramePrompt?: string | null): string {
-  const parts = [startFramePrompt, endFramePrompt, videoPrompt].filter(Boolean);
+// Video prompt describes motion only, so it's meaningless without the frame
+// it's animating — stitch the start frame description in ahead of it at copy
+// time. Style leads here for the same reason it does in withStyle: the frame
+// description this wraps is long and specific, and the clip has to stay in the
+// same look as the still it animates.
+export function withFrameDescription(
+  videoPrompt: string,
+  startFramePrompt: string,
+  styleContext?: string | null
+): string {
+  const parts = [styleContext ? `[Style] ${styleContext}` : null, startFramePrompt, videoPrompt].filter(Boolean);
   return parts.join("\n\n");
 }

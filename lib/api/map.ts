@@ -3,6 +3,7 @@ import type {
   Chapter,
   BibleEntry,
   ChapterAsset,
+  ReferenceImage,
   Scene,
   Shot,
 } from "./types";
@@ -42,6 +43,15 @@ export function mapChapter(r: Row): Chapter {
   };
 }
 
+export function mapReferenceImage(r: Row): ReferenceImage {
+  return {
+    id: r.id as string,
+    angleLabel: r.angle_label as string,
+    imageUrl: (r.image_url as string) ?? null,
+    isCanonical: r.is_canonical as boolean,
+  };
+}
+
 export function mapBibleEntry(r: Row): BibleEntry {
   return {
     id: r.id as string,
@@ -52,6 +62,7 @@ export function mapBibleEntry(r: Row): BibleEntry {
     realPrompt: r.real_prompt as string,
     seed: (r.seed as string) ?? null,
     locked: r.locked as boolean,
+    images: ((r.bible_entry_images as Row[]) ?? []).map(mapReferenceImage),
   };
 }
 
@@ -65,6 +76,7 @@ export function mapChapterAsset(r: Row): ChapterAsset {
     meta: (r.meta as string) ?? null,
     realPrompt: r.real_prompt as string,
     matchStatus: r.match_status as ChapterAsset["matchStatus"],
+    images: ((r.chapter_asset_images as Row[]) ?? []).map(mapReferenceImage),
   };
 }
 
@@ -74,13 +86,16 @@ export function mapShot(r: Row): Shot {
     sceneId: r.scene_id as string,
     index: r.index as number,
     label: (r.label as string) ?? null,
+    beat: (r.beat as string) ?? null,
     durationS: (r.duration_s as number) ?? null,
     aspect: (r.aspect as string) ?? null,
     camera: (r.camera as string) ?? null,
-    prompt: r.prompt as string,
-    endFramePrompt: (r.end_frame_prompt as string) ?? null,
-    videoPrompt: (r.video_prompt as string) ?? null,
-    frameMode: (r.frame_mode as Shot["frameMode"]) ?? "start_frame_only",
+    prompt: (r.prompt_override as string) ?? (r.prompt as string),
+    videoPrompt: (r.video_prompt_override as string) ?? (r.video_prompt as string) ?? null,
+    promptEdited: r.prompt_override != null,
+    videoPromptEdited: r.video_prompt_override != null,
+    startState: (r.start_state as string) ?? null,
+    endState: (r.end_state as string) ?? null,
     assetsUsed: (r.assets_used as Shot["assetsUsed"]) ?? [],
   };
 }

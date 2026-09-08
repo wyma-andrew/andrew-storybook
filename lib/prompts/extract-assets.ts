@@ -1,4 +1,11 @@
-import { styleContextBlock, myanmarAdaptationBlock, locationSpatialLayoutBlock } from "./shared";
+import type { Region } from "../constants/regions";
+import {
+  styleContextBlock,
+  outputLanguageBlock,
+  myanmarAdaptationBlock,
+  locationSpatialLayoutBlock,
+  characterIdentityBlock,
+} from "./shared";
 
 export const ASSET_SCHEMA = {
   type: "object",
@@ -13,7 +20,8 @@ export const ASSET_SCHEMA = {
           realPrompt: {
             type: "string",
             description:
-              "entity-specific visual description ONLY: hair, face, wardrobe, build, expression. No camera, lighting, or style wording — that is injected separately.",
+              "Structured CHARACTER / IDENTITY LOCK / WARDROBE LOCK / VARIABLE format (see system prompt) — entity-specific visual facts ONLY, with the invariant traits (physical identity, garments) separated from the per-shot ones (expression, pose, gaze). No camera, lighting, or style wording — that is injected separately. " +
+              "The lock bullets are copied verbatim into every shot this character appears in, so keep each one short and self-contained.",
           },
         },
         required: ["name", "meta", "realPrompt"],
@@ -43,25 +51,15 @@ export const ASSET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export function extractAssetsSystemPrompt(styleContext?: string | null) {
+export function extractAssetsSystemPrompt(styleContext?: string | null, region: Region = "english") {
   return (
     "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
     "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
     "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
-    locationSpatialLayoutBlock() +
-    styleContextBlock(styleContext)
-  );
-}
-
-// Myanmar-region variant — separate function so the English flow above
-// stays untouched while this is iterated on independently.
-export function extractAssetsSystemPromptMyanmar(styleContext?: string | null) {
-  return (
-    "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
-    "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
-    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+    characterIdentityBlock() +
     locationSpatialLayoutBlock() +
     styleContextBlock(styleContext) +
-    myanmarAdaptationBlock()
+    (region === "myanmar" ? myanmarAdaptationBlock() : "") +
+    outputLanguageBlock()
   );
 }

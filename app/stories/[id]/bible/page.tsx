@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { Grid2x2 } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
@@ -13,8 +14,12 @@ import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { Textarea, Switch } from "@geckoui/geckoui";
 import { useRead, useWrite } from "@/lib/spoosh";
 import type { BibleEntry } from "@/lib/api/types";
+import { withAssetContext } from "@/lib/prompt-copy";
+import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
+import { copyText } from "@/lib/copy";
+import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
-function BibleCard({ entry }: { entry: BibleEntry }) {
+function BibleCard({ entry, styleContext }: { entry: BibleEntry; styleContext: string | null }) {
   const [prompt, setPrompt] = useState(entry.realPrompt);
   const [editing, setEditing] = useState(false);
   const { trigger: patch, loading } = useWrite((api) => api("bible-entries/:id").PATCH());
@@ -53,6 +58,7 @@ function BibleCard({ entry }: { entry: BibleEntry }) {
         <div className="p-3.5 font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]">{entry.realPrompt}</div>
       )}
 
+
       <CardFooter>
         {editing ? (
           <>
@@ -71,7 +77,30 @@ function BibleCard({ entry }: { entry: BibleEntry }) {
           </>
         ) : (
           <>
-            <MiniButton onClick={() => navigator.clipboard.writeText(entry.realPrompt)}>Copy prompt</MiniButton>
+                        {entry.kind === "location" && (
+              <MiniButton
+                title="Generate this first — the approved plan is the geometry the wide view must match"
+                onClick={() =>
+                  // No styleContext — see SYSTEM_PROMPTS.locationFloorPlan.
+                  copyText(
+                    withAssetContext(entry.realPrompt, SYSTEM_PROMPTS.locationFloorPlan, null),
+                    `${entry.name} floor plan prompt`
+                  )
+                }
+              >
+                <Grid2x2 size={12} /> Floor plan
+              </MiniButton>
+            )}
+<MiniButton
+              onClick={() =>
+                copyText(
+                  withAssetContext(entry.realPrompt, SYSTEM_PROMPTS[entry.kind], styleContext),
+                  `${entry.name} prompt`
+                )
+              }
+            >
+              Copy prompt
+            </MiniButton>
             <MiniButton ghost onClick={() => setEditing(true)}>
               Edit
             </MiniButton>
@@ -86,6 +115,14 @@ export default function BiblePage() {
   const { id } = useParams<{ id: string }>();
   const { data: story } = useRead((api) => api("stories/:id").GET({ params: { id } }));
   const { data: bible } = useRead((api) => api("stories/:id/bible").GET({ params: { id } }));
+  // Match the Assets page: what's copied is style + the kind's system preset +
+  // realPrompt, not the bare realPrompt shown on the card.
+  const styleContext = story ? resolveStyleContext(story.region, story.visualStyleDescription) : null;
+  // See the Assets page: a location copy attaches the floor plan, so the
+  // style's "match the reference image" clause is dropped for it.
+  const locationStyleContext = story
+    ? resolveStyleContext(story.region, story.visualStyleDescription, { referenceImageAttached: false })
+    : null;
 
   const characters = bible?.filter((b) => b.kind === "character") ?? [];
   const locations = bible?.filter((b) => b.kind === "location") ?? [];
@@ -112,7 +149,7 @@ export default function BiblePage() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
               {characters.map((b) => (
-                <BibleCard key={b.id} entry={b} />
+                <BibleCard key={b.id} entry={b} styleContext={styleContext} />
               ))}
               {characters.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
             </div>
@@ -125,7 +162,7 @@ export default function BiblePage() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
               {locations.map((b) => (
-                <BibleCard key={b.id} entry={b} />
+                <BibleCard key={b.id} entry={b} styleContext={locationStyleContext} />
               ))}
               {locations.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
             </div>

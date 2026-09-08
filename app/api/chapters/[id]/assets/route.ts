@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await supabaseRoute();
   const { data, error } = await db
     .from("chapter_assets")
-    .select("*")
+    .select("*, chapter_asset_images(*)")
     .eq("chapter_id", id)
     .order("created_at");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import { ASSET_SCHEMA, extractAssetsSystemPrompt, extractAssetsSystemPromptMyanmar } from "./prompts/extract-assets";
-import { REGENERATE_SCHEMA, regenerateAssetSystemPrompt, regenerateAssetSystemPromptMyanmar } from "./prompts/regenerate-asset";
-import { STORYBOARD_SCHEMA, storyboardSystemPrompt, storyboardSystemPromptMyanmar } from "./prompts/storyboard";
+import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
+import { REGENERATE_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
+import { STORYBOARD_SCHEMA, storyboardSystemPrompt } from "./prompts/storyboard";
 import type { Region } from "./constants/regions";
 
 let client: OpenAI | null = null;
@@ -18,7 +18,7 @@ export async function extractAssets(
   styleContext?: string | null,
   region: Region = "english"
 ): Promise<ExtractedAssets> {
-  const systemPrompt = region === "myanmar" ? extractAssetsSystemPromptMyanmar(styleContext) : extractAssetsSystemPrompt(styleContext);
+  const systemPrompt = extractAssetsSystemPrompt(styleContext, region);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
@@ -44,8 +44,7 @@ export async function regenerateAssetPrompt(
   styleContext?: string | null,
   region: Region = "english"
 ): Promise<string> {
-  const systemPrompt =
-    region === "myanmar" ? regenerateAssetSystemPromptMyanmar(kind, styleContext) : regenerateAssetSystemPrompt(kind, styleContext);
+  const systemPrompt = regenerateAssetSystemPrompt(kind, styleContext, region);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
@@ -67,14 +66,15 @@ export async function regenerateAssetPrompt(
 export type GeneratedShotAsset = { name: string; kind: "character" | "location" };
 export type GeneratedShot = {
   label: string;
+  beat: string;
   durationS: number;
   aspect: string;
   camera: string;
   prompt: string;
-  frameMode: "start_frame_only" | "start_and_end_frame";
-  endFramePrompt: string | null;
   videoPrompt: string;
   assetsUsed: GeneratedShotAsset[];
+  startState: string;
+  endState: string;
 };
 export type GeneratedScene = { title: string; slug: string; shots: GeneratedShot[] };
 
@@ -85,8 +85,7 @@ export async function generateStoryboard(
   aspectRatio?: string,
   region: Region = "english"
 ): Promise<GeneratedScene[]> {
-  const systemPrompt =
-    region === "myanmar" ? storyboardSystemPromptMyanmar(styleContext, aspectRatio) : storyboardSystemPrompt(styleContext, aspectRatio);
+  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
