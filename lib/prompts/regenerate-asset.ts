@@ -19,6 +19,30 @@ export const REGENERATE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// Locations carry spaceKind alongside the prompt — it picks the reference-image
+// preset (interior view + floor plan, or exterior view + site plan), so a
+// regenerate that changed a location from a room to a compound has to be able
+// to change it too. Kept as a separate schema rather than an optional field:
+// the response format is strict, so every property must be required, and a
+// character has no spaceKind to give.
+export const REGENERATE_LOCATION_SCHEMA = {
+  type: "object",
+  properties: {
+    realPrompt: {
+      type: "string",
+      description: "entity-specific visual description ONLY, in the structured format given, per the rules given.",
+    },
+    spaceKind: {
+      type: "string",
+      enum: ["interior", "exterior"],
+      description:
+        "'interior' = an enclosed space seen from within. 'exterior' = an outdoor place or a building seen from outside. Must match what STRUCTURE SHELL describes.",
+    },
+  },
+  required: ["realPrompt", "spaceKind"],
+  additionalProperties: false,
+} as const;
+
 // Regenerates a single already-extracted asset's realPrompt (per-card "Regenerate"
 // button) — same rules as extractAssets, scoped to one named character/location.
 // The structured-format block for the matching kind MUST be injected here too:

@@ -3,23 +3,48 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Grid2x2 } from "lucide-react";
+import { Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
+import { PromptHint } from "@/components/ui/PromptHint";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { Textarea, Switch } from "@geckoui/geckoui";
 import { useRead, useWrite } from "@/lib/spoosh";
 import type { BibleEntry } from "@/lib/api/types";
 import { withAssetContext } from "@/lib/prompt-copy";
-import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
+import {
+  SYSTEM_PROMPTS,
+  locationViewPreset,
+  locationPlanPreset,
+  locationPlanLabel,
+  hasMultipleViews,
+  locationPromptHints,
+} from "@/lib/constants/system-prompts";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
-function BibleCard({ entry, styleContext }: { entry: BibleEntry; styleContext: string | null }) {
+// `angleStyleContext` (locations only): the wide view is copied with the
+// schematic plan attached, so `styleContext` has the match-the-reference
+// clause dropped; an extra angle is copied with the finished wide view
+// attached, where that clause is exactly what should apply.
+function BibleCard({
+  entry,
+  styleContext,
+  angleStyleContext,
+}: {
+  entry: BibleEntry;
+  styleContext: string | null;
+  angleStyleContext?: string | null;
+}) {
+  // Locations pick their preset from spaceKind: interior view + floor plan, or
+  // exterior view + site plan.
+  const viewPreset = entry.kind === "location" ? locationViewPreset(entry.spaceKind) : SYSTEM_PROMPTS.character;
+  const hints = locationPromptHints(entry.spaceKind);
+
   const [prompt, setPrompt] = useState(entry.realPrompt);
   const [editing, setEditing] = useState(false);
   const { trigger: patch, loading } = useWrite((api) => api("bible-entries/:id").PATCH());
@@ -77,30 +102,72 @@ function BibleCard({ entry, styleContext }: { entry: BibleEntry; styleContext: s
           </>
         ) : (
           <>
-                        {entry.kind === "location" && (
+            {entry.kind === "location" && (
+              <PromptHint hint={hints.plan}>
+                <MiniButton
+                  onClick={() =>
+                    // No styleContext — see SYSTEM_PROMPTS.locationFloorPlan.
+                    copyText(
+                      withAssetContext(entry.realPrompt, locationPlanPreset(entry.spaceKind), null),
+                      `${entry.name} ${locationPlanLabel(entry.spaceKind).toLowerCase()} prompt`
+                    )
+                  }
+                >
+                  <Grid2x2 size={12} /> {locationPlanLabel(entry.spaceKind)}
+                </MiniButton>
+              </PromptHint>
+            )}
+{entry.kind === "location" ? (
+              <PromptHint hint={hints.view}>
+                <MiniButton
+                  onClick={() =>
+                    copyText(withAssetContext(entry.realPrompt, viewPreset, styleContext), `${entry.name} prompt`)
+                  }
+                >
+                  <ImageIcon size={12} /> View
+                </MiniButton>
+              </PromptHint>
+            ) : (
               <MiniButton
-                title="Generate this first — the approved plan is the geometry the wide view must match"
                 onClick={() =>
-                  // No styleContext — see SYSTEM_PROMPTS.locationFloorPlan.
-                  copyText(
-                    withAssetContext(entry.realPrompt, SYSTEM_PROMPTS.locationFloorPlan, null),
-                    `${entry.name} floor plan prompt`
-                  )
+                  copyText(withAssetContext(entry.realPrompt, viewPreset, styleContext), `${entry.name} prompt`)
                 }
               >
-                <Grid2x2 size={12} /> Floor plan
+                Copy prompt
               </MiniButton>
             )}
-<MiniButton
-              onClick={() =>
-                copyText(
-                  withAssetContext(entry.realPrompt, SYSTEM_PROMPTS[entry.kind], styleContext),
-                  `${entry.name} prompt`
-                )
-              }
-            >
-              Copy prompt
-            </MiniButton>
+            {entry.kind === "location" && hasMultipleViews(entry.realPrompt) && (
+              <PromptHint hint={hints.sheet}>
+                <MiniButton
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(entry.realPrompt, SYSTEM_PROMPTS.locationViewsSheet, styleContext),
+                      `${entry.name} views sheet prompt`
+                    )
+                  }
+                >
+                  <Columns2 size={12} /> Views sheet
+                </MiniButton>
+              </PromptHint>
+            )}
+            {entry.kind === "location" && (
+              <PromptHint hint={hints.angle}>
+                <MiniButton
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(
+                        entry.realPrompt,
+                        SYSTEM_PROMPTS.locationAltAngle,
+                        angleStyleContext ?? styleContext
+                      ),
+                      `${entry.name} angle prompt`
+                    )
+                  }
+                >
+                  <Camera size={12} /> Angle
+                </MiniButton>
+              </PromptHint>
+            )}
             <MiniButton ghost onClick={() => setEditing(true)}>
               Edit
             </MiniButton>
@@ -162,7 +229,7 @@ export default function BiblePage() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
               {locations.map((b) => (
-                <BibleCard key={b.id} entry={b} styleContext={locationStyleContext} />
+                <BibleCard key={b.id} entry={b} styleContext={locationStyleContext} angleStyleContext={styleContext} />
               ))}
               {locations.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
             </div>

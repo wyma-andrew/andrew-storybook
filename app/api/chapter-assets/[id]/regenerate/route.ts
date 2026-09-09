@@ -39,11 +39,24 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
   const styleContext = resolveStyleContext(region, style?.description);
 
-  const realPrompt = await regenerateAssetPrompt(scriptText, asset.kind, asset.name, asset.meta, styleContext, region);
+  const { realPrompt, spaceKind } = await regenerateAssetPrompt(
+    scriptText,
+    asset.kind,
+    asset.name,
+    asset.meta,
+    styleContext,
+    region
+  );
 
   const { data, error } = await db
     .from("chapter_assets")
-    .update({ real_prompt: realPrompt, updated_at: new Date().toISOString() })
+    .update({
+      real_prompt: realPrompt,
+      // Locations only; a regenerate can move a location from a room to a
+      // compound, and the reference preset has to follow the new text.
+      ...(spaceKind ? { space_kind: spaceKind } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .select("*")
     .single();

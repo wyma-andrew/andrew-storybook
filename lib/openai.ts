@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
-import { REGENERATE_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
+import { REGENERATE_SCHEMA, REGENERATE_LOCATION_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
 import { STORYBOARD_SCHEMA, storyboardSystemPrompt } from "./prompts/storyboard";
 import type { Region } from "./constants/regions";
 
@@ -10,8 +10,12 @@ export function openai() {
   return client;
 }
 
+export type SpaceKind = "interior" | "exterior";
 export type ExtractedAsset = { name: string; meta: string; realPrompt: string };
-export type ExtractedAssets = { characters: ExtractedAsset[]; locations: ExtractedAsset[] };
+// Locations additionally carry spaceKind — it selects the reference-image
+// preset (interior view + floor plan vs exterior view + site plan).
+export type ExtractedLocation = ExtractedAsset & { spaceKind: SpaceKind };
+export type ExtractedAssets = { characters: ExtractedAsset[]; locations: ExtractedLocation[] };
 
 export async function extractAssets(
   scriptText: string,
@@ -43,8 +47,9 @@ export async function regenerateAssetPrompt(
   meta: string,
   styleContext?: string | null,
   region: Region = "english"
-): Promise<string> {
+): Promise<{ realPrompt: string; spaceKind: SpaceKind | null }> {
   const systemPrompt = regenerateAssetSystemPrompt(kind, styleContext, region);
+  const isLocation = kind === "location";
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
@@ -56,11 +61,16 @@ export async function regenerateAssetPrompt(
     ],
     response_format: {
       type: "json_schema",
-      json_schema: { name: "regenerated_asset", schema: REGENERATE_SCHEMA, strict: true },
+      json_schema: {
+        name: "regenerated_asset",
+        schema: isLocation ? REGENERATE_LOCATION_SCHEMA : REGENERATE_SCHEMA,
+        strict: true,
+      },
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { realPrompt: string }).realPrompt;
+  const parsed = JSON.parse(raw) as { realPrompt: string; spaceKind?: SpaceKind };
+  return { realPrompt: parsed.realPrompt, spaceKind: isLocation ? parsed.spaceKind ?? null : null };
 }
 
 export type GeneratedShotAsset = { name: string; kind: "character" | "location" };

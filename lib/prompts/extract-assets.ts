@@ -35,6 +35,14 @@ export const ASSET_SCHEMA = {
         properties: {
           name: { type: "string" },
           meta: { type: "string", description: "short tag, e.g. 'Interior · scene 1'" },
+          spaceKind: {
+            type: "string",
+            enum: ["interior", "exterior"],
+            description:
+              "'interior' = an enclosed space seen from within (room, shop floor, vehicle interior). " +
+              "'exterior' = an outdoor place or a building seen from outside (yard, street, house compound). " +
+              "Chooses which reference-image preset and plan drawing the app generates, so it must match what STRUCTURE SHELL describes.",
+          },
           realPrompt: {
             type: "string",
             description:
@@ -42,7 +50,7 @@ export const ASSET_SCHEMA = {
               "Describe the EMPTY environment only — never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present. Character presence is added separately per-shot.",
           },
         },
-        required: ["name", "meta", "realPrompt"],
+        required: ["name", "meta", "spaceKind", "realPrompt"],
         additionalProperties: false,
       },
     },

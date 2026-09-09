@@ -6,6 +6,7 @@ import {
   locationSpatialConsistencyBlock,
   identityAnchorBlock,
   stateLedgerBlock,
+  screenDirectionBlock,
   motionDisciplineBlock,
   shotDistinctnessBlock,
 } from "./shared";
@@ -120,7 +121,7 @@ export function storyboardSystemPrompt(
     `Aspect Ratio & Visual Composition: this chapter's fixed aspect ratio is '${aspectRatio}' — set every shot's \`aspect\` to exactly this value, no exceptions. Compose every shot's \`prompt\` for this ratio, don't just label it:\n` +
     "- 9:16 (Vertical): frame subjects vertically — tight side margins, vertical/stacked composition (top-to-bottom motion, tall environments). Prioritize Medium Shots, Close-ups, Medium Close-ups, and vertical tilts/pan-ups; avoid Wide or Extreme Wide shots where the subject gets lost in the narrow horizontal frame. Do NOT include wide-horizontal composition language (e.g. 'wide panoramic view', 'expansive horizon line', 'sweeping landscape framing').\n" +
     "- 16:9 (Widescreen): frame subjects horizontally using the Rule of Thirds — emphasize depth, background context, and horizontal scale. Prioritize Wide Shots, Extreme Wide Shots, Establishing Shots, and horizontal tracking shots to maximize environmental detail. Do NOT include constrained-vertical composition language (e.g. 'tight vertical crop', 'tall narrow framing').\n\n" +
-    "Establishing Master Shot: the FIRST shot in each new location must establish that space before any closer coverage of it — close shots hide spatial information, wide shots establish spatial truth, and every later shot in that location is generated against the layout this shot sets. Its `prompt` must show at least two named anchors from that location's FIXED LAYOUT and make their relative positions readable. " +
+    "Establishing Master Shot: the FIRST shot in each new location must establish that space before any closer coverage of it — close shots hide spatial information, wide shots establish spatial truth, and every later shot in that location is generated against the layout this shot sets. Its `prompt` must show at least two named anchors from that location's FIXED LAYOUT and make their relative positions readable, and it must pin every character present left-to-right on screen (see SCREEN DIRECTION below) — a master shot that fixes the room but not the people leaves the next shot free to invent their order. " +
     "For 16:9 this is a true Wide or Establishing Shot. For 9:16 the vertical rules above still win — do NOT force a wide: use the widest ratio-appropriate framing instead (a wide medium or a vertical tilt revealing the space), still showing at least two named layout anchors. " +
     "Returning to a location later in the script does not need a new establishing shot unless its state has visibly changed.\n\n" +
     "Camera Variety: within the ratio-appropriate shot types above, do not repeat the same flat angle back-to-back across shots in a scene — vary coverage the way a real shot list does. When a shot continues a conversation or beat already established earlier in the scene, prefer 'Over-the-shoulder shot', 'Reaction shot', 'Panning shot', or a distinct new angle (still within the ratio's favored shot types) over repeating the previous shot's framing verbatim — this also hides small continuity drift between separately-generated shot images, since a deliberate angle change reads as a cut, not an error.\n\n" +
@@ -134,6 +135,7 @@ export function storyboardSystemPrompt(
     "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
     identityAnchorBlock() +
     locationSpatialConsistencyBlock() +
+    screenDirectionBlock() +
     stateLedgerBlock() +
     shotDistinctnessBlock() +
     motionDisciplineBlock() +

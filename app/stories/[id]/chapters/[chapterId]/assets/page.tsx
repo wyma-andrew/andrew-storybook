@@ -1,20 +1,28 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2 } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
-import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
+import { Card, CardHeader, CardFooter, CardActions } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MatchBadge, InjectRow } from "@/components/ui/Badge";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
+import { PromptHint } from "@/components/ui/PromptHint";
 import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { ConfirmDialog } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
-import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
+import {
+  SYSTEM_PROMPTS,
+  locationViewPreset,
+  locationPlanPreset,
+  locationPlanLabel,
+  hasMultipleViews,
+  locationPromptHints,
+} from "@/lib/constants/system-prompts";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset } from "@/lib/api/types";
@@ -23,14 +31,25 @@ function AssetCard({
   asset,
   systemPrompt,
   styleContext,
+  // Locations only. The wide view is copied with the (schematic) floor plan
+  // attached, so `styleContext` there has the match-the-reference clause
+  // dropped; an extra angle is copied with the finished wide view attached,
+  // where that clause is exactly what should apply. See resolveStyleContext.
+  angleStyleContext,
 }: {
   asset: ChapterAsset;
   systemPrompt?: string | null;
   styleContext?: string | null;
+  angleStyleContext?: string | null;
 }) {
   const { trigger: promote, loading } = useWrite((api) => api("chapter-assets/:id/promote").POST());
   const { trigger: regenerate, loading: regenerating } = useWrite((api) => api("chapter-assets/:id/regenerate").POST());
   const { trigger: removeAsset, loading: removing } = useWrite((api) => api("chapter-assets/:id").DELETE());
+
+  // Locations pick their own preset from spaceKind (interior view + floor plan,
+  // or exterior view + site plan); `systemPrompt` is the character preset.
+  const viewPreset = asset.kind === "location" ? locationViewPreset(asset.spaceKind) : systemPrompt;
+  const hints = locationPromptHints(asset.spaceKind);
 
   const borderClass =
     asset.matchStatus === "new" ? "border-[#3a3226]" : asset.matchStatus === "stale" ? "border-danger-border" : "";
@@ -75,35 +94,90 @@ function AssetCard({
 
       <div className="p-3.5 pt-2.5 font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]">{asset.realPrompt}</div>
 
-      <CardFooter>
-        {asset.matchStatus === "stale" ? (
+      {asset.matchStatus === "stale" ? (
+        <CardFooter>
           <MiniLoadingButton className="justify-center text-danger" onClick={confirmRemove} loading={removing}>
             <Trash2 size={12} /> Remove from chapter
           </MiniLoadingButton>
-        ) : (
-          <>
+        </CardFooter>
+      ) : (
+        <>
+          <CardFooter>
             {asset.kind === "location" && (
+              <PromptHint hint={hints.plan}>
+                <MiniButton
+                  className="justify-center"
+                  onClick={() =>
+                    // No styleContext: the plan is a flat schematic, and rendering it
+                    // in the story's visual style would make it decorative, not spatial.
+                    copyText(
+                      withAssetContext(asset.realPrompt, locationPlanPreset(asset.spaceKind), null),
+                      `${asset.name} ${locationPlanLabel(asset.spaceKind).toLowerCase()} prompt`
+                    )
+                  }
+                >
+                  <Grid2x2 size={12} /> Copy {locationPlanLabel(asset.spaceKind).toLowerCase()}
+                </MiniButton>
+              </PromptHint>
+            )}
+            {asset.kind === "location" ? (
+              <PromptHint hint={hints.view}>
+                <MiniButton
+                  className="justify-center"
+                  onClick={() =>
+                    copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
+                  }
+                >
+                  <ImageIcon size={12} /> Copy view
+                </MiniButton>
+              </PromptHint>
+            ) : (
               <MiniButton
                 className="justify-center"
-                title="Generate this first — the approved plan is the geometry the wide view must match"
                 onClick={() =>
-                  // No styleContext: the plan is a flat schematic, and rendering it
-                  // in the story's visual style would make it decorative, not spatial.
-                  copyText(
-                    withAssetContext(asset.realPrompt, SYSTEM_PROMPTS.locationFloorPlan, null),
-                    `${asset.name} floor plan prompt`
-                  )
+                  copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
                 }
               >
-                <Grid2x2 size={12} /> Copy floor plan
+                Copy prompt
               </MiniButton>
             )}
-            <MiniButton
-              className="justify-center"
-              onClick={() => copyText(withAssetContext(asset.realPrompt, systemPrompt, styleContext), `${asset.name} prompt`)}
-            >
-              Copy prompt
-            </MiniButton>
+            {asset.kind === "location" && hasMultipleViews(asset.realPrompt) && (
+              <PromptHint hint={hints.sheet}>
+                <MiniButton
+                  className="justify-center"
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(asset.realPrompt, SYSTEM_PROMPTS.locationViewsSheet, styleContext),
+                      `${asset.name} views sheet prompt`
+                    )
+                  }
+                >
+                  <Columns2 size={12} /> Copy views sheet
+                </MiniButton>
+              </PromptHint>
+            )}
+            {asset.kind === "location" && (
+              <PromptHint hint={hints.angle}>
+                <MiniButton
+                  className="justify-center"
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(
+                        asset.realPrompt,
+                        SYSTEM_PROMPTS.locationAltAngle,
+                        angleStyleContext ?? styleContext
+                      ),
+                      `${asset.name} angle prompt`
+                    )
+                  }
+                >
+                  <Camera size={12} /> Copy angle
+                </MiniButton>
+              </PromptHint>
+            )}
+          </CardFooter>
+
+          <CardActions>
             <MiniLoadingButton className="justify-center" onClick={confirmRegenerate} loading={regenerating}>
               <RefreshCw size={12} /> Regenerate
             </MiniLoadingButton>
@@ -116,9 +190,9 @@ function AssetCard({
                 + Add to bible
               </MiniLoadingButton>
             )}
-          </>
-        )}
-      </CardFooter>
+          </CardActions>
+        </>
+      )}
     </Card>
   );
 }
@@ -161,7 +235,6 @@ export default function AssetsPage() {
   const { trigger: sync, loading: syncing } = useWrite((api) => api("chapters/:id/sync").POST());
 
   const characterPreset = SYSTEM_PROMPTS.character;
-  const locationPreset = SYSTEM_PROMPTS.location;
 
   const characters = assets?.filter((a) => a.kind === "character") ?? [];
   const locations = assets?.filter((a) => a.kind === "location") ?? [];
@@ -262,8 +335,8 @@ export default function AssetsPage() {
                     <AssetCard
                       key={a.id}
                       asset={a}
-                      systemPrompt={locationPreset}
                       styleContext={locationStyleContext}
+                      angleStyleContext={styleContext}
                     />
                   ))}
                 </div>

@@ -38,12 +38,18 @@ export type ReferenceImage = {
   isCanonical: boolean;
 };
 
+// Locations only (null on characters, and on rows extracted before the field
+// existed): which reference-image preset this location renders with — an
+// interior view + floor plan, or an exterior view + site plan.
+export type SpaceKind = "interior" | "exterior";
+
 export type BibleEntry = {
   id: string;
   storyId: string;
   kind: "character" | "location";
   name: string;
   meta: string | null;
+  spaceKind: SpaceKind | null;
   realPrompt: string;
   seed: string | null;
   locked: boolean;
@@ -57,6 +63,7 @@ export type ChapterAsset = {
   bibleEntryId: string | null;
   name: string;
   meta: string | null;
+  spaceKind: SpaceKind | null;
   realPrompt: string;
   matchStatus: "matched" | "new" | "local" | "stale";
   images: ReferenceImage[];

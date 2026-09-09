@@ -39,7 +39,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const extracted = await extractAssets(scriptText, resolveStyleContext(region, style?.description), region);
 
   const rows = [
-    ...extracted.characters.map((a) => ({ ...a, kind: "character" as const })),
+    ...extracted.characters.map((a) => ({ ...a, kind: "character" as const, spaceKind: null })),
     ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),
   ].map((a) => {
     const match = findMatch(bible.filter((b) => b.kind === a.kind), a.name);
@@ -49,6 +49,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       bible_entry_id: match?.id ?? null,
       name: a.name,
       meta: a.meta,
+      // A matched asset inherits the bible entry wholesale — prompt and the
+      // space_kind that prompt was written for must not come from different
+      // sources, or the preset stops matching the text.
+      space_kind: match ? match.space_kind ?? null : a.spaceKind,
       real_prompt: match ? match.real_prompt : a.realPrompt,
       match_status: match ? "matched" : "new",
     };

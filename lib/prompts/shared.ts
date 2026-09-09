@@ -18,14 +18,37 @@ export function styleContextBlock(styleContext?: string | null) {
 // forcing shots to restate the relevant subset (see
 // locationSpatialConsistencyBlock below), is what actually holds it steady —
 // not the model "remembering" a paragraph from earlier context.
+//
+// STRUCTURE SHELL is the location's equivalent of a character's IDENTITY
+// LOCK: the built facts that are true from every camera position. It exists
+// because a place shown from two sides (a house's front and its back) was
+// being extracted as two unrelated locations, each generating its own roof
+// pitch, wall material and scale — nothing shared meant nothing to agree on.
+// One place is one location with a VIEWS list, and the shell is what every
+// view's generation copies verbatim (see SYSTEM_PROMPTS.locationAltAngle).
+//
+// VIEWS bullets carry frame-left/frame-right, not just compass directions.
+// Measured: a rear view came back mirrored — granary on the wrong side —
+// while the prompt said "Rear view from north" and SPATIAL RULES said "do not
+// mirror". Neither helps, for the reason already established for shot prompts
+// in locationSpatialConsistencyBlock: a compass direction is not observable in
+// an image, so it cannot be matched or violated. Frame sides are. The compass
+// stays as the source the sides are derived FROM, and both are written down so
+// a wrong derivation is visible in the text rather than only in the render.
 export function locationSpatialLayoutBlock() {
   return (
     "\n\nLOCATION SPATIAL LAYOUT: every location's realPrompt must use this structured format, not free descriptive prose:\n" +
     "LOCATION: <name>\n\n" +
+    "STRUCTURE SHELL:\n" +
+    "- <3-6 short bullets of invariant BUILT facts, true from every vantage point and never changing between images: storey count and height, footprint and overall scale, foundation type (slab/stilts/plinth), roof form + pitch + material + colour, wall material + finish + colour, condition and weathering. For a pure interior, give the room shell instead: ceiling height and form, wall finish and colour, floor material, window/door frame material. Never vague wording like 'wooden house' or 'old walls'>\n\n" +
     "FIXED LAYOUT:\n" +
     "- <one bullet per fixed object/anchor point, each given a wall/compass direction or a position relative to another anchor, e.g. 'Main entrance: south wall', 'Sofa: center-west', 'Kitchen doorway: north wall'>\n\n" +
+    "VIEWS:\n" +
+    "- <include this section ONLY when the script shows this place from more than one side or vantage (a house seen from the front and from the rear, a yard and the veranda facing it). One bullet per view, keyed to a FIXED LAYOUT direction and naming ONLY what is visible from that vantage. Each bullet must ALSO place what it names in FRAME-RELATIVE terms — what sits at frame left, what sits at frame right, what fills the frame — because a compass direction cannot be seen in an image and is therefore no defence against the view coming back mirrored. Work each one out from the FIXED LAYOUT: standing north of a place and looking south puts east at frame left and west at frame right; standing south and looking north puts west at frame left and east at frame right. State the view straight-on unless the script needs otherwise. e.g. 'Front view from south, camera looking north, house straight-on: entrance stair and main door center frame, veranda across the front, shrine shelf at frame right (east), forecourt in the foreground.', 'Rear view from north, camera looking south, back wall straight-on: rice granary at frame left (northeast), firewood rack and water jar stand at frame right (west and northwest), rear yard in the foreground.'. CROSS-CHECK every bullet before writing it: two views that look in OPPOSITE compass directions must put the same object on OPPOSITE frame sides. An object east of the place is at frame left in a view looking south and at frame right in a view looking north. If your two bullets put one object on the same frame side in both, one of them is derived backwards — redo it. At most 3 views — they are rendered as side-by-side panels of one reference image, so a fourth leaves each too small to be usable; keep the views the script actually shoots from and drop the rest. Omit the whole section when a single view covers the place>\n\n" +
     "SPATIAL RULES:\n" +
-    "- <one bullet per hard constraint on facing direction and relative position, e.g. 'Sofa faces north, toward the kitchen doorway.', 'Window remains on the sofa's right side.', 'Do not mirror or rotate the room layout between shots.'>\n\n" +
+    "- <one bullet per hard constraint on facing direction and relative position, e.g. 'Sofa faces north, toward the kitchen doorway.', 'Window remains on the sofa's right side.', 'Do not mirror or rotate the room layout between shots.'. When VIEWS is present, add one bullet restating each view's frame-left/frame-right assignment as a rule, since that is the form the image model can actually be held to>\n\n" +
+    "SPACE KIND: set spaceKind to 'interior' when the location is an enclosed space seen from within (a room, a shop floor, a vehicle interior), and to 'exterior' when it is an outdoor place or a building seen from outside (a yard, a street, a house compound). The app picks a different reference-image preset and a different plan drawing from this field, so it must agree with what STRUCTURE SHELL describes. The inside and the outside of the same building are two locations, each with its own spaceKind.\n" +
+    "Different sides or faces of ONE physical place are VIEWS of a single location, never separate locations — a house's front and its back yard share one STRUCTURE SHELL and one FIXED LAYOUT, and splitting them into two location entries is exactly what makes the two images disagree. Split into separate locations only when the spaces are genuinely separate: an interior room versus the exterior, or one room versus another.\n" +
     "Still describe the EMPTY environment only (structure, materials, props) — never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present. No camera, lighting, or style wording."
   );
 }
@@ -135,6 +158,33 @@ export function identityAnchorBlock() {
     "- Name each character by the exact name used in Known Assets and leave their appearance to their attached reference. Do NOT copy IDENTITY LOCK or WARDROBE LOCK bullets into `prompt`, and do not paraphrase them either — describing in words what the attached image already shows is what pulls the render off its reference.\n" +
     "- The one exception is a VISIBLE CHANGE from the reference that this shot's script calls for — a bandaged limb, a removed jacket, soaked clothes, dirt, an injury. That is a delta, so state it explicitly and briefly. Everything unchanged stays unsaid.\n" +
     "- Never invent a physical or wardrobe detail that is not in the character's locks and not called for by the script. If a shot seems to need one, omit it — it belongs in the asset's locks, which regenerate the reference sheet, not in one shot's text."
+  );
+}
+
+// Screen-direction layer (the 180-degree rule). Observed failure: a scene's
+// establishing shot pinned the location's anchors but never pinned where the
+// CHARACTERS sit left-to-right, so the first closer shot invented an order and
+// later shots were free to contradict it.
+//
+// The model already reasons about camera position — it writes "over-the-shoulder
+// shot from behind X toward Y" into `camera` — but `camera` never reaches the
+// image model, so the shot `prompt` was left asserting "X at frame left" with
+// no stated cause. This block moves that reasoning into `prompt`, where it can
+// actually constrain the render.
+//
+// Note what a reverse angle does: staying on the same side of the action axis
+// PRESERVES each character's screen side (in an over-the-shoulder pair, A stays
+// screen-left and B screen-right in both directions). A swap is what crossing
+// the axis does, and it has to be a deliberate, stated choice — treating a
+// reverse as an automatic swap is exactly the disorientation this prevents.
+export function screenDirectionBlock() {
+  return (
+    "\n\nSCREEN DIRECTION (180-degree rule): screen sides are fixed by the FIRST shot that shows a given set of characters together, and every later shot in that scene keeps them.\n" +
+    "- That first shot must pin the characters' left-to-right order on screen against a visible anchor — not just the location's fixed objects, but the people: which character is at frame left, which at frame right, and, when two of them stand together, which of the two is nearer frame left.\n" +
+    "- State each character's gaze camera-relative: 'looking camera-left toward <name>', not merely 'looking toward <name>'. Two characters facing each other look in OPPOSITE camera directions — one camera-left, one camera-right.\n" +
+    "- Every shot's `prompt` must say where the camera stands relative to the characters ('from behind <name>, over its shoulder, toward <name>'), because that is what makes a screen side true rather than asserted. The `camera` field never reaches the image model, so this belongs in `prompt` even when `camera` says something similar.\n" +
+    "- A reverse angle does NOT permit a left/right swap. Remaining on the same side of the action axis preserves screen direction — that is the point of the reverse: in an over-the-shoulder pair, the character who was screen-left stays screen-left in the reverse, only the shoulder in the foreground changes. Swap sides ONLY when the shot explicitly states that the camera crosses the axis, and name the resulting change in that shot's `prompt`.\n" +
+    "- A scene can hold more than one axis: the establishing shot fixes one (say two characters together on one side, a third opposite them), and a later exchange between two of those characters forms a new one. Fix each new pairing's order the first time those characters appear together, and never let a new axis contradict a side the scene's establishing shot already pinned."
   );
 }
 

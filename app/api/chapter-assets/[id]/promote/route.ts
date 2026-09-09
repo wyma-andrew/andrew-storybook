@@ -25,6 +25,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       kind: asset.kind,
       name: asset.name,
       meta: asset.meta,
+      space_kind: asset.space_kind ?? null,
       real_prompt: asset.real_prompt,
       locked: false,
     })

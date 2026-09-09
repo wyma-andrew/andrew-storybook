@@ -4,6 +4,7 @@ import type {
   BibleEntry,
   ChapterAsset,
   ReferenceImage,
+  SpaceKind,
   Scene,
   Shot,
 } from "./types";
@@ -59,6 +60,7 @@ export function mapBibleEntry(r: Row): BibleEntry {
     kind: r.kind as BibleEntry["kind"],
     name: r.name as string,
     meta: (r.meta as string) ?? null,
+    spaceKind: (r.space_kind as SpaceKind) ?? null,
     realPrompt: r.real_prompt as string,
     seed: (r.seed as string) ?? null,
     locked: r.locked as boolean,
@@ -74,6 +76,7 @@ export function mapChapterAsset(r: Row): ChapterAsset {
     bibleEntryId: (r.bible_entry_id as string) ?? null,
     name: r.name as string,
     meta: (r.meta as string) ?? null,
+    spaceKind: (r.space_kind as SpaceKind) ?? null,
     realPrompt: r.real_prompt as string,
     matchStatus: r.match_status as ChapterAsset["matchStatus"],
     images: ((r.chapter_asset_images as Row[]) ?? []).map(mapReferenceImage),

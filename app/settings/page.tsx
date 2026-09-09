@@ -12,7 +12,8 @@ import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 
 export default function SettingsPage() {
   const character = SYSTEM_PROMPTS.character;
-  const location = SYSTEM_PROMPTS.location;
+  const locationInterior = SYSTEM_PROMPTS.locationInterior;
+  const locationExterior = SYSTEM_PROMPTS.locationExterior;
 
   return (
     <Frame>
@@ -64,11 +65,22 @@ export default function SettingsPage() {
               <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">{character}</div>
             </AdminBlock>
 
-            <AdminBlock title="Location preset" badge="LOCKED" className="mt-3.5">
+            <AdminBlock title="Location preset — interior" badge="LOCKED" className="mt-3.5">
               <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-[#0f0f0f] px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">{location}</div>
+              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">
+                {locationInterior}
+              </div>
+            </AdminBlock>
+
+            <AdminBlock title="Location preset — exterior" badge="LOCKED" className="mt-3.5">
+              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-[#0f0f0f] px-3 py-2.5 text-xs text-fg-3">
+                <Lock size={13} /> Used when a location&apos;s space kind is exterior.
+              </div>
+              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">
+                {locationExterior}
+              </div>
             </AdminBlock>
           </section>
         </Wrap>

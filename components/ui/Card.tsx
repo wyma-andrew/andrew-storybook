@@ -22,3 +22,15 @@ export function CardFooter({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+// Actions that CHANGE the asset (regenerate, add to bible), split off from the
+// copy buttons above by a divider — everything in CardFooter only copies text
+// out of the card, and mixing the two in one grid made a destructive action
+// read as one more copy button. Same two-column rules as CardFooter.
+export function CardActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 border-t border-line px-3.5 pt-3 pb-3.5 [&>*:last-child:nth-child(odd)]:col-span-2">
+      {children}
+    </div>
+  );
+}
