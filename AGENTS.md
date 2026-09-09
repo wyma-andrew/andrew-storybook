@@ -10,6 +10,19 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # AI Storybook — project rules
 
+## Documentation map — MANDATORY
+
+- `ARCHITECTURE.md` is the concise, current map of the product, code ownership,
+  request flows, and database relationships. **Read it before exploring the
+  codebase broadly.**
+- Keep `ARCHITECTURE.md` current when a change materially alters feature
+  ownership, key paths, request/data flow, schema relationships, or implemented
+  product capabilities. Do not turn it into a changelog or copy detailed
+  reasoning into it.
+- `history/` owns decisions and reasoning; `AGENTS.md` owns mandatory working
+  rules; `README.md` owns human setup and onboarding. Do not duplicate those
+  responsibilities in `ARCHITECTURE.md`.
+
 ## History rule — MANDATORY
 
 `history/<feature-name>.md` is the record of what was decided for each feature
@@ -37,15 +50,18 @@ cost a day to reach.
 Three-step flow, one story project:
 
 1. **Script** — user pastes/writes the story. Editor is **Tiptap** (custom nodes: Title, Scene heading, Action, Character, Dialog, Transition).
-2. **Assets** — on switch, AI extracts from the script and returns **two sections**: *character prompts* and *location prompts*. Each prompt is editable + copyable, and is the identity/environment reference reused downstream.
+2. **Assets** — on switch, AI extracts from the script and returns **three sections**: *character prompts*, *location prompts*, and *prop prompts*. Each prompt is editable + copyable, and is the identity/environment/object reference reused downstream.
 3. **Storyboard** — on switch, AI returns **scene by scene**; each scene contains several numbered **shots**, each shot with its own copyable image prompt.
 
-A global **Style** setting (Realistic / Anime / …) is injected into every generated prompt.
+A story-wide **Style** setting is injected into copied prompts and used as
+context during generation. A story-wide region selects the English or Myanmar
+prompt variant. Aspect ratio is story-wide with an optional chapter override.
 
 ## Stack
 
 - Next.js 16 (App Router) — read `node_modules/next/dist/docs/` before writing Next code.
-- **Supabase (Postgres)** for data + auth + storage. RLS enabled on every table.
+- **Supabase (Postgres)** for data + auth. Reference images are URL-only; Supabase
+  Storage is not currently used. RLS is enabled on every table.
 - **Tiptap** for the script editor.
 
 ## UI rules — MANDATORY
@@ -78,23 +94,22 @@ npx supabase db push --db-url "$DATABASE_URL"
 ```
 
 - `supabase/` (config + `migrations/`) is the single source of truth for schema.
-- Current tables: `stories` (has `owner_id`), `visual_styles` (global +
-  per-story custom), `system_prompts` (admin-only character/location
-  presets), `chapters`, `bible_entries` (story asset bible), `chapter_assets`
-  (matched/new per chapter), `scenes`, `shots`.
+- Current tables: `stories` (has `owner_id`), `chapters`, `bible_entries`
+  (story asset bible), `chapter_assets` (matched/new/stale per chapter),
+  `chapter_asset_images`, `bible_entry_images`, `scenes`, and `shots`.
+- Visual styles and system prompt presets live in `lib/constants/`, not the
+  database. `stories.visual_style_id` stores a code-defined style slug.
 
 ## Auth — Supabase Auth, email/password
 
 - `stories` and everything under it (chapters, bible_entries, chapter_assets,
-  scenes, shots, story-scoped visual_styles) are **owned per-user** and
+  reference-image rows, scenes, and shots) are **owned per-user** and
   enforced by **RLS policies**, not app-level checks — route handlers for
   these tables use `supabaseRoute()` (`lib/supabase/route.ts`, anon key +
   session cookies), never `supabaseAdmin()`. RLS is the actual authorization
   boundary here; don't re-add manual owner checks in these handlers.
-- `visual_styles` (scope='global') and `system_prompts` are platform-wide —
-  reads use `supabaseRoute()` too (open/authenticated-read policies), but
-  **writes** (admin console only) use `supabaseAdmin()` (service role,
-  bypasses RLS) gated by `requireAdmin()` in `lib/api/auth-guard.ts`.
+- Visual styles and system prompts are code-defined platform constants. There
+  is no database-backed admin editor for them.
 - Admin access is an email allowlist: set `ADMIN_EMAILS` in `.env`
   (comma-separated). No admin role table yet.
 - `proxy.ts` (Next 16 renamed `middleware.ts` → `proxy.ts`) + `lib/supabase/middleware.ts`
