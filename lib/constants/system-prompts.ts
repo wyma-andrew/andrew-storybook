@@ -8,6 +8,8 @@ import type { SpaceKind } from "@/lib/api/types";
 export const SYSTEM_PROMPTS = {
   character:
     "Character reference sheet: full-body turnaround, front view / 3-quarter view / side view / back view, neutral standing pose, arranged left to right, consistent scale and studio lighting across all views, plain neutral background, no props or background elements. Maintain exact facial structure, hairstyle, and wardrobe identically across every view and every future generation of this character. No text, captions, labels, watermarks, or UI overlays anywhere in the image.",
+  prop:
+    "Prop reference sheet: the complete object shown clearly from front, 3-quarter, side, and top views, arranged left to right at a consistent scale on a plain neutral background. Preserve the exact silhouette, material, color, finish, construction details, markings, wear, and proportions in every view and every future generation of this prop. No characters, hands, background objects, text, captions, labels, watermarks, or UI overlays anywhere in the image.",
   locationInterior:
     "Location reference image: a fully rendered eye-level interior establishing view of the finished room — one frame, normal perspective, the whole space readable. " +
     // Written affirmatively on purpose. An earlier version listed what must not

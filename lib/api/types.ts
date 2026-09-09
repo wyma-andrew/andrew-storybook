@@ -4,7 +4,6 @@ export type Story = {
   description: string | null;
   visualStyleId: string | null;
   visualStyleName: string | null;
-  visualStyleDescription: string | null;
   aspectRatio: string;
   region: "english" | "myanmar";
   createdAt: string;
@@ -42,11 +41,12 @@ export type ReferenceImage = {
 // existed): which reference-image preset this location renders with — an
 // interior view + floor plan, or an exterior view + site plan.
 export type SpaceKind = "interior" | "exterior";
+export type AssetKind = "character" | "location" | "prop";
 
 export type BibleEntry = {
   id: string;
   storyId: string;
-  kind: "character" | "location";
+  kind: AssetKind;
   name: string;
   meta: string | null;
   spaceKind: SpaceKind | null;
@@ -59,7 +59,7 @@ export type BibleEntry = {
 export type ChapterAsset = {
   id: string;
   chapterId: string;
-  kind: "character" | "location";
+  kind: AssetKind;
   bibleEntryId: string | null;
   name: string;
   meta: string | null;
@@ -103,7 +103,7 @@ export type Shot = {
   assetsUsed: ShotAsset[]; // which known characters/locations to attach as reference when generating this shot
 };
 
-export type ShotAsset = { name: string; kind: "character" | "location" };
+export type ShotAsset = { name: string; kind: AssetKind };
 
 export type Scene = {
   id: string;

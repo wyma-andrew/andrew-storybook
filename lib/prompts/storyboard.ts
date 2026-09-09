@@ -67,7 +67,7 @@ export const STORYBOARD_SCHEMA = {
                     type: "object",
                     properties: {
                       name: { type: "string", description: "exact name from Known Assets" },
-                      kind: { type: "string", enum: ["character", "location"] },
+                      kind: { type: "string", enum: ["character", "location", "prop"] },
                     },
                     required: ["name", "kind"],
                     additionalProperties: false,
@@ -116,7 +116,7 @@ export function storyboardSystemPrompt(
 ) {
   return (
     "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a copyable image generation prompt, plus a Google Flow (image-to-video) prompt. " +
-    "Each shot's image is generated with that shot's character and location REFERENCE IMAGES attached, and those images carry the appearance. The prompt's job is to say what is different about this shot — the action, pose, expression, position in the space, and framing — not to re-describe what the references already show. " +
+    "Each shot's image is generated with that shot's character, location, and prop REFERENCE IMAGES attached, and those images carry the appearance. The prompt's job is to say what is different about this shot — the action, pose, expression, position in the space, and framing — not to re-describe what the references already show. " +
     "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...) — start a new scene at each one, [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure.\n\n" +
     `Aspect Ratio & Visual Composition: this chapter's fixed aspect ratio is '${aspectRatio}' — set every shot's \`aspect\` to exactly this value, no exceptions. Compose every shot's \`prompt\` for this ratio, don't just label it:\n` +
     "- 9:16 (Vertical): frame subjects vertically — tight side margins, vertical/stacked composition (top-to-bottom motion, tall environments). Prioritize Medium Shots, Close-ups, Medium Close-ups, and vertical tilts/pan-ups; avoid Wide or Extreme Wide shots where the subject gets lost in the narrow horizontal frame. Do NOT include wide-horizontal composition language (e.g. 'wide panoramic view', 'expansive horizon line', 'sweeping landscape framing').\n" +
@@ -130,7 +130,7 @@ export function storyboardSystemPrompt(
     "videoPrompt safety: AI video generators (e.g. Google Flow/Veo) run a separate IP/third-party-content filter that can block a prompt for describing a character with too many specific, iconic, signature-move-style gestures stacked in one action beat — this is especially likely for animal characters in speed/rivalry/competition contexts (a common trigger pattern resembles famous cartoon mascot behavior). Keep action description grounded in the scene's actual beat (what the script says happens) rather than piling on extra flourish gestures not needed to convey the action.\n\n" +
     "durationS is the recommended clip length for AI video generation — NEVER exceed 10 seconds, most AI video tools cannot export longer clips. Pick a realistic shorter duration (e.g. 2-6s) unless the action genuinely needs the full 10s.\n\n" +
     "ASSETS MATCHING:\n" +
-    "- You are provided with a list of Known Assets (characters and/or locations, given below) — this tells the user which reference images/prompts to attach when generating.\n" +
+    "- You are provided with a list of Known Assets (characters, locations, and/or props, given below) — this tells the user which reference images/prompts to attach when generating.\n" +
     "- When generating a shot's `prompt`, check which Known Assets appear in your text description.\n" +
     "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
     identityAnchorBlock() +

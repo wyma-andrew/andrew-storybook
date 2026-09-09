@@ -4,12 +4,11 @@ import { mapChapterAsset } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { extractAssets } from "@/lib/openai";
 import { findMatch, normalizeName } from "@/lib/api/match";
-import { resolveVisualStyle } from "@/lib/visual-styles";
 import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 // Re-Sync with story: re-runs extraction against the current script.
-// - Characters/locations not already on this chapter (by name) are INSERTED.
+// - Characters/locations/props not already on this chapter (by name) are INSERTED.
 // - Existing rows still present in the script are left untouched (prompts never overwritten).
 // - Existing rows whose name no longer appears in the script are flagged match_status
 //   "stale" (not deleted) — user reviews and removes them manually. If a stale row's
@@ -40,13 +39,20 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
   if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(story?.visual_style_id);
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
 
-  const extracted = await extractAssets(scriptText, resolveStyleContext(region, style?.description), region);
+  // Existing names go into the extraction so it reuses them verbatim instead of
+  // re-wording one (which would insert a duplicate and flag the original stale).
+  const extracted = await extractAssets(
+    scriptText,
+    resolveStyleContext(region, story?.visual_style_id),
+    region,
+    (existing ?? []).filter((e) => e.match_status !== "stale").map((e) => `${e.kind}: ${e.name}`)
+  );
   const extractedAssets = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const, spaceKind: null })),
     ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),
+    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null })),
   ];
   const extractedKeys = new Set(extractedAssets.map((a) => `${a.kind}:${normalizeName(a.name)}`));
   const existingKeys = new Set((existing ?? []).map((e) => `${e.kind}:${normalizeName(e.name)}`));

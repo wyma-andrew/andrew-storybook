@@ -49,7 +49,7 @@ export const REGENERATE_LOCATION_SCHEMA = {
 // without it, regenerating one asset silently drops the structure that the
 // storyboard step's consistency/anchoring blocks depend on downstream.
 export function regenerateAssetSystemPrompt(
-  kind: "character" | "location",
+  kind: "character" | "location" | "prop",
   styleContext?: string | null,
   region: Region = "english"
 ) {
@@ -57,13 +57,19 @@ export function regenerateAssetSystemPrompt(
     kind === "location"
       ? "Describe the EMPTY environment only: structure, materials, props, layout, fixed signage/text. No camera, lighting, or style wording. " +
         "Never mention characters, people, animals, or anyone's action/pose/expression, even if the script's scene has them present."
-      : "Describe entity-specific visual facts only: physical identity, wardrobe, build, expression. No camera, lighting, or style wording.";
+      : kind === "prop"
+        ? "Describe the object's visual identity only: silhouette, material, color, finish, construction, markings, scale, and meaningful variable state. No camera, lighting, or style wording."
+        : "Describe entity-specific visual facts only: physical identity, wardrobe, build, expression. No camera, lighting, or style wording.";
 
   return (
     `You regenerate the visual identity prompt for one ${kind} extracted from a story script for a storyboard tool. ` +
     rules +
     " The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
-    (kind === "location" ? locationSpatialLayoutBlock() : characterIdentityBlock()) +
+    (kind === "location"
+      ? locationSpatialLayoutBlock()
+      : kind === "prop"
+        ? "\n\nPROP IDENTITY: use PROP / IDENTITY LOCK / VARIABLE sections. Keep the identity lock short and self-contained."
+        : characterIdentityBlock()) +
     styleContextBlock(styleContext) +
     (region === "myanmar" ? myanmarAdaptationBlock() : "") +
     outputLanguageBlock()

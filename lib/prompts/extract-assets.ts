@@ -54,18 +54,39 @@ export const ASSET_SCHEMA = {
         additionalProperties: false,
       },
     },
+    props: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          meta: { type: "string", description: "short tag, e.g. 'Brass key · recurring'" },
+          realPrompt: {
+            type: "string",
+            description: "Structured PROP / IDENTITY LOCK / VARIABLE format — distinctive physical identity, material, condition, markings, and scale only.",
+          },
+        },
+        required: ["name", "meta", "realPrompt"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["characters", "locations"],
+  required: ["characters", "locations", "props"],
   additionalProperties: false,
 } as const;
 
 export function extractAssetsSystemPrompt(styleContext?: string | null, region: Region = "english") {
   return (
-    "You extract characters and locations from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. " +
+    "You extract characters, locations, and visually important recurring props from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. Extract props when they are distinct, story-relevant objects that appear, are handled, or recur; do not extract every incidental background object. " +
     "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
+    // One physical place must come out as one location row. Splitting it into
+    // "front yard" + "backyard" gives each half its own reference image and its
+    // own architecture, so the same house renders differently shot to shot.
+    "ONE PLACE = ONE LOCATION: merge into a single location every area that belongs to the same physical building, house, yard, compound, or site — its front yard, backyard, porch, and surrounding grounds are one exterior location with several VIEWS, one STRUCTURE SHELL, and one FIXED LAYOUT, not separate locations. Keep locations separate only when they are genuinely different spaces: separate rooms, or an interior and an unrelated exterior. Give each merged location one natural canonical name covering the whole place, and cover its distinct areas inside FIXED LAYOUT. " +
     "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
     characterIdentityBlock() +
     locationSpatialLayoutBlock() +
+    "\n\nPROP IDENTITY: every prop's realPrompt must use PROP / IDENTITY LOCK / VARIABLE sections. Describe silhouette, material, color, finish, construction, distinctive marks, scale, and meaningful variable state. Do not describe a character holding it, a location around it, camera, lighting, or style." +
     styleContextBlock(styleContext) +
     (region === "myanmar" ? myanmarAdaptationBlock() : "") +
     outputLanguageBlock()

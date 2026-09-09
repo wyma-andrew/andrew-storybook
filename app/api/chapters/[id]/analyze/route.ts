@@ -4,11 +4,10 @@ import { mapChapterAsset } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { extractAssets } from "@/lib/openai";
 import { findMatch } from "@/lib/api/match";
-import { resolveVisualStyle } from "@/lib/visual-styles";
 import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
-// Re-runs extraction: reads the chapter script, pulls characters & locations,
+// Re-runs extraction: reads the chapter script, pulls characters, locations & props,
 // matches each by name against the story's existing Asset Bible, and
 // replaces this chapter's chapter_assets rows.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -33,14 +32,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   ]);
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(story?.visual_style_id);
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
 
-  const extracted = await extractAssets(scriptText, resolveStyleContext(region, style?.description), region);
+  const extracted = await extractAssets(scriptText, resolveStyleContext(region, story?.visual_style_id), region);
 
   const rows = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const, spaceKind: null })),
     ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),
+    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null })),
   ].map((a) => {
     const match = findMatch(bible.filter((b) => b.kind === a.kind), a.name);
     return {

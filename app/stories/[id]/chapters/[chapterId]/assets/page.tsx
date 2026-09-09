@@ -235,13 +235,16 @@ export default function AssetsPage() {
   const { trigger: sync, loading: syncing } = useWrite((api) => api("chapters/:id/sync").POST());
 
   const characterPreset = SYSTEM_PROMPTS.character;
+  const propPreset = SYSTEM_PROMPTS.prop;
 
   const characters = assets?.filter((a) => a.kind === "character") ?? [];
   const locations = assets?.filter((a) => a.kind === "location") ?? [];
+  const props = assets?.filter((a) => a.kind === "prop") ?? [];
   const matched = characters.filter((a) => a.matchStatus === "matched").length;
   const isNew = characters.filter((a) => a.matchStatus === "new").length;
   const staleCharacters = characters.filter((a) => a.matchStatus === "stale").length;
   const staleLocations = locations.filter((a) => a.matchStatus === "stale").length;
+  const staleProps = props.filter((a) => a.matchStatus === "stale").length;
 
   async function reanalyze() {
     await analyze({ params: { id: chapterId } });
@@ -255,12 +258,12 @@ export default function AssetsPage() {
 
   if (!story || !chapter) return null;
 
-  const styleContext = resolveStyleContext(story.region, story.visualStyleDescription);
+  const styleContext = resolveStyleContext(story.region, story.visualStyleId);
   // A location's wide view is copied with its floor plan attached, and the plan
   // is a schematic, not a render of the finished room — so the style's
   // "match the reference image" clause has to come off, or the copy asks for
   // the plan's look back.
-  const locationStyleContext = resolveStyleContext(story.region, story.visualStyleDescription, {
+  const locationStyleContext = resolveStyleContext(story.region, story.visualStyleId, {
     referenceImageAttached: false,
   });
 
@@ -282,7 +285,7 @@ export default function AssetsPage() {
         <ToolbarLoadingButton onClick={reanalyze} loading={analyzing}>
           <RefreshCw size={13} /> Re-analyze
         </ToolbarLoadingButton>
-        <ToolbarLoadingButton onClick={resync} loading={syncing} title="Add script's new characters/locations without touching existing prompts">
+        <ToolbarLoadingButton onClick={resync} loading={syncing} title="Add script's new characters, locations, and props without touching existing prompts">
           <ListPlus size={13} /> Re-Sync with story
         </ToolbarLoadingButton>
       </Toolbar>
@@ -299,7 +302,7 @@ export default function AssetsPage() {
                 </Button>
               }
             >
-              Run analysis on the script to extract characters and locations.
+              Run analysis on the script to extract characters, locations, and props.
             </EmptyCta>
           )}
 
@@ -338,6 +341,19 @@ export default function AssetsPage() {
                       styleContext={locationStyleContext}
                       angleStyleContext={styleContext}
                     />
+                  ))}
+                </div>
+              </section>
+
+              <section className="mb-11">
+                <SectionHead
+                  title="Prop Prompts"
+                  count={`${props.length} detected${staleProps ? ` · ${staleProps} stale` : ""}`}
+                  action={!!props.length && <RegenerateAllButton assets={props} chapterId={chapterId} />}
+                />
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+                  {props.map((a) => (
+                    <AssetCard key={a.id} asset={a} systemPrompt={propPreset} styleContext={styleContext} />
                   ))}
                 </div>
               </section>

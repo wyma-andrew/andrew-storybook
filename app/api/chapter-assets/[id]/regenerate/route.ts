@@ -3,7 +3,6 @@ import { supabaseRoute } from "@/lib/supabase/route";
 import { mapChapterAsset } from "@/lib/api/map";
 import { tiptapToText } from "@/lib/tiptap-text";
 import { regenerateAssetPrompt } from "@/lib/openai";
-import { resolveVisualStyle } from "@/lib/visual-styles";
 import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
@@ -35,9 +34,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     .eq("id", chapter.story_id)
     .single();
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const style = await resolveVisualStyle(story?.visual_style_id);
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
-  const styleContext = resolveStyleContext(region, style?.description);
+  const styleContext = resolveStyleContext(region, story?.visual_style_id);
 
   const { realPrompt, spaceKind } = await regenerateAssetPrompt(
     scriptText,

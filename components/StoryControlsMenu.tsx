@@ -56,7 +56,6 @@ export function StoryControlsMenu({
           ...current,
           visualStyleId: value,
           visualStyleName: picked?.name ?? current.visualStyleName,
-          visualStyleDescription: picked?.description ?? current.visualStyleDescription,
         })),
     });
   }

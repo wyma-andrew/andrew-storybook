@@ -15,19 +15,32 @@ export type ExtractedAsset = { name: string; meta: string; realPrompt: string };
 // Locations additionally carry spaceKind — it selects the reference-image
 // preset (interior view + floor plan vs exterior view + site plan).
 export type ExtractedLocation = ExtractedAsset & { spaceKind: SpaceKind };
-export type ExtractedAssets = { characters: ExtractedAsset[]; locations: ExtractedLocation[] };
+export type ExtractedAssets = { characters: ExtractedAsset[]; locations: ExtractedLocation[]; props: ExtractedAsset[] };
 
 export async function extractAssets(
   scriptText: string,
   styleContext?: string | null,
-  region: Region = "english"
+  region: Region = "english",
+  // Names already on the chapter. Re-Sync matches extracted assets to existing
+  // rows by name, so a run that re-words a name it produced last time inserts a
+  // duplicate and flags the original stale. Feeding the names back keeps them
+  // stable across runs — including merged location names.
+  existingNames: string[] = []
 ): Promise<ExtractedAssets> {
   const systemPrompt = extractAssetsSystemPrompt(styleContext, region);
+  // With no names the message stays the bare script, exactly as before this
+  // parameter existed — a "Script:" header the names block doesn't need would
+  // shift Re-analyze's extraction for nothing.
+  const userMessage = existingNames.length
+    ? `Assets already extracted from this script — whenever the same entity appears, return it under the EXACT same name:\n${existingNames
+        .map((n) => `- ${n}`)
+        .join("\n")}\n\nScript:\n${scriptText}`
+    : scriptText;
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: scriptText },
+      { role: "user", content: userMessage },
     ],
     response_format: {
       type: "json_schema",
@@ -42,7 +55,7 @@ export async function extractAssets(
 // button) — same rules as extractAssets, scoped to one named character/location.
 export async function regenerateAssetPrompt(
   scriptText: string,
-  kind: "character" | "location",
+  kind: "character" | "location" | "prop",
   name: string,
   meta: string,
   styleContext?: string | null,
@@ -73,7 +86,7 @@ export async function regenerateAssetPrompt(
   return { realPrompt: parsed.realPrompt, spaceKind: isLocation ? parsed.spaceKind ?? null : null };
 }
 
-export type GeneratedShotAsset = { name: string; kind: "character" | "location" };
+export type GeneratedShotAsset = { name: string; kind: "character" | "location" | "prop" };
 export type GeneratedShot = {
   label: string;
   beat: string;

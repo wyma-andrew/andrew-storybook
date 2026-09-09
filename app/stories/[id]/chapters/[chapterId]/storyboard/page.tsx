@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target } from "lucide-react";
 import { Textarea } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -283,7 +283,7 @@ export default function StoryboardPage() {
 
   if (!story || !chapter) return null;
 
-  const styleContext = resolveStyleContext(story.region, story.visualStyleDescription);
+  const styleContext = resolveStyleContext(story.region, story.visualStyleId);
 
   return (
     <Frame>
@@ -419,7 +419,7 @@ export default function StoryboardPage() {
                               key={`${a.kind}-${a.name}`}
                               className="inline-flex items-center gap-1 rounded-full border border-line-2 bg-panel-2 px-2 py-0.5 text-fg-2"
                             >
-                              {a.kind === "character" ? <User size={11} /> : <MapPin size={11} />}
+                              {a.kind === "character" ? <User size={11} /> : a.kind === "location" ? <MapPin size={11} /> : <Package size={11} />}
                               {a.name}
                             </span>
                           ))}

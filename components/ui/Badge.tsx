@@ -22,14 +22,14 @@ export function MatchBadge({ status }: { status: "matched" | "new" | "stale" }) 
   );
 }
 
-export function InjectRow({ kind }: { kind: "character" | "location" }) {
+export function InjectRow({ kind }: { kind: "character" | "location" | "prop" }) {
   return (
     <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
       <span className="flex items-center gap-1.5 rounded-md border border-style-badge-border bg-style-badge-bg px-2.5 py-1 text-[10.5px] tracking-wide text-style-badge">
         <Sparkles size={11} /> Style
       </span>
       <span className="flex items-center gap-1.5 rounded-md border border-sys-badge-border bg-sys-badge-bg px-2.5 py-1 text-[10.5px] tracking-wide text-sys-badge">
-        <Lock size={9} /> System · {kind === "character" ? "Character" : "Location"} preset
+        <Lock size={9} /> System · {kind === "character" ? "Character" : kind === "location" ? "Location" : "Prop"} preset
       </span>
     </div>
   );

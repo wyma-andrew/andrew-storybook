@@ -9,6 +9,7 @@ import { AdminBlock } from "@/components/ui/AdminBlock";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
+import { REGIONS } from "@/lib/constants/regions";
 
 export default function SettingsPage() {
   const character = SYSTEM_PROMPTS.character;
@@ -45,7 +46,16 @@ export default function SettingsPage() {
                       Locked
                     </span>
                   </div>
-                  <p className="text-xs text-fg-2">{s.description}</p>
+                  {/* One text per region — both are shown, since a style can read
+                      very differently in each and this page is where that is checked. */}
+                  {REGIONS.map((r) => (
+                    <div key={r.value} className="mt-2 first:mt-0">
+                      <div className="mb-1 text-[10px] tracking-wider text-fg-3 uppercase">{r.label}</div>
+                      <p className="text-xs text-fg-2">
+                        {s.text[r.value].base + s.text[r.value].referenceClause + s.text[r.value].tail}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

@@ -10,6 +10,28 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # AI Storybook — project rules
 
+## History rule — MANDATORY
+
+`history/<feature-name>.md` is the record of what was decided for each feature
+and **why**, including the alternatives that were tried and rejected. It exists
+because the reasoning behind these prompts and flows is not recoverable from the
+code — a later change can look obviously right and still undo a decision that
+cost a day to reach.
+
+- **Before touching a feature, read its `history/` file.** Match by the "Covers:"
+  paths at the top of each file.
+- **If a requested change contradicts a recorded decision — including
+  reintroducing something recorded as rejected — stop and tell the user which
+  entry it conflicts with, and wait for approval.** Do not implement it first
+  and mention it after. Do not quietly "fix" anything the file lists as an
+  accepted consequence or as deliberately left open.
+- **After the change, update that file** (or add a new one for a new feature):
+  a dated entry with the decision, the reasoning, what was rejected, and any
+  consequence a future reader would otherwise mistake for a bug. Record
+  decisions and constraints, not a changelog of edits — git already has those.
+- Approved contradictions replace the old entry; keep the old reasoning as
+  superseded so the same ground isn't re-argued.
+
 ## Product
 
 Three-step flow, one story project:

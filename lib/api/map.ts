@@ -21,7 +21,6 @@ export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
     description: (r.description as string) ?? null,
     visualStyleId: (r.visual_style_id as string) ?? null,
     visualStyleName: style?.name ?? null,
-    visualStyleDescription: style?.description ?? null,
     aspectRatio: (r.aspect_ratio as string) ?? DEFAULT_ASPECT_RATIO,
     region: isRegion(r.region) ? r.region : DEFAULT_REGION,
     createdAt: r.created_at as string,

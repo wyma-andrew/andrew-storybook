@@ -42,7 +42,7 @@ function BibleCard({
 }) {
   // Locations pick their preset from spaceKind: interior view + floor plan, or
   // exterior view + site plan.
-  const viewPreset = entry.kind === "location" ? locationViewPreset(entry.spaceKind) : SYSTEM_PROMPTS.character;
+  const viewPreset = entry.kind === "location" ? locationViewPreset(entry.spaceKind) : entry.kind === "prop" ? SYSTEM_PROMPTS.prop : SYSTEM_PROMPTS.character;
   const hints = locationPromptHints(entry.spaceKind);
 
   const [prompt, setPrompt] = useState(entry.realPrompt);
@@ -184,15 +184,16 @@ export default function BiblePage() {
   const { data: bible } = useRead((api) => api("stories/:id/bible").GET({ params: { id } }));
   // Match the Assets page: what's copied is style + the kind's system preset +
   // realPrompt, not the bare realPrompt shown on the card.
-  const styleContext = story ? resolveStyleContext(story.region, story.visualStyleDescription) : null;
+  const styleContext = story ? resolveStyleContext(story.region, story.visualStyleId) : null;
   // See the Assets page: a location copy attaches the floor plan, so the
   // style's "match the reference image" clause is dropped for it.
   const locationStyleContext = story
-    ? resolveStyleContext(story.region, story.visualStyleDescription, { referenceImageAttached: false })
+    ? resolveStyleContext(story.region, story.visualStyleId, { referenceImageAttached: false })
     : null;
 
   const characters = bible?.filter((b) => b.kind === "character") ?? [];
   const locations = bible?.filter((b) => b.kind === "location") ?? [];
+  const props = bible?.filter((b) => b.kind === "prop") ?? [];
 
   return (
     <Frame>
@@ -232,6 +233,17 @@ export default function BiblePage() {
                 <BibleCard key={b.id} entry={b} styleContext={locationStyleContext} angleStyleContext={styleContext} />
               ))}
               {locations.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
+            </div>
+          </section>
+
+          <section className="mb-11">
+            <SectionHead title="Props" count={`${props.length} in bible`} />
+            <div className="mb-4 text-[12.5px] text-fg-3">
+              Story-relevant objects with a stable visual identity, reused wherever they appear.
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+              {props.map((b) => <BibleCard key={b.id} entry={b} styleContext={styleContext} />)}
+              {props.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
             </div>
           </section>
         </Wrap>
