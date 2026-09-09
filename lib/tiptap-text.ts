@@ -10,6 +10,7 @@ const BLOCK_TAGS: Record<string, string> = {
   character: "CHARACTER",
   parenthetical: "PARENTHETICAL",
   dialog: "DIALOG",
+  voiceOver: "VOICE_OVER",
   transition: "TRANSITION",
 };
 
@@ -34,4 +35,16 @@ export function tiptapToText(doc: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** Returns non-empty anonymous Voice Over blocks in script order. */
+export function tiptapVoiceOvers(doc: unknown): string[] {
+  if (!doc || typeof doc !== "object") return [];
+  const node = doc as { content?: unknown[] };
+  if (!Array.isArray(node.content)) return [];
+
+  return node.content
+    .filter((child) => (child as { type?: string }).type === "voiceOver")
+    .map((child) => textOf(child as { type?: string; text?: string; content?: unknown[] }).trim())
+    .filter(Boolean);
 }

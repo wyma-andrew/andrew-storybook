@@ -23,6 +23,50 @@ fantasy painting; chiaroscuro gold/blue, volumetric rays, Southeast Asian
 Buddhist iconography with modern concept art. Appears automatically in all three
 pickers.
 
+## 2026-09-10 — Refined the Mythic Fantasy Painting prompt
+
+The English and Myanmar variants now use the same refined, serene cinematic-realism
+wording. The final copied prompt is prefixed with `[Style]`. The replacement favors controlled dramatic
+lighting, soft chiaroscuro, natural texture, and a sacred Southeast Asian
+Buddhist-inspired atmosphere over the earlier epic-scale, particle-effect-heavy
+description.
+
+The supplied ending `textless, full-frame` was consolidated into the existing
+`SINGLE_FRAME_TAIL` instead of duplicated. This preserves the standing camera,
+uncropped-frame, text, and letterboxing safeguards while otherwise using the
+approved replacement wording.
+
+## 2026-09-10 — Buddha mode has explicit style text
+
+Adding the `buddha` region also adds a `buddha` `StyleText` to every visual
+style. The initial entries deliberately duplicate the closest suitable style
+wording, but they are stored independently rather than falling back at runtime.
+Historical content belongs to the shared Buddha-era adaptation block; these
+entries continue to control rendering style only.
+
+After a generated Buddha reference read as a contemporary Southeast Asian monk,
+the Buddha variant of Mythic Fantasy Painting changed its cultural phrase from
+`Southeast Asian Buddhist-inspired` to `ancient South Asian Buddha-era`. The
+other regional variants keep their own wording.
+
+The literal `[Style]` marker is owned by `withStyle` / `withAssetContext`, not
+stored inside any `StyleText`. Removing it from the Mythic bases prevents copied
+prompts from beginning `[Style] [Style]` while preserving one marker in every
+final copy.
+
+## 2026-09-10 — Buddha Mythic Fantasy is explicitly non-photorealistic
+
+The Buddha-region variant of Mythic Fantasy Painting now asks for a premium
+stylized concept-art illustration with believable anatomy and material detail,
+while explicitly rejecting live-action realism and photographic appearance.
+This replaces the earlier hyper-realistic/cinematic-realism wording that pulled
+generated characters toward photographs of contemporary people.
+
+Only the Buddha variant changed because the approved replacement explicitly
+names an ancient South Asian Buddha-era aesthetic. English and Myanmar retain
+their independently defined regional text. The supplied single-frame ending is
+still composed through `SINGLE_FRAME_TAIL` rather than duplicated in the base.
+
 ## 2026-09-09 — One text per region, on every style
 
 **Decision: `VisualStylePreset.text` is `Record<Region, StyleText>` — every

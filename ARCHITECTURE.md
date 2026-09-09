@@ -18,12 +18,14 @@ Tiptap screenplay
   -> AI storyboard generation
   -> scenes
   -> numbered shots with image + video prompts and continuity metadata
+  -> second AI pass maps Voice Over blocks across shot ranges
 ```
 
-The story's visual style and region guide AI generation. The literal style text
-is composed with an asset or shot prompt at copy time, keeping stored generated
-text reusable when the style changes. Aspect ratio defaults at story level and
-can be overridden by a chapter.
+The story's visual style and region (English, Myanmar, or historically grounded,
+iconographically recognizable Buddha-era) guide AI generation. The literal style text is composed with an
+asset or shot prompt at copy time, keeping stored generated text reusable when
+the style changes. Aspect ratio defaults at story level and can be overridden
+by a chapter.
 
 ## Repository map
 
@@ -37,6 +39,7 @@ app/
     chapter-asset-images/      Edit/delete/promote chapter location images
     bible-entries/             Edit shared story-bible entries and images
     shots/                     Store/clear user prompt overrides
+    voice-overs/               Edit narration text overrides and shot ranges
   stories/                     Story list/detail and three-step chapter UI
   account/                     Email display and password change
   settings/                    Read-only styles and system prompts
@@ -99,10 +102,16 @@ schemas. The three operations are:
 - `extractAssets()` — characters, locations, and story-relevant props.
 - `regenerateAssetPrompt()` — one existing chapter asset.
 - `generateStoryboard()` — scenes and shots from script plus known assets.
+- `assignVoiceOvers()` — ordered, non-overlapping narration ranges over finalized shots.
 
 Tiptap JSON is flattened by `tiptapToText()` into tagged lines such as
 `[SCENE]`, `[ACTION]`, and `[DIALOG]`, so models receive explicit screenplay
 roles rather than inferring them from formatting.
+
+Extracted asset names stay verbatim from the script because synchronization and
+storyboard references are name-based. A recognized real, historical, or
+religious character may carry a separate English `KNOWN IDENTITY` line inside
+its visual prompt to improve image-model recognition without changing that key.
 
 ## Main feature flows
 
@@ -115,6 +124,8 @@ roles rather than inferring them from formatting.
 
 The editor stores its complete Tiptap document as `chapters.script` JSONB.
 Changes are saved through Spoosh as the document changes.
+Voice Over is an anonymous block flattened as `[VOICE_OVER]`; explicit import
+labels include `Voice Over:`, `Voiceover:`, `VO:`, and `Narration:`.
 
 ### Asset extraction and sync
 
@@ -123,6 +134,10 @@ Changes are saved through Spoosh as the document changes.
 - Incremental update: `POST /api/chapters/:id/sync`
 - Per-card regeneration: `POST /api/chapter-assets/:id/regenerate`
 - UI: `app/stories/[id]/chapters/[chapterId]/assets/page.tsx`
+
+Character cards allow chapter-local edits to their short `meta` information and
+detailed `real_prompt` through a dialog opened from the card header. Names remain
+extraction-owned so Re-Sync and storyboard asset references keep matching.
 
 Re-analyze deletes and recreates all chapter assets. Re-Sync preserves current
 rows and prompts, inserts newly found assets, marks missing assets `stale`, and
@@ -155,6 +170,12 @@ start/end continuity state. Duration is clamped to 1–10 seconds.
 User edits are stored in `prompt_override` and `video_prompt_override`; the
 generated originals remain intact. Clearing an override restores the original.
 
+When the script contains Voice Over blocks, a second model call maps each block
+to a contiguous start/end shot range after the visual shot list is finalized.
+Ranges preserve script order and cannot overlap. `voice_over_segments` stores
+the script snapshot and a nullable text override; narration is copied and
+edited separately and is never injected into per-shot video prompts.
+
 ### Prompt copying
 
 Stored asset and shot prompts intentionally omit literal style tags. The client
@@ -179,10 +200,12 @@ auth.users
                  -> chapter_asset_images.chapter_asset_id
             -> scenes.chapter_id
                  -> shots.scene_id
+            -> voice_over_segments.chapter_id
        -> bible_entries.story_id
             -> bible_entry_images.bible_entry_id
 
 chapter_assets.bible_entry_id -> bible_entries.id (nullable)
+voice_over_segments.start_shot_id / end_shot_id -> shots.id
 ```
 
 | Table | Responsibility |
@@ -195,6 +218,7 @@ chapter_assets.bible_entry_id -> bible_entries.id (nullable)
 | `bible_entry_images` | Promoted story-wide location image URLs |
 | `scenes` | Ordered storyboard scenes |
 | `shots` | Ordered prompts, overrides, references, beat, and continuity state |
+| `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;
 normal story deletion is soft deletion through `stories.deleted_at`, while the
@@ -207,9 +231,11 @@ Visual styles and system presets are not tables. Their sources of truth are
 
 Implemented: email/password auth, per-user stories, soft-delete trash,
 multi-chapter stories, Tiptap screenplay import/editing, three-kind asset
-extraction, story bible promotion, location reference-image URLs, storyboard
+extraction, chapter-local character-info and prompt editing, story bible promotion,
+location reference-image URLs, storyboard
 generation, editable/restorable shot prompts, style/region selection, and
-story/chapter aspect ratios.
+story/chapter aspect ratios. Anonymous Voice Over blocks are mapped to editable
+storyboard shot ranges as a separate narration overlay.
 
 Current intentional limits: no OAuth, magic link, password-reset flow,
 database style editor, file upload/storage flow, or character/prop reference
@@ -222,6 +248,8 @@ images. The `demo/` directory is reference-only.
 | Asset extraction, sync, props, location merging | `history/asset-extraction.md` |
 | Prompt-hint tooltip behavior | `history/prompt-hint-tooltip.md` |
 | Visual styles and regional text | `history/visual-styles.md` |
+| Story regions and cultural/historical adaptation | `history/regions.md` |
+| Voice Over blocks, mapping, and range editing | `history/voice-over.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 
 ## Maintenance rule

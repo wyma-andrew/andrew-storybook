@@ -2,7 +2,7 @@ import type { Region } from "../constants/regions";
 import {
   styleContextBlock,
   outputLanguageBlock,
-  myanmarAdaptationBlock,
+  regionAdaptationBlock,
   locationSpatialConsistencyBlock,
   identityAnchorBlock,
   stateLedgerBlock,
@@ -10,7 +10,7 @@ import {
   motionDisciplineBlock,
   shotDistinctnessBlock,
 } from "./shared";
-import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
+import { DEFAULT_ASPECT_RATIO } from "../constants/aspect-ratios";
 
 export const STORYBOARD_SCHEMA = {
   type: "object",
@@ -117,7 +117,8 @@ export function storyboardSystemPrompt(
   return (
     "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a copyable image generation prompt, plus a Google Flow (image-to-video) prompt. " +
     "Each shot's image is generated with that shot's character, location, and prop REFERENCE IMAGES attached, and those images carry the appearance. The prompt's job is to say what is different about this shot — the action, pose, expression, position in the space, and framing — not to re-describe what the references already show. " +
-    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...) — start a new scene at each one, [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure.\n\n" +
+    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...) — start a new scene at each one, [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure.\n\n" +
+    "VOICE OVER: use each [VOICE_OVER] block to choose meaningful visual coverage, and make the covered shots' combined duration long enough for natural narration. Create at least one distinct visual shot per Voice Over block so a later pass can assign non-overlapping ranges. Voice Over has no visible speaker: never invent a narrator character, lip movement, or speaking action from it, and never copy Voice Over text into a shot's videoPrompt. The narration is produced as a separate overlay track after the shots are generated. A shot beat may cite the relevant VOICE_OVER block.\n\n" +
     `Aspect Ratio & Visual Composition: this chapter's fixed aspect ratio is '${aspectRatio}' — set every shot's \`aspect\` to exactly this value, no exceptions. Compose every shot's \`prompt\` for this ratio, don't just label it:\n` +
     "- 9:16 (Vertical): frame subjects vertically — tight side margins, vertical/stacked composition (top-to-bottom motion, tall environments). Prioritize Medium Shots, Close-ups, Medium Close-ups, and vertical tilts/pan-ups; avoid Wide or Extreme Wide shots where the subject gets lost in the narrow horizontal frame. Do NOT include wide-horizontal composition language (e.g. 'wide panoramic view', 'expansive horizon line', 'sweeping landscape framing').\n" +
     "- 16:9 (Widescreen): frame subjects horizontally using the Rule of Thirds — emphasize depth, background context, and horizontal scale. Prioritize Wide Shots, Extreme Wide Shots, Establishing Shots, and horizontal tracking shots to maximize environmental detail. Do NOT include constrained-vertical composition language (e.g. 'tight vertical crop', 'tall narrow framing').\n\n" +
@@ -140,7 +141,7 @@ export function storyboardSystemPrompt(
     shotDistinctnessBlock() +
     motionDisciplineBlock() +
     styleContextBlock(styleContext) +
-    (region === "myanmar" ? myanmarAdaptationBlock() : "") +
+    regionAdaptationBlock(region) +
     outputLanguageBlock()
   );
 }

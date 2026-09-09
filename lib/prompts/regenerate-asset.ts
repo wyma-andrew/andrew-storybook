@@ -2,7 +2,7 @@ import type { Region } from "../constants/regions";
 import {
   styleContextBlock,
   outputLanguageBlock,
-  myanmarAdaptationBlock,
+  regionAdaptationBlock,
   locationSpatialLayoutBlock,
   characterIdentityBlock,
 } from "./shared";
@@ -64,14 +64,14 @@ export function regenerateAssetSystemPrompt(
   return (
     `You regenerate the visual identity prompt for one ${kind} extracted from a story script for a storyboard tool. ` +
     rules +
-    " The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+    " The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure. Voice Over may reveal visual entities, but it has no speaker and never creates a narrator character by itself." +
     (kind === "location"
       ? locationSpatialLayoutBlock()
       : kind === "prop"
         ? "\n\nPROP IDENTITY: use PROP / IDENTITY LOCK / VARIABLE sections. Keep the identity lock short and self-contained."
         : characterIdentityBlock()) +
     styleContextBlock(styleContext) +
-    (region === "myanmar" ? myanmarAdaptationBlock() : "") +
+    regionAdaptationBlock(region) +
     outputLanguageBlock()
   );
 }

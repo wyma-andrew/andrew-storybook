@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { mapScene } from "@/lib/api/map";
-import { tiptapToText } from "@/lib/tiptap-text";
-import { generateStoryboard } from "@/lib/openai";
+import { tiptapToText, tiptapVoiceOvers } from "@/lib/tiptap-text";
+import { assignVoiceOvers, generateStoryboard } from "@/lib/openai";
 import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
+import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,12 +38,45 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
   const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio, region);
+  const voiceOverSources = tiptapVoiceOvers(chapter.script).map((text, index) => ({
+    sourceIndex: index + 1,
+    text,
+  }));
+  const shotCoordinates = scenes.flatMap((scene, sceneOffset) =>
+    scene.shots.map((shot, shotOffset) => ({
+      sceneIndex: sceneOffset + 1,
+      shotIndex: shotOffset + 1,
+      durationS: Math.min(Math.max(shot.durationS, 1), 10),
+    }))
+  );
 
-  const { data: oldScenes } = await db.from("scenes").select("id").eq("chapter_id", id);
-  if (oldScenes?.length) {
-    await db.from("scenes").delete().eq("chapter_id", id); // cascades to shots
+  // Complete and validate the second AI pass before deleting the existing
+  // storyboard. A bad narration mapping must not destroy usable prior work.
+  let voiceOverAssignments: ReturnType<typeof resolveVoiceOverAssignments> = [];
+  if (voiceOverSources.length) {
+    try {
+      const generatedAssignments = await assignVoiceOvers(voiceOverSources, scenes);
+      voiceOverAssignments = resolveVoiceOverAssignments(
+        voiceOverSources,
+        generatedAssignments,
+        shotCoordinates
+      );
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Could not map Voice Over narration to shots." },
+        { status: 502 }
+      );
+    }
   }
 
+  const { data: oldScenes, error: oldScenesError } = await db.from("scenes").select("id").eq("chapter_id", id);
+  if (oldScenesError) return NextResponse.json({ error: oldScenesError.message }, { status: 500 });
+  if (oldScenes?.length) {
+    const { error } = await db.from("scenes").delete().eq("chapter_id", id); // cascades to shots + Voice Over
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const shotIds = new Map<string, string>();
   for (let i = 0; i < scenes.length; i++) {
     const s = scenes[i];
     const { data: sceneRow, error: sErr } = await db
@@ -67,9 +101,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       end_state: sh.endState,
     }));
     if (shotRows.length) {
-      const { error: shErr } = await db.from("shots").insert(shotRows);
+      const { data: insertedShots, error: shErr } = await db.from("shots").insert(shotRows).select("id, index");
       if (shErr) return NextResponse.json({ error: shErr.message }, { status: 500 });
+      for (const shot of insertedShots) shotIds.set(`${i + 1}.${shot.index}`, shot.id);
     }
+  }
+
+  if (voiceOverAssignments.length) {
+    const sourceText = new Map(voiceOverSources.map((source) => [source.sourceIndex, source.text]));
+    const rows = voiceOverAssignments.map((assignment) => ({
+      chapter_id: id,
+      source_index: assignment.sourceIndex,
+      text: sourceText.get(assignment.sourceIndex)!,
+      start_shot_id: shotIds.get(`${assignment.startSceneIndex}.${assignment.startShotIndex}`)!,
+      end_shot_id: shotIds.get(`${assignment.endSceneIndex}.${assignment.endShotIndex}`)!,
+    }));
+    const { error } = await db.from("voice_over_segments").insert(rows);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   await db.from("chapters").update({ status: "storyboard", updated_at: new Date().toISOString() }).eq("id", id);

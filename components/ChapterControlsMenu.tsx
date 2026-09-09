@@ -50,7 +50,7 @@ export function ChapterControlsMenu({
 
   // Region lives on the story, not the chapter — it swaps the prompt variant
   // used by asset extraction, asset regeneration, and storyboard generation
-  // (myanmarAdaptationBlock), so it changes nothing already generated.
+  // (regionAdaptationBlock), so it changes nothing already generated.
   async function handleRegionChange(value: string) {
     await patchStory({
       params: { id: storyId },

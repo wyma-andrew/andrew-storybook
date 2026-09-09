@@ -1,18 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardActions } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MatchBadge, InjectRow } from "@/components/ui/Badge";
-import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
+import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
-import { Toolbar, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
+import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
-import { ConfirmDialog } from "@geckoui/geckoui";
+import { ConfirmDialog, Dialog, Input, Textarea } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
 import {
@@ -26,6 +27,68 @@ import {
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset } from "@/lib/api/types";
+
+function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss: () => void }) {
+  const [info, setInfo] = useState(asset.meta ?? "");
+  const [prompt, setPrompt] = useState(asset.realPrompt);
+  const { trigger: updateInfo, loading } = useWrite((api) => api("chapter-assets/:id").PATCH());
+
+  async function save() {
+    const updated = await updateInfo({
+      params: { id: asset.id },
+      body: { meta: info.trim(), realPrompt: prompt.trim() },
+      invalidate: `chapters/${asset.chapterId}/assets`,
+    });
+    if (updated) dismiss();
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h2 className="text-[16px] font-semibold text-fg">Edit character info</h2>
+        <p className="mt-1 text-[12.5px] text-fg-3">
+          {asset.name} · The character name cannot be changed here.
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold tracking-wide text-fg-3 uppercase">
+          Short info
+        </label>
+        <Input
+          autoFocus
+          value={info}
+          onChange={(event) => setInfo(event.target.value)}
+          placeholder="Role · age"
+          aria-label={`Character info for ${asset.name}`}
+          disabled={loading}
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold tracking-wide text-fg-3 uppercase">
+          Character prompt
+        </label>
+        <Textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          aria-label={`Character prompt for ${asset.name}`}
+          className="min-h-[260px] font-mono text-[12.5px]"
+          disabled={loading}
+        />
+      </div>
+
+      <div className="flex justify-end gap-2.5">
+        <Button variant="secondary" onClick={dismiss} disabled={loading}>
+          Cancel
+        </Button>
+        <LoadingButton variant="primary" onClick={save} loading={loading} disabled={!prompt.trim()}>
+          Save
+        </LoadingButton>
+      </div>
+    </div>
+  );
+}
 
 function AssetCard({
   asset,
@@ -80,14 +143,34 @@ function AssetCard({
     });
   }
 
+  function openCharacterInfoDialog() {
+    Dialog.show({
+      className: "w-[calc(100vw-2rem)] max-w-[640px]",
+      content: ({ dismiss }) => <CharacterInfoDialog asset={asset} dismiss={dismiss} />,
+    });
+  }
+
   return (
     <Card className={borderClass}>
       <CardHeader>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="font-semibold">{asset.name}</div>
           <div className="text-[11.5px] text-fg-3">{asset.meta}</div>
         </div>
-        {asset.matchStatus !== "local" && <MatchBadge status={asset.matchStatus} />}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {asset.matchStatus !== "local" && <MatchBadge status={asset.matchStatus} />}
+          {asset.kind === "character" && (
+            <MiniButton
+              ghost
+              className="!h-7 !w-7 !min-w-0 justify-center !p-0"
+              onClick={openCharacterInfoDialog}
+              aria-label={`Edit character info for ${asset.name}`}
+              title="Edit character info"
+            >
+              <Pencil size={13} />
+            </MiniButton>
+          )}
+        </div>
       </CardHeader>
 
       <InjectRow kind={asset.kind} />

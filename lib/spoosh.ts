@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, Scene, Shot, Me } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, Scene, Shot, VoiceOverSegment, Me } from "@/lib/api/types";
 
 type ApiSchema = {
   "auth/me": {
@@ -36,7 +36,7 @@ type ApiSchema = {
         description: string;
         visualStyleId: string | null;
         aspectRatio: string;
-        region: "english" | "myanmar";
+        region: Story["region"];
       }>;
     };
     DELETE: { data: null };
@@ -118,6 +118,15 @@ type ApiSchema = {
   };
   "chapters/:id/storyboard": {
     GET: { data: Scene[] };
+  };
+  "chapters/:id/voice-overs": {
+    GET: { data: VoiceOverSegment[] };
+  };
+  "voice-overs/:id": {
+    PATCH: {
+      data: VoiceOverSegment;
+      body: Partial<{ text: string | null; startShotId: string; endShotId: string }>;
+    };
   };
   "chapters/:id/storyboard/generate": {
     POST: { data: Scene[] };

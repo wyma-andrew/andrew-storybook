@@ -2,7 +2,7 @@ import type { Region } from "../constants/regions";
 import {
   styleContextBlock,
   outputLanguageBlock,
-  myanmarAdaptationBlock,
+  regionAdaptationBlock,
   locationSpatialLayoutBlock,
   characterIdentityBlock,
 } from "./shared";
@@ -83,12 +83,12 @@ export function extractAssetsSystemPrompt(styleContext?: string | null, region: 
     // "front yard" + "backyard" gives each half its own reference image and its
     // own architecture, so the same house renders differently shot to shot.
     "ONE PLACE = ONE LOCATION: merge into a single location every area that belongs to the same physical building, house, yard, compound, or site — its front yard, backyard, porch, and surrounding grounds are one exterior location with several VIEWS, one STRUCTURE SHELL, and one FIXED LAYOUT, not separate locations. Keep locations separate only when they are genuinely different spaces: separate rooms, or an interior and an unrelated exterior. Give each merged location one natural canonical name covering the whole place, and cover its distinct areas inside FIXED LAYOUT. " +
-    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [TRANSITION]. Use these tags as ground truth for structure." +
+    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure. Voice Over may reveal visual entities, but it has no speaker and never creates a narrator character by itself." +
     characterIdentityBlock() +
     locationSpatialLayoutBlock() +
     "\n\nPROP IDENTITY: every prop's realPrompt must use PROP / IDENTITY LOCK / VARIABLE sections. Describe silhouette, material, color, finish, construction, distinctive marks, scale, and meaningful variable state. Do not describe a character holding it, a location around it, camera, lighting, or style." +
     styleContextBlock(styleContext) +
-    (region === "myanmar" ? myanmarAdaptationBlock() : "") +
+    regionAdaptationBlock(region) +
     outputLanguageBlock()
   );
 }

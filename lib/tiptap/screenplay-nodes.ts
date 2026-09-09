@@ -1,5 +1,5 @@
 // Screenplay block nodes for the script editor: Title, Scene heading, Action
-// (default paragraph), Character, Parenthetical, Dialog, Transition.
+// (default paragraph), Character, Parenthetical, Dialog, Voice Over, Transition.
 import { Node, mergeAttributes } from "@tiptap/core";
 
 function screenplayNode(opts: {
@@ -68,6 +68,13 @@ export const Dialog = screenplayNode({
   dataType: "dialog",
 });
 
+export const VoiceOver = screenplayNode({
+  name: "voiceOver",
+  tag: "div",
+  dataType: "voice-over",
+  nextOnEnter: "paragraph",
+});
+
 export const Transition = screenplayNode({
   name: "transition",
   tag: "div",
@@ -81,5 +88,6 @@ export const screenplayNodes = [
   Character,
   Parenthetical,
   Dialog,
+  VoiceOver,
   Transition,
 ];

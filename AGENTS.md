@@ -49,13 +49,14 @@ cost a day to reach.
 
 Three-step flow, one story project:
 
-1. **Script** — user pastes/writes the story. Editor is **Tiptap** (custom nodes: Title, Scene heading, Action, Character, Dialog, Transition).
+1. **Script** — user pastes/writes the story. Editor is **Tiptap** (custom nodes: Title, Scene heading, Action, Character, Parenthetical, Dialog, Voice Over, Transition).
 2. **Assets** — on switch, AI extracts from the script and returns **three sections**: *character prompts*, *location prompts*, and *prop prompts*. Each prompt is editable + copyable, and is the identity/environment/object reference reused downstream.
-3. **Storyboard** — on switch, AI returns **scene by scene**; each scene contains several numbered **shots**, each shot with its own copyable image prompt.
+3. **Storyboard** — on switch, AI returns **scene by scene**; each scene contains several numbered **shots**, each shot with its own copyable image prompt. Anonymous Voice Over is mapped in a second AI pass to editable, non-overlapping shot ranges and remains separate from per-shot video prompts.
 
 A story-wide **Style** setting is injected into copied prompts and used as
-context during generation. A story-wide region selects the English or Myanmar
-prompt variant. Aspect ratio is story-wide with an optional chapter override.
+context during generation. A story-wide region selects the English, Myanmar, or
+historical Buddha-era prompt variant. Aspect ratio is story-wide with an optional
+chapter override.
 
 ## Stack
 
@@ -96,14 +97,15 @@ npx supabase db push --db-url "$DATABASE_URL"
 - `supabase/` (config + `migrations/`) is the single source of truth for schema.
 - Current tables: `stories` (has `owner_id`), `chapters`, `bible_entries`
   (story asset bible), `chapter_assets` (matched/new/stale per chapter),
-  `chapter_asset_images`, `bible_entry_images`, `scenes`, and `shots`.
+  `chapter_asset_images`, `bible_entry_images`, `scenes`, `shots`, and
+  `voice_over_segments` (storyboard narration snapshots and shot ranges).
 - Visual styles and system prompt presets live in `lib/constants/`, not the
   database. `stories.visual_style_id` stores a code-defined style slug.
 
 ## Auth — Supabase Auth, email/password
 
 - `stories` and everything under it (chapters, bible_entries, chapter_assets,
-  reference-image rows, scenes, and shots) are **owned per-user** and
+  reference-image rows, scenes, shots, and voice_over_segments) are **owned per-user** and
   enforced by **RLS policies**, not app-level checks — route handlers for
   these tables use `supabaseRoute()` (`lib/supabase/route.ts`, anon key +
   session cookies), never `supabaseAdmin()`. RLS is the actual authorization

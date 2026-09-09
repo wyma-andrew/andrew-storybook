@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { mapStory, mapChapter } from "@/lib/api/map";
 import { resolveVisualStyle } from "@/lib/visual-styles";
+import { isRegion } from "@/lib/constants/regions";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.description !== undefined) patch.description = body.description;
   if (body.visualStyleId !== undefined) patch.visual_style_id = body.visualStyleId;
   if (body.aspectRatio !== undefined) patch.aspect_ratio = body.aspectRatio;
-  if (body.region !== undefined) patch.region = body.region;
+  if (body.region !== undefined) {
+    if (!isRegion(body.region)) return NextResponse.json({ error: "Invalid region." }, { status: 400 });
+    patch.region = body.region;
+  }
   const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const style = await resolveVisualStyle(data.visual_style_id);

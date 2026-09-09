@@ -99,6 +99,8 @@ body{
 .tiptap-doc [data-type="character"]{text-align:center;letter-spacing:.08em;text-transform:uppercase;color:var(--color-fg);margin:16px 0 2px;font-weight:700}
 .tiptap-doc [data-type="parenthetical"]{text-align:center;font-style:italic;color:var(--color-fg-2);font-size:15px;margin:0 0 2px}
 .tiptap-doc [data-type="dialog"]{margin:0 0 14px 96px;color:#cfcfcf;max-width:560px}
+.tiptap-doc [data-type="voice-over"]{margin:16px 48px;padding:10px 14px;border-left:2px solid var(--color-style-badge);background:var(--color-style-badge-bg);color:#cfcfcf;font-style:italic}
+.tiptap-doc [data-type="voice-over"]::before{content:"VOICE OVER";display:block;margin-bottom:3px;color:var(--color-style-badge);font-size:10px;font-style:normal;font-weight:700;letter-spacing:.14em}
 .tiptap-doc [data-type="transition"]{text-align:right;letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-2);margin:20px 0;font-size:13px;font-weight:600}
 .tiptap-doc p{margin:0 0 12px;font-size:16px;line-height:1.6}
 .tiptap-doc ul{margin:0 0 12px 22px}

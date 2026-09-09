@@ -2,7 +2,9 @@ import OpenAI from "openai";
 import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
 import { REGENERATE_SCHEMA, REGENERATE_LOCATION_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
 import { STORYBOARD_SCHEMA, storyboardSystemPrompt } from "./prompts/storyboard";
+import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
 import type { Region } from "./constants/regions";
+import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 
 let client: OpenAI | null = null;
 export function openai() {
@@ -122,4 +124,31 @@ export async function generateStoryboard(
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
   return (JSON.parse(raw) as { scenes: GeneratedScene[] }).scenes;
+}
+
+export async function assignVoiceOvers(
+  voiceOvers: VoiceOverSource[],
+  scenes: GeneratedScene[]
+): Promise<VoiceOverAssignment[]> {
+  const shots = scenes.flatMap((scene, sceneOffset) =>
+    scene.shots.map((shot, shotOffset) => ({
+      sceneIndex: sceneOffset + 1,
+      shotIndex: shotOffset + 1,
+      durationS: Math.min(Math.max(shot.durationS, 1), 10),
+      beat: shot.beat,
+    }))
+  );
+  const res = await openai().chat.completions.create({
+    model: "gpt-5.6-luna",
+    messages: [
+      { role: "system", content: voiceOverAssignmentSystemPrompt },
+      { role: "user", content: JSON.stringify({ voiceOvers, shots }) },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "voice_over_assignments", schema: VOICE_OVER_ASSIGNMENT_SCHEMA, strict: true },
+    },
+  });
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { assignments: VoiceOverAssignment[] }).assignments;
 }

@@ -5,6 +5,34 @@ Covers: `lib/prompts/extract-assets.ts`, `lib/openai.ts` (`extractAssets`,
 `app/api/chapters/[id]/sync`, `app/api/chapter-assets/[id]/regenerate`,
 `app/stories/[id]/chapters/[chapterId]/assets/page.tsx`.
 
+## 2026-09-10 — Known real identities are prompt context, not asset names
+
+Character prompts may include a `KNOWN IDENTITY` line for an unambiguously
+identifiable historical, religious, or public figure. The value uses the
+established English name so an image model can recognize the subject even when
+the script uses a title or a name in another language. Fictional, ambiguous,
+and unknown characters omit the line.
+
+`CHARACTER` and `chapter_assets.name` still preserve the script's exact spelling.
+Rejected replacing or translating the asset name with the canonical name because
+Re-Sync identity matching and `shots.assets_used` references are name-based.
+
+## 2026-09-10 — Character info is editable per chapter; names are not
+
+Character cards in the Assets step allow editing the short `meta` information
+and detailed `real_prompt`, but not the character name. The edit updates the
+existing `chapter_assets` row, including when that row is matched to the story
+Bible, so it affects this episode only. Re-Sync preserves the edit; Regenerate
+or a full Re-analyze can still replace the prompt.
+
+The edit affordance is a pencil icon at the right side of the character-card
+header. It opens a dialog rather than turning the card into an inline form, so
+the card layout and its copy/regenerate actions remain stable while editing.
+
+Character names remain read-only because Re-Sync identity matching and
+`shots.assets_used` references are name-based. Rejected exposing the name in the
+editor because renaming would break those name-based relationships.
+
 ## 2026-09-09 — Props became a third asset kind
 
 `kind` is now `character | location | prop` end to end: `AssetKind` in
@@ -20,6 +48,16 @@ appear, are handled, or recur — not every incidental background object. Their
 **Props have no reference-image slots.** The per-angle image UI is gated on
 `kind === "location"` and was left that way. Adding it is open work, not an
 oversight to "fix" silently.
+
+## 2026-09-10 — Anonymous Voice Over can reveal visual assets
+
+`[VOICE_OVER]` is accepted as script structure during extraction and single-
+asset regeneration. Its narration may establish a character, location, or prop
+that still needs a visual reference, but the block has no speaker identity and
+must never create a narrator character merely because narration exists.
+
+This keeps asset discovery faithful to visually relevant narration without
+mixing the separate concepts of an audio voice and an on-screen identity.
 
 ## 2026-09-09 — One physical place = one location (merge at extraction)
 

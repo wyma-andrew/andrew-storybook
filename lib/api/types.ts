@@ -1,3 +1,5 @@
+import type { Region } from "@/lib/constants/regions";
+
 export type Story = {
   id: string;
   title: string;
@@ -5,7 +7,7 @@ export type Story = {
   visualStyleId: string | null;
   visualStyleName: string | null;
   aspectRatio: string;
-  region: "english" | "myanmar";
+  region: Region;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -112,6 +114,18 @@ export type Scene = {
   title: string | null;
   slug: string | null;
   shots: Shot[];
+};
+
+export type VoiceOverSegment = {
+  id: string;
+  chapterId: string;
+  sourceIndex: number;
+  // Effective text: storyboard override when present, otherwise the script
+  // snapshot captured at generation time.
+  text: string;
+  textEdited: boolean;
+  startShotId: string;
+  endShotId: string;
 };
 
 export type Me = {

@@ -7,6 +7,7 @@ import type {
   SpaceKind,
   Scene,
   Shot,
+  VoiceOverSegment,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
@@ -111,5 +112,17 @@ export function mapScene(r: Row): Scene {
     title: (r.title as string) ?? null,
     slug: (r.slug as string) ?? null,
     shots: shots.map(mapShot).sort((a, b) => a.index - b.index),
+  };
+}
+
+export function mapVoiceOverSegment(r: Row): VoiceOverSegment {
+  return {
+    id: r.id as string,
+    chapterId: r.chapter_id as string,
+    sourceIndex: r.source_index as number,
+    text: (r.text_override as string) ?? (r.text as string),
+    textEdited: r.text_override != null,
+    startShotId: r.start_shot_id as string,
+    endShotId: r.end_shot_id as string,
   };
 }

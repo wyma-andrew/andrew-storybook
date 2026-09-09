@@ -18,6 +18,7 @@ const inactiveState = {
   character: false,
   parenthetical: false,
   dialog: false,
+  voiceOver: false,
   transition: false,
   canUndo: false,
   canRedo: false,
@@ -60,8 +61,9 @@ function ImportScreenplayDialog({
         Paste screenplay text below. Prefix each line with its block label —{" "}
         <code className="text-fg-2">Title:</code>, <code className="text-fg-2">Scene:</code>,{" "}
         <code className="text-fg-2">Action:</code>, <code className="text-fg-2">Character:</code>,{" "}
-        <code className="text-fg-2">Dialog:</code>, <code className="text-fg-2">Transition:</code> — so it works in any
-        language. Copy the format guide for an example. Plain screenplay text is imported too, best-effort.
+        <code className="text-fg-2">Dialog:</code>, <code className="text-fg-2">Voice Over:</code>,{" "}
+        <code className="text-fg-2">Transition:</code> — so it works in any language. Copy the format guide for an
+        example. Plain screenplay text is imported too, best-effort.
       </p>
 
       <Textarea
@@ -125,6 +127,7 @@ export function ScriptEditor({
         character: editor.isActive("character"),
         parenthetical: editor.isActive("parenthetical"),
         dialog: editor.isActive("dialog"),
+        voiceOver: editor.isActive("voiceOver"),
         transition: editor.isActive("transition"),
         canUndo: editor.can().undo(),
         canRedo: editor.can().redo(),
@@ -176,7 +179,7 @@ export function ScriptEditor({
   return (
     <>
       <div
-        className={`flex items-center justify-center gap-2 border-b px-5 py-3 text-fg-2 ${
+        className={`flex flex-wrap items-center justify-center gap-2 border-b px-5 py-3 text-fg-2 ${
           toolbarState.focused ? "border-line-2" : "border-line"
         }`}
       >
@@ -195,6 +198,9 @@ export function ScriptEditor({
         </Button>
         <Button variant="ghost" className={toolBtn(toolbarState.dialog)} onClick={insertDialogTemplate}>
           Dialog
+        </Button>
+        <Button variant="ghost" className={toolBtn(toolbarState.voiceOver)} onClick={() => setNode("voiceOver")}>
+          Voice Over
         </Button>
         <Button variant="ghost" className={toolBtn(toolbarState.transition)} onClick={() => setNode("transition")}>
           Transition

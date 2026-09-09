@@ -1,3 +1,5 @@
+import type { Region } from "../constants/regions";
+
 // Style is passed to the model as context only — never as a literal tag to
 // echo back. The app injects the actual style tag client-side at copy time,
 // so a stored prompt stays reusable if the story's style is later changed.
@@ -79,9 +81,7 @@ export function locationSpatialConsistencyBlock() {
 }
 
 // Myanmar-region prompt variants (extract-assets, regenerate-asset, storyboard)
-// all inject this same block — keep it here as one shared source so it can
-// never silently drop from a per-item call site (e.g. regenerating a single
-// character/location, or a single shot).
+// all inject this same block through regionAdaptationBlock below.
 // Output-language layer. The script can be written in any language, and the
 // model was following the script's language into the fields it writes — a
 // Burmese script produced Burmese realPrompts and shot prompts. Image and video
@@ -120,6 +120,29 @@ export function myanmarAdaptationBlock() {
   );
 }
 
+// Historical Buddha-era mode is deliberately narrower than a generic
+// "Buddhist" aesthetic. It guides content toward the Buddha's lifetime in the
+// northern Indian subcontinent and blocks later pan-Asian visual conventions;
+// the selected visual style still controls how that content is rendered.
+export function buddhaAdaptationBlock() {
+  return (
+    "\n\nBUDDHA-ERA VISUAL ADAPTATION\n" +
+    "This story is set in the historical world of Gautama Buddha in the northern Indian subcontinent, centered on the middle Gangetic regions associated with places such as Magadha, Kosala, Vajji, and the Sakya homeland. Preserve the selected visual style while grounding all generated content in that ancient South Asian setting. " +
+    "Infer the specific location, community, social position, occupation, and stage of the Buddha's life from the script. When the script is not specific, prefer restrained, plausible material culture rather than a decorative mixture of later Buddhist traditions.\n" +
+    "Characters should read as ancient South Asian people appropriate to their community and circumstances. Distinguish householders, rulers, merchants, farmers, craftspeople, ascetics, and monastics through plausible grooming, unstitched or simply constructed garments, textiles, ornaments, footwear, and carried objects. Monastic clothing should be simple wrapped robes in restrained earth, ochre, or saffron tones unless the script says otherwise.\n" +
+    "RECOGNIZABLE BUDDHA IDENTITY: when a character is Gautama Buddha, the Buddha, the Blessed One, or the equivalent title in the script's language, keep CHARACTER as the exact script name and add `KNOWN IDENTITY: Siddhartha Gautama (Gautama Buddha)` immediately beneath it. This canonical identity is prompt context only; never rename the extracted asset. Make him unmistakably recognizable rather than an ordinary monk. Unless the script explicitly depicts Prince Siddhartha before renunciation, his IDENTITY LOCK must specify a serene symmetrical South Asian face, idealized dignified mature-adult appearance without inventing a precise age, an ushnisha-shaped cranial prominence covered in compact dark snail-shell curls, a subtle urna centered between the brows, elongated earlobes, calm downcast or gently focused eyes, and graceful balanced proportions. His WARDROBE LOCK must specify a refined but unadorned saffron, ochre, or warm earth monastic robe with elegant folds and no jewelry or crown. Do not describe him with a receding hairline, balding scalp, ordinary close-cropped hair, or a contemporary monk appearance. A restrained circular halo or soft radiance is allowed when compatible with the selected style, but it must remain subtle rather than becoming a fiery or ornamental spectacle. Do not give the Buddha's ushnisha, urna, canonical curls, or halo to disciples or ordinary monks. If the script explicitly shows Prince Siddhartha before renunciation, follow that stage instead and retain his appropriate princely hair, clothing, and ornaments.\n" +
+    "Locations and props should use plausible period materials and forms: timber, earth, mud brick, fired brick where appropriate, thatch, woven fiber, stone, clay, wood, and metalwork suited to the object's status and use. Let the script distinguish villages, forests and groves, roads, courts, cities, dwellings, gathering halls, and monastic places. Do not turn every location into a temple or add stupas, pagodas, giant devotional statues, elaborate later monasteries, or modern infrastructure unless the script explicitly calls for them.\n" +
+    "Exclude anachronistic clothing, buildings, vehicles, plastics, electric lighting, printed signage, and modern devotional objects. Avoid blending Indian, Tibetan, Chinese, Japanese, Thai, or Myanmar conventions into a generic fantasy Buddhism. Apart from the Buddha's canonical identity marks above, sacred symbols such as the Bodhi tree, Dharma wheel, lotus, empty throne, footprints, or parasol should appear only when the scene or story context supports them. " +
+    "Historical adaptation changes the CONTENT of the image, not the selected visual style. Keep the result respectful, lived-in, specific to the script, and visually coherent rather than uniformly royal, golden, supernatural, or ceremonial."
+  );
+}
+
+export function regionAdaptationBlock(region: Region) {
+  if (region === "myanmar") return myanmarAdaptationBlock();
+  if (region === "buddha") return buddhaAdaptationBlock();
+  return "";
+}
+
 // Companion to locationSpatialLayoutBlock, for characters. Same reasoning:
 // a character's realPrompt is reused across many separately-generated shot
 // images, and free prose ("brown hair, casual outfit") gives the storyboard
@@ -130,7 +153,8 @@ export function myanmarAdaptationBlock() {
 export function characterIdentityBlock() {
   return (
     "\n\nCHARACTER IDENTITY LOCK: every character's realPrompt must use this structured format, not free descriptive prose:\n" +
-    "CHARACTER: <name>\n\n" +
+    "CHARACTER: <exact name from the script>\n" +
+    "KNOWN IDENTITY: <established real or canonical name in English, only when the character is an unambiguously identifiable historical, religious, or public figure; omit this entire line for fictional, ambiguous, or unknown characters. This is image-generation context only and must never replace or translate CHARACTER or the extracted asset name>\n\n" +
     "IDENTITY LOCK:\n" +
     "- <5-8 short bullets of invariant physical traits that must never change between shots: apparent age, build and height, skin tone, face shape, eye shape and color, hairline and hairstyle, distinguishing marks (scar, freckles, glasses)>\n\n" +
     "WARDROBE LOCK:\n" +

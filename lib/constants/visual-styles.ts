@@ -59,6 +59,16 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
           "Maintain the exact animated character design and visual style of the reference image throughout the entire shot. ",
         tail: "Never transition toward photorealism or live-action humans. No realistic human skin, pores, photographic faces, or live-action appearance. No video-game CGI.",
       },
+      // The historical setting comes from buddhaAdaptationBlock; this explicit
+      // entry controls only its rendering style and deliberately does not fall
+      // back to another region.
+      buddha: {
+        base:
+          "Vibrant, premium cinematic 3D animation. Volumetric lighting, subsurface scattering, rich tactile textures. Exaggerated, highly expressive character designs with prominent facial features and vivid emotional depth. " +
+          SINGLE_FRAME_TAIL,
+        referenceClause: "",
+        tail: "",
+      },
     },
   },
   {
@@ -68,7 +78,7 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
     text: {
       english: {
         base:
-          "Hyper-realistic digital fantasy painting, cinematic dramatic lighting with strong chiaroscuro contrast between darkness and golden light, intricate detailed textures on fabric and skin, mythological Buddhist-Hindu aesthetic, volumetric light rays, particle effects (glowing embers, flower petals), rich warm gold and cool blue color palette, 8K ultra-detailed rendering, epic scale composition, painterly brushwork blended with photorealistic elements, inspired by traditional Southeast Asian Buddhist iconography combined with modern concept-art illustration style. " +
+          "Hyper-realistic mythic fantasy digital painting with refined cinematic realism, controlled dramatic lighting, soft chiaroscuro, rich depth, detailed natural textures, painterly brushwork blended with realistic rendering, a sacred Southeast Asian Buddhist-inspired aesthetic, warm golden highlights balanced with cool blue shadows, elegant atmosphere, high-detail concept-art quality, immersive and serene visual tone. " +
           SINGLE_FRAME_TAIL,
         referenceClause: "",
         tail: "",
@@ -78,7 +88,16 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
       // shared so a Myanmar-specific edit later touches only this block.
       myanmar: {
         base:
-          "Hyper-realistic digital fantasy painting, cinematic dramatic lighting with strong chiaroscuro contrast between darkness and golden light, intricate detailed textures on fabric and skin, mythological Buddhist-Hindu aesthetic, volumetric light rays, particle effects (glowing embers, flower petals), rich warm gold and cool blue color palette, 8K ultra-detailed rendering, epic scale composition, painterly brushwork blended with photorealistic elements, inspired by traditional Southeast Asian Buddhist iconography combined with modern concept-art illustration style. " +
+          "Hyper-realistic mythic fantasy digital painting with refined cinematic realism, controlled dramatic lighting, soft chiaroscuro, rich depth, detailed natural textures, painterly brushwork blended with realistic rendering, a sacred Southeast Asian Buddhist-inspired aesthetic, warm golden highlights balanced with cool blue shadows, elegant atmosphere, high-detail concept-art quality, immersive and serene visual tone. " +
+          SINGLE_FRAME_TAIL,
+        referenceClause: "",
+        tail: "",
+      },
+      // This rendering text names the Buddha-era aesthetic explicitly; the
+      // shared adaptation block still owns detailed historical content rules.
+      buddha: {
+        base:
+          "Premium stylized mythic fantasy digital painting with cinematic lighting, soft chiaroscuro, rich depth, elegant painterly brushwork, detailed but controlled textures, a sacred ancient South Asian Buddha-era aesthetic, warm golden highlights balanced with cool blue shadows, atmospheric and serene mood, high-end concept-art illustration quality, visually immersive, clearly stylized and non-photorealistic. Maintain believable anatomy and material detail, but avoid live-action realism and photographic appearance. " +
           SINGLE_FRAME_TAIL,
         referenceClause: "",
         tail: "",

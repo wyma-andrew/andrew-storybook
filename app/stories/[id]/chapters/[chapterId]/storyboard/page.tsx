@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target } from "lucide-react";
-import { Textarea } from "@geckoui/geckoui";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic } from "lucide-react";
+import { Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -15,7 +15,7 @@ import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
-import type { Scene, Shot } from "@/lib/api/types";
+import type { Scene, Shot, VoiceOverSegment } from "@/lib/api/types";
 
 function PromptBox({
   label,
@@ -36,12 +36,6 @@ function PromptBox({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
-
-  // The saved value comes back through the refetched read, so follow it
-  // whenever we're not mid-edit (covers save, restore and regenerate).
-  useEffect(() => {
-    if (!editing) setDraft(text);
-  }, [text, editing]);
 
   return (
     <div className="mb-2 last:mb-0">
@@ -125,6 +119,7 @@ function ShotPrompts({
   return (
     <>
       <PromptBox
+        key={`start-${shot.id}-${shot.prompt}-${shot.promptEdited}`}
         label="Start Frame"
         text={shot.prompt}
         edited={shot.promptEdited}
@@ -135,6 +130,7 @@ function ShotPrompts({
       />
       {shot.videoPrompt && (
         <PromptBox
+          key={`video-${shot.id}-${shot.videoPrompt}-${shot.videoPromptEdited}`}
           label="Video Prompt"
           text={shot.videoPrompt}
           edited={shot.videoPromptEdited}
@@ -147,6 +143,146 @@ function ShotPrompts({
         />
       )}
     </>
+  );
+}
+
+type ShotOption = {
+  id: string;
+  order: number;
+  label: string;
+};
+
+function VoiceOverCard({
+  segment,
+  chapterId,
+  shotOptions,
+  minOrder,
+  maxOrder,
+}: {
+  segment: VoiceOverSegment;
+  chapterId: string;
+  shotOptions: ShotOption[];
+  minOrder: number;
+  maxOrder: number;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(segment.text);
+  const { trigger: patchVoiceOver, loading: saving } = useWrite((api) => api("voice-overs/:id").PATCH());
+  const availableShots = shotOptions.filter((shot) => shot.order >= minOrder && shot.order <= maxOrder);
+  const startOrder = shotOptions.find((shot) => shot.id === segment.startShotId)?.order ?? minOrder;
+  const endOrder = shotOptions.find((shot) => shot.id === segment.endShotId)?.order ?? startOrder;
+
+  async function patch(body: Partial<{ text: string | null; startShotId: string; endShotId: string }>) {
+    const { error } = await patchVoiceOver({
+      params: { id: segment.id },
+      body,
+      invalidate: `chapters/${chapterId}/voice-overs`,
+    });
+    if (error) {
+      toast.error(error.error);
+      return false;
+    }
+    return true;
+  }
+
+  async function changeStart(startShotId: string) {
+    const nextOrder = shotOptions.find((shot) => shot.id === startShotId)?.order ?? startOrder;
+    await patch({
+      startShotId,
+      endShotId: nextOrder > endOrder ? startShotId : segment.endShotId,
+    });
+  }
+
+  async function changeEnd(endShotId: string) {
+    const nextOrder = shotOptions.find((shot) => shot.id === endShotId)?.order ?? endOrder;
+    await patch({
+      startShotId: nextOrder < startOrder ? endShotId : segment.startShotId,
+      endShotId,
+    });
+  }
+
+  return (
+    <div className="rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-style-badge uppercase">
+          <Mic size={12} /> Voice Over {String(segment.sourceIndex).padStart(2, "0")}
+        </span>
+        {segment.textEdited && <Tag>Edited</Tag>}
+      </div>
+
+      <div className="flex items-start gap-3">
+        {editing ? (
+          <Textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            className="min-h-[100px] flex-1 font-mono text-[12.5px]"
+          />
+        ) : (
+          <div className="min-h-10 flex-1 whitespace-pre-wrap text-[13px] text-[#cfcfcf]">{segment.text}</div>
+        )}
+        <div className="flex shrink-0 flex-col gap-1.5">
+          {editing ? (
+            <>
+              <MiniLoadingButton
+                loading={saving}
+                disabled={!draft.trim()}
+                onClick={async () => {
+                  if (await patch({ text: draft })) setEditing(false);
+                }}
+              >
+                Save
+              </MiniLoadingButton>
+              <MiniButton
+                ghost
+                onClick={() => {
+                  setDraft(segment.text);
+                  setEditing(false);
+                }}
+              >
+                Cancel
+              </MiniButton>
+            </>
+          ) : (
+            <>
+              <MiniButton onClick={() => copyText(segment.text, `Voice Over ${segment.sourceIndex}`)}>Copy</MiniButton>
+              <MiniButton ghost onClick={() => setEditing(true)} className="flex items-center gap-1">
+                <Pencil size={12} /> Edit
+              </MiniButton>
+              {segment.textEdited && (
+                <MiniLoadingButton ghost loading={saving} onClick={() => patch({ text: null })}>
+                  <Undo2 size={12} /> Restore
+                </MiniLoadingButton>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 border-t border-line pt-3 sm:grid-cols-2">
+        <label className="text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+          Starts at
+          <Select
+            value={segment.startShotId}
+            onChange={changeStart}
+            disabled={saving}
+            wrapperClassName="mt-1.5"
+          >
+            {availableShots.map((shot) => <SelectOption key={shot.id} value={shot.id} label={shot.label} />)}
+          </Select>
+        </label>
+        <label className="text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+          Ends at
+          <Select
+            value={segment.endShotId}
+            onChange={changeEnd}
+            disabled={saving}
+            wrapperClassName="mt-1.5"
+          >
+            {availableShots.map((shot) => <SelectOption key={shot.id} value={shot.id} label={shot.label} />)}
+          </Select>
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -218,6 +354,16 @@ function collapsedStorageKey(chapterId: string) {
   return `storyboard-collapsed:${chapterId}`;
 }
 
+function readCollapsedScenes(chapterId: string) {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const raw = localStorage.getItem(collapsedStorageKey(chapterId));
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>();
+  } catch {
+    return new Set<string>();
+  }
+}
+
 export default function StoryboardPage() {
   const { id, chapterId } = useParams<{ id: string; chapterId: string }>();
 
@@ -226,22 +372,16 @@ export default function StoryboardPage() {
   const { data: scenes, trigger: refetchScenes } = useRead((api) =>
     api("chapters/:id/storyboard").GET({ params: { id: chapterId } })
   );
+  const { data: voiceOvers, trigger: refetchVoiceOvers } = useRead((api) =>
+    api("chapters/:id/voice-overs").GET({ params: { id: chapterId } })
+  );
   const { trigger: generate, loading: generating, abort: abortGenerate } = useWrite((api) =>
     api("chapters/:id/storyboard/generate").POST()
   );
 
   // Default open for every scene; a scene id in this set is collapsed.
   // Persisted per-chapter in localStorage so a viewer's fold state survives reloads.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(collapsedStorageKey(chapterId));
-      setCollapsed(raw ? new Set(JSON.parse(raw) as string[]) : new Set());
-    } catch {
-      setCollapsed(new Set());
-    }
-  }, [chapterId]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScenes(chapterId));
 
   const sceneRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -271,8 +411,12 @@ export default function StoryboardPage() {
   }
 
   async function handleGenerate() {
-    const { data } = await generate({ params: { id: chapterId } });
-    if (data) refetchScenes(); // skip on abort/error — nothing new to refetch
+    const { data, error } = await generate({ params: { id: chapterId } });
+    if (data) {
+      refetchScenes();
+      refetchVoiceOvers();
+    }
+    if (error) toast.error(error.error);
   }
 
   const sceneCount = scenes?.length ?? 0;
@@ -280,6 +424,24 @@ export default function StoryboardPage() {
   const totalDurationS = scenes?.reduce((sum, s) => sum + s.shots.reduce((sSum, shot) => sSum + (shot.durationS ?? 0), 0), 0) ?? 0;
   const totalDurationLabel =
     totalDurationS >= 60 ? `${Math.floor(totalDurationS / 60)}m ${totalDurationS % 60}s` : `${totalDurationS}s`;
+  const shotOptions: ShotOption[] = (scenes ?? []).flatMap((scene) =>
+    scene.shots.map((shot) => ({
+      id: shot.id,
+      order: 0,
+      label: `${scene.index}.${shot.index} — ${shot.label ?? scene.title ?? "Untitled shot"}`,
+    }))
+  ).map((shot, order) => ({ ...shot, order }));
+  const shotOrder = new Map(shotOptions.map((shot) => [shot.id, shot.order]));
+
+  function voiceOversForShot(shotId: string) {
+    const order = shotOrder.get(shotId);
+    if (order === undefined) return [];
+    return (voiceOvers ?? []).filter((segment) => {
+      const start = shotOrder.get(segment.startShotId);
+      const end = shotOrder.get(segment.endShotId);
+      return start !== undefined && end !== undefined && order >= start && order <= end;
+    });
+  }
 
   if (!story || !chapter) return null;
 
@@ -342,6 +504,37 @@ export default function StoryboardPage() {
             </EmptyCta>
           )}
 
+          {!!voiceOvers?.length && !!shotOptions.length && (
+            <section className="mb-4.5 rounded-xl border border-style-badge-border bg-panel-2 p-4.5">
+              <div className="mb-3.5 flex flex-wrap items-center gap-2">
+                <Mic size={15} className="text-style-badge" />
+                <h2 className="text-[14px] font-semibold">Voice Over</h2>
+                <Tag>{voiceOvers.length} segments</Tag>
+                <span className="text-[11.5px] text-fg-3 sm:ml-auto">Separate narration overlay · not added to video prompts</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                {voiceOvers.map((segment, index) => {
+                  const previous = voiceOvers[index - 1];
+                  const next = voiceOvers[index + 1];
+                  const minOrder = previous ? (shotOrder.get(previous.endShotId) ?? -1) + 1 : 0;
+                  const maxOrder = next
+                    ? (shotOrder.get(next.startShotId) ?? shotOptions.length) - 1
+                    : shotOptions.length - 1;
+                  return (
+                    <VoiceOverCard
+                      key={`${segment.id}-${segment.text}-${segment.textEdited}-${segment.startShotId}-${segment.endShotId}`}
+                      segment={segment}
+                      chapterId={chapterId}
+                      shotOptions={shotOptions}
+                      minOrder={minOrder}
+                      maxOrder={maxOrder}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {scenes?.map((scene, sceneIdx) => {
             const isCollapsed = collapsed.has(scene.id);
             return (
@@ -381,6 +574,7 @@ export default function StoryboardPage() {
               <div className="flex flex-col gap-3 px-4.5 py-4">
                 {scene.shots.map((shot, shotIdx) => {
                   const referenceHints = characterReferenceHints(scenes, sceneIdx, shotIdx);
+                  const coveringVoiceOvers = voiceOversForShot(shot.id);
 
                   const sceneName = scene.shots[0]?.label ?? scene.title;
                   const shotTitle = `${scene.index}.${shot.index} ${sceneName}${
@@ -408,6 +602,14 @@ export default function StoryboardPage() {
                         </MiniButton>
                         {shot.durationS != null && <Tag>{shot.durationS}s</Tag>}
                         {shot.aspect && <AccentTag>{shot.aspect}</AccentTag>}
+                        {coveringVoiceOvers.map((segment) => (
+                          <AccentTag
+                            key={segment.id}
+                            className="inline-flex items-center gap-1 bg-style-badge-bg text-style-badge"
+                          >
+                            <Mic size={10} /> VO {String(segment.sourceIndex).padStart(2, "0")}
+                          </AccentTag>
+                        ))}
                         {shot.camera && <span className="text-[11.5px] text-fg-3">{shot.camera}</span>}
                       </div>
                       {!!shot.assetsUsed.length && (

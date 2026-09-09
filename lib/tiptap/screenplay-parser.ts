@@ -4,7 +4,7 @@
 // cheat-sheet text is shown (and copyable) in the import dialog.
 
 export type ScreenplayBlock = {
-  type: "title" | "sceneHeading" | "character" | "parenthetical" | "dialog" | "transition" | "paragraph";
+  type: "title" | "sceneHeading" | "character" | "parenthetical" | "dialog" | "voiceOver" | "transition" | "paragraph";
   content?: { type: "text"; text: string }[];
 };
 
@@ -58,6 +58,9 @@ const LABEL_ALIASES: Record<string, ScreenplayBlock["type"]> = {
   parenthetical: "parenthetical",
   dialog: "dialog",
   dialogue: "dialog",
+  voiceover: "voiceOver",
+  vo: "voiceOver",
+  narration: "voiceOver",
   transition: "transition",
 };
 const LABEL_RE = /^([A-Za-z][A-Za-z ]*?)\s*[:\uFF1A]\s*(.*)$/;
@@ -156,6 +159,7 @@ Action: Action line describing what happens.
 Character: MG MG
 Parenthetical: (optional)
 Dialog: The line the character says.
+Voice Over: Anonymous narration laid over one or more shots.
 Transition: CUT TO:
 Scene: EXT. ANOTHER LOCATION - NIGHT
 Action: More action.`;
