@@ -11,6 +11,7 @@ import { MatchBadge, InjectRow } from "@/components/ui/Badge";
 import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
+import { ClampedText } from "@/components/ui/ClampedText";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { ConfirmDialog, Dialog, Input, Textarea } from "@geckoui/geckoui";
@@ -175,7 +176,11 @@ function AssetCard({
 
       <InjectRow kind={asset.kind} />
 
-      <div className="p-3.5 pt-2.5 font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]">{asset.realPrompt}</div>
+      <ClampedText
+        text={asset.realPrompt}
+        containerClassName="p-3.5 pt-2.5"
+        className="font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]"
+      />
 
       {asset.matchStatus === "stale" ? (
         <CardFooter>

@@ -119,3 +119,20 @@ is lost (prompts, edits, reference images).
 Rejected: confirming inside `reanalyze()` itself. The empty-state CTA ("Analyze
 script") shares that function and has nothing to destroy — a dialog there is
 pure friction. The split is deliberate; don't collapse it.
+
+## 2026-09-11 — Asset card prompts collapse to two lines
+
+Asset prompts run long enough that a chapter's card grid became unscannable, so
+`real_prompt` on the Assets step renders through `components/ui/ClampedText.tsx`,
+clamped to four lines with a Show more / Show less toggle on its own line below
+the text. Rejected placing the toggle inline at the end of the last clamped line
+over a gradient fade — it read as part of the prompt text. Text-only label, no
+chevron icon. The toggle renders only when the text actually overflows (measured with `scrollHeight` vs `clientHeight`
+under a `ResizeObserver`), so short prompts keep a clean card.
+
+Expanded state is per card and not persisted — collapsing on navigation is the
+intended behaviour, since the card grid's purpose is scanning, and the full text
+is also reachable via Copy prompt and the character edit dialog.
+
+Rejected truncating the stored/copied text: the clamp is display-only; copy
+actions still use the whole prompt.
