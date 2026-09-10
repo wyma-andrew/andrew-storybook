@@ -16,6 +16,23 @@ Covers: `lib/constants/visual-styles.ts`, `lib/visual-styles.ts`, `lib/api/map.t
   3D Animation must stay first in the array. Reordering silently restyles every
   story whose style was never set.
 
+## 2026-09-11 — Buddha Era 3D no longer dictates scale
+
+The base text's "Keep environments modest, functional, organic, and lived-in"
+was reaching the model as a scale instruction, not a finish one: style context
+is injected into the asset-generation system prompt, so a historically large
+place (Jetavana) was written up as compact single-storey buildings of modest
+scale. The line is now "Keep environments organic, hand-built, and lived-in
+rather than ornate or fantastical, with detailing and finish restrained. The
+size, building count, and grandeur of a place follow the story and the place
+itself, not a default of smallness."
+
+The style's identity is unchanged — hand-crafted period materials, restrained
+sacred atmosphere, no divine beams/halos/particles (2026-09-10 entry below all
+stand). What was removed is only the implication that restraint means small.
+`styleContextBlock` carries the matching general rule; see
+`history/regions.md` 2026-09-11.
+
 ## 2026-09-10 — Added "Buddha Era 3D"
 
 `id: "buddha-era-3d"`, swatch `#a8895f`. Premium stylized 3D animated
