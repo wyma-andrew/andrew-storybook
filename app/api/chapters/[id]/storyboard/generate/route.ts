@@ -6,6 +6,7 @@ import { assignVoiceOvers, generateStoryboard } from "@/lib/openai";
 import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { resolveVoiceOverAssignments } from "@/lib/voice-over";
+import { resolveMotionMode } from "@/lib/motion";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +26,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }] = await Promise.all([
     db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", id),
-    db.from("stories").select("visual_style_id, aspect_ratio, region").eq("id", chapter.story_id).single(),
+    db.from("stories").select("visual_style_id, aspect_ratio, region, motion_style_id").eq("id", chapter.story_id).single(),
   ]);
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
@@ -37,7 +38,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     .join("\n");
 
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
-  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio, region);
+  const motionStyleId = (story?.motion_style_id as string | null) ?? null;
+  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio, region, motionStyleId);
   const voiceOverSources = tiptapVoiceOvers(chapter.script).map((text, index) => ({
     sourceIndex: index + 1,
     text,
@@ -94,6 +96,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       duration_s: Math.min(Math.max(sh.durationS, 1), 10), // hard cap: most AI video tools can't export past 10s
       aspect: sh.aspect,
       camera: sh.camera,
+      motion_mode: resolveMotionMode(sh.motionMode, sh.videoPrompt, motionStyleId),
       prompt: sh.prompt,
       video_prompt: sh.videoPrompt,
       assets_used: sh.assetsUsed,

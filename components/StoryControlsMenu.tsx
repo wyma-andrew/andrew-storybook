@@ -10,6 +10,7 @@ import { useWrite } from "@/lib/spoosh";
 import { ASPECT_RATIOS } from "@/lib/constants/aspect-ratios";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 import { REGIONS, type Region } from "@/lib/constants/regions";
+import { MOTION_STYLES, DEFAULT_MOTION_STYLE_ID } from "@/lib/constants/motion-styles";
 
 export function StoryControlsMenu({
   storyId,
@@ -17,12 +18,14 @@ export function StoryControlsMenu({
   currentStyleId,
   currentAspectRatio,
   currentRegion,
+  currentMotionStyleId,
 }: {
   storyId: string;
   storyTitle: string;
   currentStyleId: string | null;
   currentAspectRatio: string;
   currentRegion: Region;
+  currentMotionStyleId: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -34,6 +37,13 @@ export function StoryControlsMenu({
   // default style for any id that doesn't resolve, so mirror that here
   // rather than showing the raw dangling id or a false "None set".
   const resolvedStyleId = VISUAL_STYLES.some((s) => s.id === currentStyleId) ? currentStyleId : VISUAL_STYLES[0]?.id ?? null;
+
+  // Same dangling-id handling as visual style: a motion style removed from
+  // code leaves stories pointing at a slug that no longer exists, and the
+  // server already resolves that to DEFAULT_MOTION_STYLE_ID.
+  const resolvedMotionStyleId = MOTION_STYLES.some((s) => s.id === currentMotionStyleId)
+    ? currentMotionStyleId
+    : DEFAULT_MOTION_STYLE_ID;
 
   const { trigger: patchStory } = useWrite((api) => api("stories/:id").PATCH());
   const { trigger: deleteStory } = useWrite((api) => api("stories/:id").DELETE());
@@ -79,6 +89,16 @@ export function StoryControlsMenu({
     toast.info("Region updated — re-run asset extraction/regeneration/storyboard to apply it.");
   }
 
+  async function handleMotionStyleChange(value: string) {
+    await patchStory({
+      params: { id: storyId },
+      body: { motionStyleId: value },
+      optimistic: (cache) =>
+        cache(`stories/${storyId}`).set((current) => ({ ...current, motionStyleId: value })),
+    });
+    toast.info("Motion style updated — copied video prompts use it right away, no regeneration needed.");
+  }
+
   function handleDelete() {
     setOpen(false);
     ConfirmDialog.show({
@@ -111,6 +131,14 @@ export function StoryControlsMenu({
             <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
             <Select value={resolvedStyleId ?? ""} onChange={handleStyleChange} placeholder="None set">
               {VISUAL_STYLES.map((s) => (
+                <SelectOption key={s.id} value={s.id} label={s.name} />
+              ))}
+            </Select>
+          </div>
+          <div className="border-t border-line px-3.5 py-3">
+            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Motion style</label>
+            <Select value={resolvedMotionStyleId} onChange={handleMotionStyleChange}>
+              {MOTION_STYLES.map((s) => (
                 <SelectOption key={s.id} value={s.id} label={s.name} />
               ))}
             </Select>

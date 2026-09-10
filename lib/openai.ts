@@ -100,6 +100,7 @@ export type GeneratedShot = {
   assetsUsed: GeneratedShotAsset[];
   startState: string;
   endState: string;
+  motionMode: string;
 };
 export type GeneratedScene = { title: string; slug: string; shots: GeneratedShot[] };
 
@@ -108,9 +109,10 @@ export async function generateStoryboard(
   assetContext: string,
   styleContext?: string | null,
   aspectRatio?: string,
-  region: Region = "english"
+  region: Region = "english",
+  motionStyleId?: string | null
 ): Promise<GeneratedScene[]> {
-  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region);
+  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [

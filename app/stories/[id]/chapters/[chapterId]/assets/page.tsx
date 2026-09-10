@@ -334,6 +334,22 @@ export default function AssetsPage() {
     refetchAssets();
   }
 
+  // The empty-state CTA calls `reanalyze` directly — nothing to lose yet. Only
+  // the toolbar button, which runs against existing assets, confirms first.
+  function confirmReanalyze() {
+    ConfirmDialog.show({
+      title: "Re-analyze this chapter?",
+      content:
+        "Rebuilds every character, location, and prop from the script. All current prompts, edits, and attached reference images for this chapter are deleted. Cannot be undone.",
+      confirmButtonLabel: "Re-analyze",
+      cancelButtonLabel: "Cancel",
+      onConfirm: ({ dismiss }) => {
+        dismiss();
+        reanalyze();
+      },
+    });
+  }
+
   async function resync() {
     await sync({ params: { id: chapterId } });
     refetchAssets();
@@ -365,7 +381,7 @@ export default function AssetsPage() {
 
       <Toolbar>
         <span className="mr-1.5 text-fg-3">Extracted from script:</span>
-        <ToolbarLoadingButton onClick={reanalyze} loading={analyzing}>
+        <ToolbarLoadingButton onClick={confirmReanalyze} loading={analyzing}>
           <RefreshCw size={13} /> Re-analyze
         </ToolbarLoadingButton>
         <ToolbarLoadingButton onClick={resync} loading={syncing} title="Add script's new characters, locations, and props without touching existing prompts">

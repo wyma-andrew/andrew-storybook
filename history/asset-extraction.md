@@ -104,3 +104,18 @@ Keep that branch.
   until the storyboard is regenerated.
 - The extraction system prompt is shared by all three kinds, so prop wording
   drifts character output slightly. Accepted over branching the prompt per kind.
+
+## 2026-09-10 — Re-analyze confirms before rebuilding
+
+The toolbar "Re-analyze" button ran on a single click while every other
+destructive action on the page (regenerate one, regenerate all, remove) went
+through `ConfirmDialog`. Re-analyze is the most destructive of them: it deletes
+and re-inserts all `chapter_assets`, taking hand-edited prompts and the
+cascading `chapter_asset_images` with them.
+
+Decision: `confirmReanalyze()` wraps the toolbar button; the dialog names what
+is lost (prompts, edits, reference images).
+
+Rejected: confirming inside `reanalyze()` itself. The empty-state CTA ("Analyze
+script") shares that function and has nothing to destroy — a dialog there is
+pure friction. The split is deliberate; don't collapse it.

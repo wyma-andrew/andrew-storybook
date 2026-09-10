@@ -35,6 +35,16 @@ export interface VisualStylePreset {
 // letterboxed or captioned. Every English text carries it.
 const SINGLE_FRAME_TAIL = "Characters ignore the camera. Uncropped full frame, textless, no letterboxing.";
 
+// Same wording used for all three regions, same as Mythic Fantasy Painting's
+// english/myanmar duplication — the style is already Buddha-era in subject, so
+// there is nothing region-specific to adapt yet.
+const BUDDHA_ERA_3D_BASE =
+  "Premium stylized 3D animated feature-film look, with cinematic but soft natural lighting, clean sculpted forms, refined materials and textures, warm balanced colors, gentle depth of field, subtle atmospheric depth, and polished high-end rendering. Clearly animated and non-photorealistic. " +
+  "Ancient South Asian Buddha-era aesthetic, historically grounded, peaceful, dignified, natural, and serene, with a restrained sacred atmosphere inspired by early Buddhist life and culture. Maintain believable proportions, natural forms, historically appropriate architecture, clothing, tools, furnishings, and materials while preserving a refined animated-film appearance. " +
+  "Favor simple hand-crafted materials such as natural wood, clay, stone, woven reed, handwoven fabric, packed earth, and other period-appropriate surfaces. Keep environments modest, functional, organic, and lived-in rather than ornate or fantastical. " +
+  "Use soft warm sunlight, gentle ambient illumination, controlled highlights, natural shadows, balanced contrast, and subtle atmospheric depth. The overall image should feel calm, contemplative, culturally grounded, and visually coherent without becoming overly mystical. " +
+  "Avoid dramatic fantasy lighting, divine beams, excessive golden glow, artificial halos made of light, magical particles, hyper-real textures or skin, live-action realism, plastic toy appearance, exaggerated cartoon proportions, anime styling, overly decorative fantasy elements, luxurious modern-looking materials, or excessive visual effects.";
+
 export const VISUAL_STYLES: VisualStylePreset[] = [
   {
     id: "3d-animation",
@@ -99,6 +109,28 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
         base:
           "Premium stylized mythic fantasy digital painting with cinematic lighting, soft chiaroscuro, rich depth, elegant painterly brushwork, detailed but controlled textures, a sacred ancient South Asian Buddha-era aesthetic, warm golden highlights balanced with cool blue shadows, atmospheric and serene mood, high-end concept-art illustration quality, visually immersive, clearly stylized and non-photorealistic. Maintain believable anatomy and material detail, but avoid live-action realism and photographic appearance. " +
           SINGLE_FRAME_TAIL,
+        referenceClause: "",
+        tail: "",
+      },
+    },
+  },
+  {
+    id: "buddha-era-3d",
+    name: "Buddha Era 3D",
+    swatch: "#a8895f",
+    text: {
+      english: {
+        base: BUDDHA_ERA_3D_BASE,
+        referenceClause: "",
+        tail: SINGLE_FRAME_TAIL,
+      },
+      myanmar: {
+        base: BUDDHA_ERA_3D_BASE,
+        referenceClause: "",
+        tail: "",
+      },
+      buddha: {
+        base: BUDDHA_ERA_3D_BASE,
         referenceClause: "",
         tail: "",
       },

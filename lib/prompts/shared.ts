@@ -1,4 +1,5 @@
 import type { Region } from "../constants/regions";
+import { resolveMotionStyle } from "../constants/motion-styles";
 
 // Style is passed to the model as context only — never as a literal tag to
 // echo back. The app injects the actual style tag client-side at copy time,
@@ -185,6 +186,23 @@ export function identityAnchorBlock() {
   );
 }
 
+// Background crowd fill has no asset, no reference image, no name-based
+// tracking — it is deliberately outside the assetsUsed system (see
+// history/asset-extraction.md, props are extracted only when distinct and
+// recurring; the same reasoning applies here even harder, since anonymous
+// crowd is by definition not a distinct recurring identity). This block only
+// tells the model to describe plausible ambient people directly in `prompt`
+// prose when the scene implies a populated place and the script doesn't say
+// who else is around — it must never invent a named character, put crowd
+// wording in assetsUsed, or contradict something the script does specify.
+export function ambientPopulationBlock() {
+  return (
+    "\n\nAMBIENT BACKGROUND POPULATION: if a shot's location is a place that would plausibly be populated (a street, market, village square, temple grounds, festival) and the script does not say who else is present, infer brief, plausible background activity from the scene type — e.g. villagers walking, vendors arranging goods, a woman carrying a basket — and fold it into `prompt` as ordinary background detail. " +
+    "This is scene dressing, not a character: never name it, never add it to assetsUsed, and never let it compete with the named characters and action the shot is actually about. Keep it to one short clause. " +
+    "Do not add background population to an interior, a private, or an otherwise sparse/empty location, and never contradict a script line that states who is or isn't present."
+  );
+}
+
 // Screen-direction layer (the 180-degree rule). Observed failure: a scene's
 // establishing shot pinned the location's anchors but never pinned where the
 // CHARACTERS sit left-to-right, so the first closer shot invented an order and
@@ -260,5 +278,28 @@ export function motionDisciplineBlock() {
     "- Camera-motion budget: when the subject's motion is complex, hold the camera static or give it at most one slow, simple move. Never combine complex subject motion with a complex camera move in the same clip.\n" +
     "- State that the character's design, wardrobe, and the environment layout must remain unchanged for the whole clip — the motion prompt animates the Start Frame, it never redesigns it.\n" +
     "- Prefer a shorter durationS over cramming more action in; short, reliable clips edited together beat one long generation."
+  );
+}
+
+// Motion-style layer, appended after MOTION DISCIPLINE. It narrows that block
+// rather than replacing it — Sacred Cinematic is a stricter subset of the same
+// rules, not a different set.
+//
+// The model classifies each shot into one motion mode and writes NOTHING about
+// motion behaviour: the camera move, the intensity ceiling, and the negative
+// list all come from lib/constants/motion-styles.ts at copy time. Letting the
+// model write both the mode and its own motion wording is what "free-form
+// motion" already is, and it is what makes every clip look equally animated.
+export function motionStyleBlock(motionStyleId?: string | null) {
+  const style = resolveMotionStyle(motionStyleId);
+  return (
+    `\n\nMOTION MODE (motionMode): this story's motion style is '${style.name}'. Tag every shot with exactly one motion mode. ` +
+    "The app composes the shot's motion instructions from a fixed template for that mode — do NOT describe camera movement, motion intensity, or restraint wording in the videoPrompt yourself.\n" +
+    "- `micro` — nothing physical happens. A held look, a listening beat, a figure seated or standing still.\n" +
+    "- `dialogue` — the shot covers a [CHARACTER]/[DIALOG] pair and someone speaks on camera.\n" +
+    "- `normal` — clear physical action: walking, travelling, entering or leaving, handing something over, a crowd moving.\n" +
+    "- `emotional` — a realization or emotional turn carried by the face, with no body relocation.\n" +
+    `- ${style.selectionRule}\n` +
+    "- The mode must agree with the videoPrompt: tag `dialogue` if and only if the videoPrompt quotes a spoken line."
   );
 }

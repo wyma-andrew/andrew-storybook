@@ -10,6 +10,7 @@ import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
 import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 import { REGIONS } from "@/lib/constants/regions";
+import { MOTION_STYLES, MOTION_MODE_OPTIONS } from "@/lib/constants/motion-styles";
 
 export default function SettingsPage() {
   const character = SYSTEM_PROMPTS.character;
@@ -54,6 +55,37 @@ export default function SettingsPage() {
                       <p className="text-xs text-fg-2">
                         {s.text[r.value].base + s.text[r.value].referenceClause + s.text[r.value].tail}
                       </p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mb-11">
+            <SectionHead title="Motion Styles" count="Platform-wide · fixed" />
+            <div className="mb-4 text-[12.5px] text-fg-3">
+              Defined in code (lib/constants/motion-styles.ts). A story picks one; each shot is tagged with a
+              motion mode, and the paragraph below is appended to that shot&apos;s copied video prompt. The AI never
+              writes motion wording itself.
+            </div>
+
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+              {MOTION_STYLES.map((m) => (
+                <div className="rounded-[10px] border border-line bg-panel-2 p-3.5" key={m.id}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <b className="text-sm">{m.name}</b>
+                    <span className="rounded-full border border-line-2 px-2 py-0.5 text-[10px] text-fg-3">
+                      Default: {m.defaultMode}
+                    </span>
+                    <span className="ml-auto rounded-full border border-line-2 px-2 py-0.5 text-[10px] text-fg-3">
+                      Locked
+                    </span>
+                  </div>
+                  {MOTION_MODE_OPTIONS.filter((o) => m.allowedModes.includes(o.value)).map((o) => (
+                    <div key={o.value} className="mt-2 first:mt-0">
+                      <div className="mb-1 text-[10px] tracking-wider text-fg-3 uppercase">{o.label}</div>
+                      <p className="text-xs whitespace-pre-wrap text-fg-2">{m.text[o.value]}</p>
                     </div>
                   ))}
                 </div>

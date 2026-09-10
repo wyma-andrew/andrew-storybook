@@ -24,8 +24,10 @@ Tiptap screenplay
 The story's visual style and region (English, Myanmar, or historically grounded,
 iconographically recognizable Buddha-era) guide AI generation. The literal style text is composed with an
 asset or shot prompt at copy time, keeping stored generated text reusable when
-the style changes. Aspect ratio defaults at story level and can be overridden
-by a chapter.
+the style changes. A story-wide motion style (Natural, Sacred Cinematic)
+does the same for movement: each shot is tagged with a motion mode and the
+matching predefined motion paragraph is appended at copy time. Aspect ratio
+defaults at story level and can be overridden by a chapter.
 
 ## Repository map
 
@@ -48,7 +50,7 @@ app/
 components/
   ScriptEditor.tsx             Tiptap screenplay editor and import UI
   ChapterHeader.tsx            Chapter navigation and workflow tabs
-  StoryControlsMenu.tsx        Story style, region, aspect, delete, bible
+  StoryControlsMenu.tsx        Story style, motion style, region, aspect, delete, bible
   ChapterControlsMenu.tsx      Chapter aspect override and story region
   ui/                          Shared GeckoUI-backed presentation primitives
 
@@ -56,7 +58,7 @@ lib/
   spoosh.ts                    Typed client API schema and plugins
   openai.ts                    OpenAI client and structured generation calls
   prompts/                     Asset, regeneration, and storyboard instructions
-  constants/                   Styles, system presets, regions, aspect ratios
+  constants/                   Styles, motion styles, system presets, regions, aspect ratios
   prompt-copy.ts               Final copied-prompt composition
   tiptap-text.ts               Tiptap JSON -> role-tagged AI input
   tiptap/                      Custom screenplay nodes and text importer
@@ -164,8 +166,11 @@ promotion. Characters and props currently have no reference-image rows.
 
 Generation sends the tagged script and all chapter asset prompts to the model,
 then replaces the chapter's existing scenes and shots. Every shot stores its
-beat, duration, aspect, camera, image prompt, video prompt, assets used, and
-start/end continuity state. Duration is clamped to 1–10 seconds.
+beat, duration, aspect, camera, motion mode, image prompt, video prompt, assets
+used, and start/end continuity state. Duration is clamped to 1–10 seconds. The
+model's motion mode passes through `resolveMotionMode()` (`lib/motion.ts`),
+which clamps it to a mode the story's motion style allows and reconciles it
+with whether the video prompt quotes a spoken line.
 
 User edits are stored in `prompt_override` and `video_prompt_override`; the
 generated originals remain intact. Clearing an override restores the original.
@@ -185,6 +190,11 @@ the final clipboard text from:
 ```text
 entity or shot prompt + system/reference preset + selected style text
 ```
+
+A shot's video prompt copy additionally appends the motion paragraph for its
+motion mode, resolved from the story's motion style. Motion text is never
+stored on the shot, so changing the motion style re-renders every video prompt
+without regenerating the storyboard.
 
 Every style defines text for every region. Location plan copies omit visual
 style because the plan is a schematic; location view copies choose interior or
@@ -210,22 +220,23 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 
 | Table | Responsibility |
 |---|---|
-| `stories` | Ownership, title, description, style slug, region, aspect, soft delete |
+| `stories` | Ownership, title, description, style slug, motion style slug, region, aspect, soft delete |
 | `chapters` | Episode order, Tiptap script, workflow status, aspect override |
 | `chapter_assets` | Chapter-local extracted asset and bible match state |
 | `bible_entries` | Story-wide approved character/location/prop identity |
 | `chapter_asset_images` | Pending chapter-scoped location image URLs |
 | `bible_entry_images` | Promoted story-wide location image URLs |
 | `scenes` | Ordered storyboard scenes |
-| `shots` | Ordered prompts, overrides, references, beat, and continuity state |
+| `shots` | Ordered prompts, overrides, references, beat, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;
 normal story deletion is soft deletion through `stories.deleted_at`, while the
 Trash screen can permanently delete it.
 
-Visual styles and system presets are not tables. Their sources of truth are
-`lib/constants/visual-styles.ts` and `lib/constants/system-prompts.ts`.
+Visual styles, motion styles, and system presets are not tables. Their sources
+of truth are `lib/constants/visual-styles.ts`, `lib/constants/motion-styles.ts`,
+and `lib/constants/system-prompts.ts`.
 
 ## Implemented surface and current limits
 
@@ -233,7 +244,8 @@ Implemented: email/password auth, per-user stories, soft-delete trash,
 multi-chapter stories, Tiptap screenplay import/editing, three-kind asset
 extraction, chapter-local character-info and prompt editing, story bible promotion,
 location reference-image URLs, storyboard
-generation, editable/restorable shot prompts, style/region selection, and
+generation, editable/restorable shot prompts, style/region selection,
+story-wide motion style with a per-shot motion mode override, and
 story/chapter aspect ratios. Anonymous Voice Over blocks are mapped to editable
 storyboard shot ranges as a separate narration overlay.
 
@@ -250,6 +262,7 @@ images. The `demo/` directory is reference-only.
 | Visual styles and regional text | `history/visual-styles.md` |
 | Story regions and cultural/historical adaptation | `history/regions.md` |
 | Voice Over blocks, mapping, and range editing | `history/voice-over.md` |
+| Motion styles and per-shot motion modes | `history/motion-styles.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 
 ## Maintenance rule

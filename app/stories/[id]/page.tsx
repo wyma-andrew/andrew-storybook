@@ -157,7 +157,7 @@ export default function StoryDetailPage() {
           {chapters.length === 0 ? (
             <>
               <div className="mt-4 flex justify-end">
-                <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentAspectRatio={story.aspectRatio} currentRegion={story.region} />
+                <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentAspectRatio={story.aspectRatio} currentRegion={story.region} currentMotionStyleId={story.motionStyleId} />
               </div>
               <div className="mt-4 rounded-xl border border-dashed border-line-2 px-6 py-11 text-center">
                 <h3 className="mb-2 text-base font-semibold">Nothing here yet</h3>
@@ -180,7 +180,7 @@ export default function StoryDetailPage() {
               <div className="my-7.5 mb-3.5 flex items-center gap-3">
                 <h2 className="text-[15px] font-semibold">Episodes</h2>
                 <div className="ml-auto flex items-center gap-2.5">
-                  <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentAspectRatio={story.aspectRatio} currentRegion={story.region} />
+                  <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentAspectRatio={story.aspectRatio} currentRegion={story.region} currentMotionStyleId={story.motionStyleId} />
                   <LoadingButton variant="primary" onClick={addChapter} loading={creating} className="h-9 text-[13.5px]">
                     + New Episode
                   </LoadingButton>

@@ -5,10 +5,12 @@ import {
   regionAdaptationBlock,
   locationSpatialConsistencyBlock,
   identityAnchorBlock,
+  ambientPopulationBlock,
   stateLedgerBlock,
   screenDirectionBlock,
   motionDisciplineBlock,
   shotDistinctnessBlock,
+  motionStyleBlock,
 } from "./shared";
 import { DEFAULT_ASPECT_RATIO } from "../constants/aspect-ratios";
 
@@ -59,6 +61,12 @@ export const STORYBOARD_SCHEMA = {
                     "Google Flow (image-to-video) motion prompt: the action/movement originating from the Start Frame. " +
                     "If this shot depicts a character speaking, include the line verbatim, language-tagged: `in English Dialog: \"...\"` or `in Burmese Dialog: \"...\"` (detect the language from the script) — matching the actual language the dialog is written in.",
                 },
+                motionMode: {
+                  type: "string",
+                  enum: ["micro", "dialogue", "normal", "emotional"],
+                  description:
+                    "Which motion register this shot belongs to. The app builds the shot's motion instructions from a fixed template for this mode — see MOTION MODE below. Never write camera-movement or motion-intensity wording into videoPrompt yourself.",
+                },
                 assetsUsed: {
                   type: "array",
                   description:
@@ -92,6 +100,7 @@ export const STORYBOARD_SCHEMA = {
                 "camera",
                 "prompt",
                 "videoPrompt",
+                "motionMode",
                 "assetsUsed",
                 "startState",
                 "endState",
@@ -112,7 +121,8 @@ export const STORYBOARD_SCHEMA = {
 export function storyboardSystemPrompt(
   styleContext?: string | null,
   aspectRatio: string = DEFAULT_ASPECT_RATIO,
-  region: Region = "english"
+  region: Region = "english",
+  motionStyleId?: string | null
 ) {
   return (
     "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a copyable image generation prompt, plus a Google Flow (image-to-video) prompt. " +
@@ -135,11 +145,13 @@ export function storyboardSystemPrompt(
     "- When generating a shot's `prompt`, check which Known Assets appear in your text description.\n" +
     "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
     identityAnchorBlock() +
+    ambientPopulationBlock() +
     locationSpatialConsistencyBlock() +
     screenDirectionBlock() +
     stateLedgerBlock() +
     shotDistinctnessBlock() +
     motionDisciplineBlock() +
+    motionStyleBlock(motionStyleId) +
     styleContextBlock(styleContext) +
     regionAdaptationBlock(region) +
     outputLanguageBlock()

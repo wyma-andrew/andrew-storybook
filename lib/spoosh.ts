@@ -37,6 +37,7 @@ type ApiSchema = {
         visualStyleId: string | null;
         aspectRatio: string;
         region: Story["region"];
+        motionStyleId: string;
       }>;
     };
     DELETE: { data: null };
@@ -113,7 +114,7 @@ type ApiSchema = {
     // null on a field clears the edit and restores the generated prompt
     PATCH: {
       data: Shot;
-      body: Partial<{ prompt: string | null; videoPrompt: string | null }>;
+      body: Partial<{ prompt: string | null; videoPrompt: string | null; motionMode: Shot["motionMode"] }>;
     };
   };
   "chapters/:id/storyboard": {

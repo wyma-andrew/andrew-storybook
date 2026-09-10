@@ -1,4 +1,5 @@
 import type { Region } from "@/lib/constants/regions";
+import type { MotionMode } from "@/lib/constants/motion-styles";
 
 export type Story = {
   id: string;
@@ -8,6 +9,7 @@ export type Story = {
   visualStyleName: string | null;
   aspectRatio: string;
   region: Region;
+  motionStyleId: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -90,6 +92,12 @@ export type Shot = {
   durationS: number | null;
   aspect: string | null;
   camera: string | null;
+  // Which motion register this shot copies with. The motion paragraph itself
+  // is never stored — it is composed from the story's motion style at copy
+  // time (lib/constants/motion-styles.ts), so changing the style re-renders
+  // every video prompt with no regeneration. Null on shots generated before
+  // motion modes existed; those copy with the style's default text.
+  motionMode: MotionMode | null;
   // Effective prompts: the user's edit when there is one, else the generated text.
   prompt: string; // Start Frame image prompt
   videoPrompt: string | null; // Google Flow motion prompt (start->end or isolated action)

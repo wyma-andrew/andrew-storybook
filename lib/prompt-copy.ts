@@ -27,11 +27,25 @@ export function withAssetContext(realPrompt: string, systemPrompt?: string | nul
 // time. Style leads here for the same reason it does in withStyle: the frame
 // description this wraps is long and specific, and the clip has to stay in the
 // same look as the still it animates.
+// motionText is the predefined paragraph for this shot's motion mode
+// (lib/constants/motion-styles.ts). Like Style, it is composed here rather
+// than stored on the shot, so changing a story's motion style re-renders every
+// video prompt without regenerating the storyboard. It trails the videoPrompt
+// deliberately: the videoPrompt says what happens and quotes any spoken line,
+// and it belongs next to the frame description it animates — the motion
+// paragraph is a separate, labelled constraint block on how much that action
+// is allowed to move.
 export function withFrameDescription(
   videoPrompt: string,
   startFramePrompt: string,
-  styleContext?: string | null
+  styleContext?: string | null,
+  motionText?: string | null
 ): string {
-  const parts = [styleContext ? `[Style] ${styleContext}` : null, startFramePrompt, videoPrompt].filter(Boolean);
+  const parts = [
+    styleContext ? `[Style] ${styleContext}` : null,
+    startFramePrompt,
+    videoPrompt,
+    motionText,
+  ].filter(Boolean);
   return parts.join("\n\n");
 }

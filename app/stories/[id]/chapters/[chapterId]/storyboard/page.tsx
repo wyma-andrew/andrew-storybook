@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge } from "lucide-react";
 import { Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -15,6 +15,7 @@ import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
+import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
 import type { Scene, Shot, VoiceOverSegment } from "@/lib/api/types";
 
 function PromptBox({
@@ -104,10 +105,12 @@ function ShotPrompts({
   shot,
   chapterId,
   styleContext,
+  motionStyleId,
 }: {
   shot: Shot;
   chapterId: string;
   styleContext: string | null;
+  motionStyleId: string;
 }) {
   const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
 
@@ -115,6 +118,14 @@ function ShotPrompts({
   // doesn't auto-invalidate it — name it explicitly.
   const invalidate = [`chapters/${chapterId}/storyboard`];
   const write = (body: Record<string, string | null>) => patchShot({ params: { id: shot.id }, body, invalidate });
+
+  const motionStyle = resolveMotionStyle(motionStyleId);
+  // The motion paragraph is never stored on the shot — it is composed here from
+  // the story's motion style, so switching that style restyles every video
+  // prompt with no regeneration.
+  const motionText = resolveMotionText(motionStyleId, shot.motionMode);
+  const motionModes = MOTION_MODE_OPTIONS.filter((option) => motionStyle.allowedModes.includes(option.value));
+  const activeMode = shot.motionMode ?? motionStyle.defaultMode;
 
   return (
     <>
@@ -136,11 +147,33 @@ function ShotPrompts({
           edited={shot.videoPromptEdited}
           saving={saving}
           onCopy={() =>
-            copyText(withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext), "Video prompt")
+            copyText(withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext, motionText), "Video prompt")
           }
           onSave={async (next) => void (await write({ videoPrompt: next }))}
           onRestore={async () => void (await write({ videoPrompt: null }))}
         />
+      )}
+      {shot.videoPrompt && (
+        <div className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+          <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+            <Gauge size={12} /> Motion · {motionStyle.name}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Select
+              value={activeMode}
+              onChange={(value) => void write({ motionMode: value })}
+              disabled={saving}
+              wrapperClassName="sm:w-[190px]"
+            >
+              {motionModes.map((option) => (
+                <SelectOption key={option.value} value={option.value} label={option.label} />
+              ))}
+            </Select>
+            <p className="flex-1 text-[11.5px] text-fg-3">
+              {motionModes.find((option) => option.value === activeMode)?.hint} · appended to the copied video prompt
+            </p>
+          </div>
+        </div>
       )}
     </>
   );
@@ -151,6 +184,19 @@ type ShotOption = {
   order: number;
   label: string;
 };
+
+// Shot labels ("1.2 — Close reaction · Child in arms") overflow the Select
+// trigger. GeckoUI has no prop for the value span, and its own styles rule out
+// truncation twice over: `__content` is `flex-wrap: wrap; overflow-x: scroll`,
+// and `__value` is `display: flex`, which makes `truncate` a no-op. Override
+// both through `wrapperClassName`.
+//
+// `String.raw` is required, not style: a bare `_` in a Tailwind arbitrary
+// variant means a space, so the underscores have to be backslash-escaped — and
+// Tailwind generates utilities by scanning this file's raw text, so a normal
+// string literal would register a class with two backslashes while the runtime
+// value has one, and nothing would match.
+const TRUNCATE_SELECT_VALUE = String.raw`[&_.GeckoUISelectButton\_\_content]:flex-nowrap [&_.GeckoUISelectButton\_\_content]:overflow-hidden [&_.GeckoUISelectButton\_\_value]:block [&_.GeckoUISelectButton\_\_value]:min-w-0 [&_.GeckoUISelectButton\_\_value]:truncate`;
 
 function VoiceOverCard({
   segment,
@@ -265,7 +311,7 @@ function VoiceOverCard({
             value={segment.startShotId}
             onChange={changeStart}
             disabled={saving}
-            wrapperClassName="mt-1.5"
+            wrapperClassName={`mt-1.5 ${TRUNCATE_SELECT_VALUE}`}
           >
             {availableShots.map((shot) => <SelectOption key={shot.id} value={shot.id} label={shot.label} />)}
           </Select>
@@ -276,7 +322,7 @@ function VoiceOverCard({
             value={segment.endShotId}
             onChange={changeEnd}
             disabled={saving}
-            wrapperClassName="mt-1.5"
+            wrapperClassName={`mt-1.5 ${TRUNCATE_SELECT_VALUE}`}
           >
             {availableShots.map((shot) => <SelectOption key={shot.id} value={shot.id} label={shot.label} />)}
           </Select>
@@ -662,7 +708,12 @@ export default function StoryboardPage() {
                           </div>
                         </div>
                       )}
-                      <ShotPrompts shot={shot} chapterId={chapterId} styleContext={styleContext} />
+                      <ShotPrompts
+                        shot={shot}
+                        chapterId={chapterId}
+                        styleContext={styleContext}
+                        motionStyleId={story.motionStyleId}
+                      />
                     </div>
                   </div>
                   );

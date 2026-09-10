@@ -3,6 +3,7 @@ import { supabaseRoute } from "@/lib/supabase/route";
 import { mapStory, mapChapter } from "@/lib/api/map";
 import { resolveVisualStyle } from "@/lib/visual-styles";
 import { isRegion } from "@/lib/constants/regions";
+import { MOTION_STYLES } from "@/lib/constants/motion-styles";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,6 +30,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.region !== undefined) {
     if (!isRegion(body.region)) return NextResponse.json({ error: "Invalid region." }, { status: 400 });
     patch.region = body.region;
+  }
+  if (body.motionStyleId !== undefined) {
+    if (!MOTION_STYLES.some((s) => s.id === body.motionStyleId)) {
+      return NextResponse.json({ error: "Invalid motion style." }, { status: 400 });
+    }
+    patch.motion_style_id = body.motionStyleId;
   }
   const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

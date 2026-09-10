@@ -43,3 +43,25 @@ Consequences:
   just as it replaces the generated storyboard shots.
 - There is no named narrator, waveform, audio file, generated speech, or timing
   below whole-shot boundaries yet.
+
+## 2026-09-10 — Shot-range Selects truncate via a String.raw class
+
+The "Starts at"/"Ends at" Selects hold full shot labels ("1.2 — Close reaction ·
+Child in arms"), which overflow the trigger. GeckoUI exposes no prop for the
+value span, and two of its own rules block truncation: `__content` is
+`flex-wrap: wrap; overflow-x: scroll`, and `__value` is `display: flex`, which
+makes `truncate` inert. `TRUNCATE_SELECT_VALUE` overrides all three through
+`wrapperClassName`.
+
+`String.raw` there is load-bearing, not a style choice. A bare `_` in a Tailwind
+arbitrary variant means a space, so `__content` must be written `\_\_content`;
+Tailwind then generates utilities by scanning the file's *raw* text, so a normal
+`"..."` literal registers a class carrying two backslashes while the runtime
+string carries one, and the rule never matches the element. Verified against
+`@tailwindcss/cli` output, not assumed. Don't "clean this up" into a plain
+string.
+
+Rejected: `SelectTrigger` render-props (rebuilds the whole trigger's chrome for
+one ellipsis) and a quoted attribute selector like
+`[&_[class~='GeckoUISelectButton__value']]` — Tailwind converts the underscores
+to spaces inside the quotes too, yielding a selector that matches nothing.

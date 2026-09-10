@@ -12,6 +12,7 @@ import type {
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
 import { DEFAULT_REGION, isRegion } from "@/lib/constants/regions";
+import { DEFAULT_MOTION_STYLE_ID, isMotionMode } from "@/lib/constants/motion-styles";
 
 type Row = Record<string, unknown>;
 
@@ -23,6 +24,7 @@ export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
     visualStyleId: (r.visual_style_id as string) ?? null,
     visualStyleName: style?.name ?? null,
     aspectRatio: (r.aspect_ratio as string) ?? DEFAULT_ASPECT_RATIO,
+    motionStyleId: (r.motion_style_id as string) ?? DEFAULT_MOTION_STYLE_ID,
     region: isRegion(r.region) ? r.region : DEFAULT_REGION,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
@@ -93,6 +95,7 @@ export function mapShot(r: Row): Shot {
     durationS: (r.duration_s as number) ?? null,
     aspect: (r.aspect as string) ?? null,
     camera: (r.camera as string) ?? null,
+    motionMode: isMotionMode(r.motion_mode) ? r.motion_mode : null,
     prompt: (r.prompt_override as string) ?? (r.prompt as string),
     videoPrompt: (r.video_prompt_override as string) ?? (r.video_prompt as string) ?? null,
     promptEdited: r.prompt_override != null,

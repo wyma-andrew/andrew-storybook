@@ -78,6 +78,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           duration_s: s.duration_s,
           aspect: s.aspect,
           camera: s.camera,
+          motion_mode: s.motion_mode,
           prompt: s.prompt,
           video_prompt: s.video_prompt,
           assets_used: s.assets_used,

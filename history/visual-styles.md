@@ -16,6 +16,22 @@ Covers: `lib/constants/visual-styles.ts`, `lib/visual-styles.ts`, `lib/api/map.t
   3D Animation must stay first in the array. Reordering silently restyles every
   story whose style was never set.
 
+## 2026-09-10 — Added "Buddha Era 3D"
+
+`id: "buddha-era-3d"`, swatch `#a8895f`. Premium stylized 3D animated
+feature-film look applied to an ancient South Asian Buddha-era setting: soft
+natural lighting, hand-crafted period materials (wood, clay, stone, reed,
+woven fabric, packed earth), restrained sacred atmosphere. Explicitly rejects
+divine light beams, halos, magical particles, and other overtly mystical
+fantasy dressing that Mythic Fantasy Painting's Buddha variant allows.
+
+Same base text used for all three regions (english/myanmar/buddha), same
+pattern as Mythic Fantasy Painting's english/myanmar duplication — supplied
+wording is already Buddha-era in subject, nothing region-specific to adapt
+yet. `SINGLE_FRAME_TAIL` only added to the english tail; myanmar and buddha
+tails are empty since the base's own "Avoid..." clause already carries the
+anti-realism/anti-fantasy guidance other styles put in `tail`.
+
 ## 2026-09-09 — Added "Mythic Fantasy Painting"
 
 `id: "mythic-fantasy-painting"`, swatch `#d3a34a`. Hyper-realistic digital
