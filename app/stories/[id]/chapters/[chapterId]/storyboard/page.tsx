@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge } from "lucide-react";
-import { Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus } from "lucide-react";
+import { ConfirmDialog, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -16,6 +16,12 @@ import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
+import {
+  DEFAULT_SHOT_SCALE,
+  SHOT_SCALE_OPTIONS,
+  findShotScale,
+  resolveShotOptics,
+} from "@/lib/constants/shot-scales";
 import type { Scene, Shot, VoiceOverSegment } from "@/lib/api/types";
 
 function PromptBox({
@@ -106,11 +112,13 @@ function ShotPrompts({
   chapterId,
   styleContext,
   motionStyleId,
+  lighting,
 }: {
   shot: Shot;
   chapterId: string;
   styleContext: string | null;
   motionStyleId: string;
+  lighting: string | null;
 }) {
   const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
 
@@ -124,8 +132,12 @@ function ShotPrompts({
   // the story's motion style, so switching that style restyles every video
   // prompt with no regeneration.
   const motionText = resolveMotionText(motionStyleId, shot.motionMode);
+  // Framing optics, like the motion paragraph, are composed at copy time from
+  // a constant rather than stored on the shot.
+  const optics = resolveShotOptics(shot.shotScale);
   const motionModes = MOTION_MODE_OPTIONS.filter((option) => motionStyle.allowedModes.includes(option.value));
   const activeMode = shot.motionMode ?? motionStyle.defaultMode;
+  const activeScale = shot.shotScale ?? DEFAULT_SHOT_SCALE;
 
   return (
     <>
@@ -135,7 +147,7 @@ function ShotPrompts({
         text={shot.prompt}
         edited={shot.promptEdited}
         saving={saving}
-        onCopy={() => copyText(withStyle(shot.prompt, styleContext), "Start Frame prompt")}
+        onCopy={() => copyText(withStyle(shot.prompt, styleContext, lighting, optics), "Start Frame prompt")}
         onSave={async (next) => void (await write({ prompt: next }))}
         onRestore={async () => void (await write({ prompt: null }))}
       />
@@ -147,12 +159,35 @@ function ShotPrompts({
           edited={shot.videoPromptEdited}
           saving={saving}
           onCopy={() =>
-            copyText(withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext, motionText), "Video prompt")
+            copyText(
+              withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext, motionText, lighting, optics),
+              "Video prompt"
+            )
           }
           onSave={async (next) => void (await write({ videoPrompt: next }))}
           onRestore={async () => void (await write({ videoPrompt: null }))}
         />
       )}
+      <div className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+        <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+          <Focus size={12} /> Framing
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Select
+            value={activeScale}
+            onChange={(value) => void write({ shotScale: value })}
+            disabled={saving}
+            wrapperClassName="sm:w-[190px]"
+          >
+            {SHOT_SCALE_OPTIONS.map((option) => (
+              <SelectOption key={option.value} value={option.value} label={option.label} />
+            ))}
+          </Select>
+          <p className="flex-1 text-[11.5px] text-fg-3">
+            {findShotScale(activeScale).hint} · sets the depth of field appended to copied prompts
+          </p>
+        </div>
+      </div>
       {shot.videoPrompt && (
         <div className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
           <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
@@ -424,6 +459,10 @@ export default function StoryboardPage() {
   const { trigger: generate, loading: generating, abort: abortGenerate } = useWrite((api) =>
     api("chapters/:id/storyboard/generate").POST()
   );
+  const { trigger: regenerateScene } = useWrite((api) => api("scenes/:id/regenerate").POST());
+  // Which scene is mid-regeneration — the shared `loading` flag can't say which
+  // card fired, and only that card's button should spin.
+  const [regeneratingSceneId, setRegeneratingSceneId] = useState<string | null>(null);
 
   // Default open for every scene; a scene id in this set is collapsed.
   // Persisted per-chapter in localStorage so a viewer's fold state survives reloads.
@@ -463,6 +502,27 @@ export default function StoryboardPage() {
       refetchVoiceOvers();
     }
     if (error) toast.error(error.error);
+  }
+
+  function confirmRegenerateScene(scene: Scene) {
+    ConfirmDialog.show({
+      title: `Regenerate scene ${scene.index}?`,
+      content:
+        "Re-shoots only this scene against the script, keeping every other scene. Its current shots and any prompt edits in it are replaced, and Voice Over ranges are remapped across the chapter — narration text edits are discarded. Cannot be undone.",
+      confirmButtonLabel: "Regenerate scene",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        dismiss();
+        setRegeneratingSceneId(scene.id);
+        const { data, error } = await regenerateScene({ params: { id: scene.id } });
+        setRegeneratingSceneId(null);
+        if (data) {
+          refetchScenes();
+          refetchVoiceOvers();
+        }
+        if (error) toast.error(error.error);
+      },
+    });
   }
 
   const sceneCount = scenes?.length ?? 0;
@@ -594,30 +654,50 @@ export default function StoryboardPage() {
                 isCollapsed ? "border-line" : "border-accent/50"
               }`}
             >
-              <button
-                type="button"
-                onClick={() => toggleScene(scene.id)}
-                className={`flex w-full items-center gap-3.5 border-b px-4.5 py-4 text-left ${
+              <div
+                className={`flex w-full items-center gap-2.5 border-b px-4.5 py-4 ${
                   isCollapsed ? "border-line bg-[#101010]" : "border-accent/30 bg-accent-dim"
                 }`}
               >
-                <AccentTag className="bg-accent font-mono text-xs font-bold tracking-normal text-[#101010] normal-case">
-                  SC {String(scene.index).padStart(2, "0")}
-                </AccentTag>
-                <div>
-                  <h3 className="text-[15px] font-semibold">{scene.shots[0]?.label ?? scene.title}</h3>
-                  <div className="text-xs tracking-wide text-fg-3 uppercase">{scene.slug}</div>
-                </div>
-                <div className="ml-auto flex items-center gap-2.5">
-                  <Tag>{scene.shots.length} shots</Tag>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-fg-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                  />
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => toggleScene(scene.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                >
+                  <AccentTag className="bg-accent font-mono text-xs font-bold tracking-normal text-[#101010] normal-case">
+                    SC {String(scene.index).padStart(2, "0")}
+                  </AccentTag>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-[15px] font-semibold">{scene.shots[0]?.label ?? scene.title}</h3>
+                    <div className="truncate text-xs tracking-wide text-fg-3 uppercase">{scene.slug}</div>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2.5">
+                    <Tag>{scene.shots.length} shots</Tag>
+                    <ChevronDown
+                      size={16}
+                      className={`shrink-0 text-fg-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                    />
+                  </div>
+                </button>
+                <MiniLoadingButton
+                  ghost
+                  loading={regeneratingSceneId === scene.id}
+                  disabled={generating || regeneratingSceneId !== null}
+                  onClick={() => confirmRegenerateScene(scene)}
+                  title="Regenerate this scene only"
+                  className="shrink-0"
+                >
+                  <RefreshCw size={13} />
+                </MiniLoadingButton>
+              </div>
               {!isCollapsed && (
               <div className="flex flex-col gap-3 px-4.5 py-4">
+                {scene.lighting && (
+                  <div className="flex items-start gap-1.5 text-[11.5px] text-fg-3">
+                    <Sun size={12} className="mt-[3px] shrink-0" />
+                    <span>{scene.lighting}</span>
+                  </div>
+                )}
                 {scene.shots.map((shot, shotIdx) => {
                   const referenceHints = characterReferenceHints(scenes, sceneIdx, shotIdx);
                   const coveringVoiceOvers = voiceOversForShot(shot.id);
@@ -713,6 +793,7 @@ export default function StoryboardPage() {
                         chapterId={chapterId}
                         styleContext={styleContext}
                         motionStyleId={story.motionStyleId}
+                        lighting={scene.lighting}
                       />
                     </div>
                   </div>

@@ -1,10 +1,17 @@
 import OpenAI from "openai";
 import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
 import { REGENERATE_SCHEMA, REGENERATE_LOCATION_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
-import { STORYBOARD_SCHEMA, storyboardSystemPrompt } from "./prompts/storyboard";
+import {
+  STORYBOARD_SCHEMA,
+  SCENE_SHOTS_SCHEMA,
+  storyboardSystemPrompt,
+  regenerateSceneSystemPrompt,
+  type SceneRegenerationTarget,
+} from "./prompts/storyboard";
 import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
 import type { Region } from "./constants/regions";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
+import { parseSiteMap, type SiteMap } from "./site-map";
 
 let client: OpenAI | null = null;
 export function openai() {
@@ -95,6 +102,7 @@ export type GeneratedShot = {
   durationS: number;
   aspect: string;
   camera: string;
+  shotScale: string;
   prompt: string;
   videoPrompt: string;
   assetsUsed: GeneratedShotAsset[];
@@ -102,7 +110,12 @@ export type GeneratedShot = {
   endState: string;
   motionMode: string;
 };
-export type GeneratedScene = { title: string; slug: string; shots: GeneratedShot[] };
+export type GeneratedScene = { title: string; slug: string; lighting: string; shots: GeneratedShot[] };
+// The pass returns the chapter's geography alongside its scenes: the model
+// settles the site map first (it is the schema's leading property) and shoots
+// against it. The map is stored on the chapter and read back by single-scene
+// regeneration — see lib/site-map.ts.
+export type GeneratedStoryboard = { siteMap: SiteMap | null; scenes: GeneratedScene[] };
 
 export async function generateStoryboard(
   scriptText: string,
@@ -111,7 +124,7 @@ export async function generateStoryboard(
   aspectRatio?: string,
   region: Region = "english",
   motionStyleId?: string | null
-): Promise<GeneratedScene[]> {
+): Promise<GeneratedStoryboard> {
   const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
@@ -125,12 +138,18 @@ export async function generateStoryboard(
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { scenes: GeneratedScene[] }).scenes;
+  const parsed = JSON.parse(raw) as { siteMap?: unknown; scenes?: GeneratedScene[] };
+  return { siteMap: parseSiteMap(parsed.siteMap), scenes: parsed.scenes ?? [] };
 }
+
+// Narration mapping only needs each shot's length and beat, so this takes the
+// narrow shape shared by a freshly generated storyboard and a stored one with a
+// single scene re-shot — a per-scene regeneration remaps the whole chapter.
+export type VoiceOverPassScene = { shots: { durationS: number; beat: string | null }[] };
 
 export async function assignVoiceOvers(
   voiceOvers: VoiceOverSource[],
-  scenes: GeneratedScene[]
+  scenes: VoiceOverPassScene[]
 ): Promise<VoiceOverAssignment[]> {
   const shots = scenes.flatMap((scene, sceneOffset) =>
     scene.shots.map((shot, shotOffset) => ({
@@ -153,4 +172,31 @@ export async function assignVoiceOvers(
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
   return (JSON.parse(raw) as { assignments: VoiceOverAssignment[] }).assignments;
+}
+
+// Re-shoots one existing scene in place. The scene's title/slug and every other
+// scene are left alone; only this scene's shot list is replaced.
+export async function regenerateSceneShots(
+  scriptText: string,
+  assetContext: string,
+  target: SceneRegenerationTarget,
+  styleContext?: string | null,
+  aspectRatio?: string,
+  region: Region = "english",
+  motionStyleId?: string | null
+): Promise<GeneratedShot[]> {
+  const systemPrompt = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId);
+  const res = await openai().chat.completions.create({
+    model: "gpt-5.6-luna",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "scene_shots", schema: SCENE_SHOTS_SCHEMA, strict: true },
+    },
+  });
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { shots: GeneratedShot[] }).shots ?? [];
 }

@@ -1,4 +1,5 @@
 import type { Region } from "@/lib/constants/regions";
+import type { ShotScale } from "@/lib/constants/shot-scales";
 import type { MotionMode } from "@/lib/constants/motion-styles";
 
 export type Story = {
@@ -92,6 +93,11 @@ export type Shot = {
   durationS: number | null;
   aspect: string | null;
   camera: string | null;
+  // Framing scale. Selects the optics line (depth of field, background
+  // treatment) composed into the copied prompt at copy time
+  // (lib/constants/shot-scales.ts). Null on shots generated before scales
+  // existed; those copy with no [Framing] line at all.
+  shotScale: ShotScale | null;
   // Which motion register this shot copies with. The motion paragraph itself
   // is never stored — it is composed from the story's motion style at copy
   // time (lib/constants/motion-styles.ts), so changing the style re-renders
@@ -121,6 +127,9 @@ export type Scene = {
   index: number;
   title: string | null;
   slug: string | null;
+  // Scene lighting/atmosphere, shared by every shot in the scene and composed
+  // into copied prompts at copy time (lib/prompt-copy.ts).
+  lighting: string | null;
   shots: Shot[];
 };
 

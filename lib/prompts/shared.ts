@@ -230,6 +230,9 @@ export function screenDirectionBlock() {
     "\n\nSCREEN DIRECTION (180-degree rule): screen sides are fixed by the FIRST shot that shows a given set of characters together, and every later shot in that scene keeps them.\n" +
     "- That first shot must pin the characters' left-to-right order on screen against a visible anchor — not just the location's fixed objects, but the people: which character is at frame left, which at frame right, and, when two of them stand together, which of the two is nearer frame left.\n" +
     "- State each character's gaze camera-relative: 'looking camera-left toward <name>', not merely 'looking toward <name>'. Two characters facing each other look in OPPOSITE camera directions — one camera-left, one camera-right.\n" +
+    "- WATCHER AND WATCHED (one character observing another, or an action): the gaze direction is decided by the TARGET'S frame side, never by what the target is doing. A target at frame left is looked at camera-LEFT; a target at frame right is looked at camera-RIGHT. CROSS-CHECK every gaze clause you write against the frame side you already gave its target in the same sentence — 'X at frame left sweeping, Y at frame right looking camera-right toward the sweeping' points Y away from X and is the single most common error here.\n" +
+    "- Two characters share a camera direction ONLY when both are looking at the same third thing off that side of frame. When one is looking at the other, they never share it.\n" +
+    "- A character absorbed in their own action looks at that action — 'head down toward the broom', 'eyes on her hands' — not at a camera direction. Giving the actor a camera-relative gaze is what pulls their head up and out of the work.\n" +
     "- Every shot's `prompt` must say where the camera stands relative to the characters ('from behind <name>, over its shoulder, toward <name>'), because that is what makes a screen side true rather than asserted. The `camera` field never reaches the image model, so this belongs in `prompt` even when `camera` says something similar.\n" +
     "- A reverse angle does NOT permit a left/right swap. Remaining on the same side of the action axis preserves screen direction — that is the point of the reverse: in an over-the-shoulder pair, the character who was screen-left stays screen-left in the reverse, only the shoulder in the foreground changes. Swap sides ONLY when the shot explicitly states that the camera crosses the axis, and name the resulting change in that shot's `prompt`.\n" +
     "- A scene can hold more than one axis: the establishing shot fixes one (say two characters together on one side, a third opposite them), and a later exchange between two of those characters forms a new one. Fix each new pairing's order the first time those characters appear together, and never let a new axis contradict a side the scene's establishing shot already pinned."
@@ -307,5 +310,93 @@ export function motionStyleBlock(motionStyleId?: string | null) {
     "- `emotional` — a realization or emotional turn carried by the face, with no body relocation.\n" +
     `- ${style.selectionRule}\n` +
     "- The mode must agree with the videoPrompt: tag `dialogue` if and only if the videoPrompt quotes a spoken line."
+  );
+}
+
+// Chapter-geography layer. Every other spatial block works INSIDE one location:
+// a location's FIXED LAYOUT arranges one room, SCREEN DIRECTION fixes sides
+// within one scene. Nothing described how the locations relate to each other,
+// so two facts kept getting re-derived per scene and contradicting themselves:
+// which script headings are the same physical place (a place revisited under a
+// slightly different heading got a second establishing shot), and which way a
+// character travels when a cut moves them from one place to a connected one.
+//
+// The map is emitted BEFORE the scenes — it is the first property of the
+// storyboard schema — so it is settled once for the chapter and then obeyed,
+// rather than inferred again inside every scene. It is stored on the chapter
+// so a single-scene regeneration receives it as input (see lib/site-map.ts):
+// that pass sees the whole script but re-shoots one scene, which is exactly
+// the case where chapter-wide geography is otherwise lost.
+export function siteMapBlock() {
+  return (
+    "\n\nCHAPTER SITE MAP (`siteMap`): produce this FIRST, before any scene, then shoot the chapter against it.\n" +
+    "- `places`: one entry per distinct PHYSICAL PLACE the script visits — not one per [SCENE] heading. Group every heading that plays in the same place into a single entry: a place shot from two sides is one place (its location asset's VIEWS cover the sides), and the same place at a different time of day or on a later day is still that place. `location` is the EXACT name of the matching Known Assets location; leave it empty only when the script visits a place that has no location asset. `sceneSlugs` lists that place's [SCENE] headings verbatim, in script order. `note` is one short line on what happens there — never a description of how it looks, which its location asset already carries.\n" +
+    "- `connections`: one entry per move a character actually makes between two places in the script (stepping off a veranda into its yard, walking a road from a village to a market). `via` names the anchor the move passes through, taken from the FROM place's FIXED LAYOUT ('main door, south wall', 'front stair'). `screenDirection` states the travel direction as screen sides across the cut — e.g. 'exits frame right from the veranda, enters the yard from frame left'. Empty arrays are correct for a chapter that never leaves one place; never invent a move the script does not make.\n" +
+    "- ESTABLISHING COVERAGE FOLLOWS THE MAP, NOT THE HEADINGS: the Establishing Master Shot rule fires on the first shot of each PLACE in the map. A later scene returning to a place the map already lists gets no second establishing shot unless that place's state has visibly changed (damage, a different time of day, a room now emptied) — open it with coverage that continues the established layout instead.\n" +
+    "- TRAVEL ACROSS A CUT: when a character leaves one place and the next shot picks them up in a connected place, both shots must follow that connection's `screenDirection` — someone exiting frame right arrives entering from frame left. A cut that flips their travel direction reads as them turning around. This extends SCREEN DIRECTION across places; inside a scene that block still governs.\n" +
+    "- The map is reasoning for you and for later passes. Never copy `siteMap` wording into a shot's `prompt`: place names, connection wording and compass anchors are not things an image model can render."
+  );
+}
+
+// Lighting layer. Prompted by a suggested five-part prompt structure (subject,
+// environment, style, lighting, camera) — lighting was the one slot nothing in
+// this pipeline filled. A location's realPrompt is forbidden to mention it (it
+// generates a neutral reference sheet), a shot's prompt is forbidden to write
+// a lighting rig, and the visual style describes a global look rather than a
+// scene's hour. So the light was left entirely to the image model, and two
+// shots of one scene could come back at different times of day.
+//
+// Scene-level, not per shot: an hour and a light source are properties of the
+// scene, and shots that disagree about them do not cut together. The text is
+// composed into the copied prompt by lib/prompt-copy.ts rather than written
+// into a shot's prompt, so it can be re-edited without regenerating shots.
+export function lightingBlock() {
+  return (
+    "\n\nSCENE LIGHTING (`lighting`): one short line per scene describing the light, written as scene CONTENT, never as a lighting rig.\n" +
+    "- Cover three things and nothing else: the hour and light condition the [SCENE] heading implies (DAY/NIGHT, dawn, dusk, overcast, rain), where the light physically comes from — named by the ANCHOR it passes, taken from that location's FIXED LAYOUT ('low sun through the open doorway', 'a single oil lamp on the shelf behind her') — and the mood that produces ('warm and calm', 'cold and flat').\n" +
+    "- NEVER write a compass direction into this line. 'Sunlight from the south', 'light from the east window' — a compass bearing is invisible in an image, so it constrains nothing and is the wording that sends the model re-deriving the room instead of matching the attached reference. Use the layout's compass only to WORK OUT which anchor the light passes, then name the anchor and, where it matters, the frame side it falls across ('from beyond the gate in the foreground, falling across the yard toward the veranda').\n" +
+    "- FORBIDDEN: rig and post wording. No key/fill/rim light, no three-point, softbox, practicals, colour temperature in kelvin, no lens, exposure, grade, or render-engine words. If it names film equipment rather than something a person standing in the room would see, it does not belong here.\n" +
+    "- Every shot in the scene shares this light. A shot's `prompt` states lighting only as a DELTA the script calls for — a character stepping into the doorway's light, a lamp being lit, a door opened onto brightness — and never restates the scene's light.\n" +
+    "- Consecutive scenes in the same place at the same time of day must not contradict each other on the hour; a time jump has to be visible in the script.\n" +
+    "- Keep it to one line. It is prefixed and composed into the copied prompt by the app, so write no label of your own."
+  );
+}
+
+// Companion to lib/constants/shot-scales.ts. The model only classifies; the
+// optics wording is a constant composed at copy time, for the same reason
+// motion mode works that way — wording the AI writes per shot cannot be edited
+// globally, and depth-of-field language repeated freehand across a chapter
+// drifts. Kept separate from the visual style because it is the one look
+// property that must differ shot to shot: an establishing wide needs the space
+// legible, an extreme close-up needs the background gone.
+export function shotScaleBlock() {
+  return (
+    "\n\nSHOT SCALE (`shotScale`): tag every shot with exactly one framing scale. The app composes a fixed depth-of-field and background line from it — never write depth of field, focus, bokeh, or background-blur wording into `prompt` yourself.\n" +
+    "- `wide` — establishing or full-space coverage: the place and the relative positions in it are the subject.\n" +
+    "- `medium` — a character in their space, roughly waist-up to full figure: the action is the subject, the place still readable behind it.\n" +
+    "- `close` — a face, hands, or a single figure filling the frame.\n" +
+    "- `extreme-close` — an object, a detail, a texture: surface and micro-detail are the subject.\n" +
+    "- It must agree with the framing the shot's `prompt` opens with, and with the aspect-ratio rules above: 9:16 rarely justifies `wide`, and an Establishing Master Shot is `wide` in 16:9 or the widest ratio-appropriate scale in 9:16."
+  );
+}
+
+// Script-fidelity layer. Observed: a Burmese action line whose whole point was
+// the MANNER of the action — ခိုးကြည့် (to peek, to watch on the sly) — came
+// back as "stands watching" in the English prompt. The action survived the
+// translation and the adverb did not, which is precisely the half that carries
+// the beat: a child copying her grandmother in the open is not the same shot,
+// and not the same joke, as one doing it from behind cover.
+//
+// This is not a language-specific problem (English scripts lose "reluctantly",
+// "quietly", "without looking up" the same way), but translation makes it much
+// more likely, because manner is where a literal rendering of a verb drops
+// detail first.
+export function scriptFidelityBlock() {
+  return (
+    "\n\nMANNER IS NOT OPTIONAL: when a script line says HOW something is done, that manner is the beat — carry it into `prompt` as visible behaviour, not just the bare action.\n" +
+    "- Translate manner into something an image can show: secretly/on the sly = half-hidden behind a post or a doorway, body turned away, head peering around it; reluctantly = feet planted, shoulders back, only the head turned; imitating = the same posture and grip as the person being copied, a beat behind them.\n" +
+    "- 'Stands watching' is what a dropped adverb looks like. If the script's verb carried a manner and your prompt reads as a neutral stance, you lost it — put it back.\n" +
+    "- This applies hardest when the script is not in English: render the manner, never only the literal verb.\n" +
+    "- Never invent a manner the script does not state. This is about not losing what is there."
   );
 }

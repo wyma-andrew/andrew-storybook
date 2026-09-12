@@ -13,6 +13,7 @@ import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
 import { DEFAULT_REGION, isRegion } from "@/lib/constants/regions";
 import { DEFAULT_MOTION_STYLE_ID, isMotionMode } from "@/lib/constants/motion-styles";
+import { isShotScale } from "@/lib/constants/shot-scales";
 
 type Row = Record<string, unknown>;
 
@@ -95,6 +96,7 @@ export function mapShot(r: Row): Shot {
     durationS: (r.duration_s as number) ?? null,
     aspect: (r.aspect as string) ?? null,
     camera: (r.camera as string) ?? null,
+    shotScale: isShotScale(r.shot_scale) ? r.shot_scale : null,
     motionMode: isMotionMode(r.motion_mode) ? r.motion_mode : null,
     prompt: (r.prompt_override as string) ?? (r.prompt as string),
     videoPrompt: (r.video_prompt_override as string) ?? (r.video_prompt as string) ?? null,
@@ -114,6 +116,7 @@ export function mapScene(r: Row): Scene {
     index: r.index as number,
     title: (r.title as string) ?? null,
     slug: (r.slug as string) ?? null,
+    lighting: (r.lighting as string) ?? null,
     shots: shots.map(mapShot).sort((a, b) => a.index - b.index),
   };
 }

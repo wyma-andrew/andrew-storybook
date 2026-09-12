@@ -7,6 +7,7 @@ import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 import { resolveMotionMode } from "@/lib/motion";
+import { resolveShotScale } from "@/lib/constants/shot-scales";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,7 +40,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
   const motionStyleId = (story?.motion_style_id as string | null) ?? null;
-  const scenes = await generateStoryboard(scriptText, assetContext, styleContext, aspectRatio, region, motionStyleId);
+  const { siteMap, scenes } = await generateStoryboard(
+    scriptText,
+    assetContext,
+    styleContext,
+    aspectRatio,
+    region,
+    motionStyleId
+  );
   const voiceOverSources = tiptapVoiceOvers(chapter.script).map((text, index) => ({
     sourceIndex: index + 1,
     text,
@@ -83,7 +91,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     const s = scenes[i];
     const { data: sceneRow, error: sErr } = await db
       .from("scenes")
-      .insert({ chapter_id: id, index: i + 1, title: s.title, slug: s.slug })
+      .insert({ chapter_id: id, index: i + 1, title: s.title, slug: s.slug, lighting: s.lighting || null })
       .select("id")
       .single();
     if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
@@ -96,6 +104,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       duration_s: Math.min(Math.max(sh.durationS, 1), 10), // hard cap: most AI video tools can't export past 10s
       aspect: sh.aspect,
       camera: sh.camera,
+      shot_scale: resolveShotScale(sh.shotScale),
       motion_mode: resolveMotionMode(sh.motionMode, sh.videoPrompt, motionStyleId),
       prompt: sh.prompt,
       video_prompt: sh.videoPrompt,
@@ -123,7 +132,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await db.from("chapters").update({ status: "storyboard", updated_at: new Date().toISOString() }).eq("id", id);
+  // The site map is stored even when it comes back empty-ish, so a chapter's
+  // geography always reflects its latest generation rather than a stale one
+  // from a script edit ago. Single-scene regeneration reads it back.
+  await db
+    .from("chapters")
+    .update({ status: "storyboard", site_map: siteMap, updated_at: new Date().toISOString() })
+    .eq("id", id);
 
   const { data: finalScenes, error: fErr } = await db
     .from("scenes")

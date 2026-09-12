@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { mapShot } from "@/lib/api/map";
 import { isMotionMode } from "@/lib/constants/motion-styles";
+import { isShotScale } from "@/lib/constants/shot-scales";
 
 // Edits land in the *_override columns only — the generated prompt columns are
 // never touched, so passing null for a field restores the original text.
@@ -19,6 +20,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.motionMode !== undefined) {
     if (!isMotionMode(body.motionMode)) return NextResponse.json({ error: "Invalid motion mode." }, { status: 400 });
     patch.motion_mode = body.motionMode;
+  }
+  // Shot scale, like motion mode, is a classification rather than text: a
+  // hand-picked scale replaces the generated one outright, with no *_override.
+  if (body.shotScale !== undefined) {
+    if (!isShotScale(body.shotScale)) return NextResponse.json({ error: "Invalid shot scale." }, { status: 400 });
+    patch.shot_scale = body.shotScale;
   }
   const { data, error } = await db.from("shots").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

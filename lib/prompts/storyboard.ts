@@ -11,12 +11,78 @@ import {
   motionDisciplineBlock,
   shotDistinctnessBlock,
   motionStyleBlock,
+  siteMapBlock,
+  lightingBlock,
+  shotScaleBlock,
+  scriptFidelityBlock,
 } from "./shared";
 import { DEFAULT_ASPECT_RATIO } from "../constants/aspect-ratios";
+
+export const SITE_MAP_SCHEMA = {
+  type: "object",
+  properties: {
+    places: {
+      type: "array",
+      description:
+        "One entry per distinct PHYSICAL place the script visits — not one per scene heading. Headings that play in the same place share one entry.",
+      items: {
+        type: "object",
+        properties: {
+          location: {
+            type: "string",
+            description:
+              "Exact name of the matching Known Assets location. Empty string only when the script visits a place that has no location asset.",
+          },
+          sceneSlugs: {
+            type: "array",
+            description: "Every [SCENE] heading that plays in this place, verbatim as written in the script, in script order.",
+            items: { type: "string" },
+          },
+          note: {
+            type: "string",
+            description:
+              "One short line on what happens here — never how it looks, which the location asset's realPrompt already carries.",
+          },
+        },
+        required: ["location", "sceneSlugs", "note"],
+        additionalProperties: false,
+      },
+    },
+    connections: {
+      type: "array",
+      description:
+        "One entry per move a character actually makes between two places in the script. Empty array when the chapter never leaves one place.",
+      items: {
+        type: "object",
+        properties: {
+          from: { type: "string", description: "place left, named exactly as in places[].location" },
+          to: { type: "string", description: "place arrived at, named exactly as in places[].location" },
+          via: {
+            type: "string",
+            description:
+              "The anchor the move passes through, taken from the FROM place's FIXED LAYOUT — e.g. 'main door, south wall', 'front stair'.",
+          },
+          screenDirection: {
+            type: "string",
+            description:
+              "Travel direction as screen sides across the cut — e.g. 'exits frame right from the veranda, enters the yard from frame left'.",
+          },
+        },
+        required: ["from", "to", "via", "screenDirection"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["places", "connections"],
+  additionalProperties: false,
+} as const;
 
 export const STORYBOARD_SCHEMA = {
   type: "object",
   properties: {
+    // Emitted before `scenes`: the chapter's geography is settled once, then
+    // every scene is shot against it. See siteMapBlock in ./shared.
+    siteMap: SITE_MAP_SCHEMA,
     scenes: {
       type: "array",
       items: {
@@ -24,6 +90,11 @@ export const STORYBOARD_SCHEMA = {
         properties: {
           title: { type: "string" },
           slug: { type: "string", description: "e.g. 'INT. LIGHTHOUSE — NIGHT'" },
+          lighting: {
+            type: "string",
+            description:
+              "One short line of scene lighting and atmosphere shared by every shot in this scene: the hour/light condition from the scene heading, where the light comes from (named against the location's FIXED LAYOUT anchors), and the mood. Scene content only — never a lighting rig, lens, exposure, or render wording. See SCENE LIGHTING below.",
+          },
           shots: {
             type: "array",
             items: {
@@ -49,10 +120,17 @@ export const STORYBOARD_SCHEMA = {
                   description: "Always set to this chapter's fixed aspect ratio, given below. Same value for every shot.",
                 },
                 camera: { type: "string", description: "e.g. 'static', 'slow push-in'" },
+                shotScale: {
+                  type: "string",
+                  enum: ["wide", "medium", "close", "extreme-close"],
+                  description:
+                    "This shot's framing scale. The app composes a fixed optics line (depth of field, background treatment) from it at copy time — see SHOT SCALE below. It must agree with the framing the `prompt` opens with.",
+                },
                 prompt: {
                   type: "string",
                   description:
-                    "Start Frame: image prompt for this shot's opening moment, written against the attached character/location references (see assetsUsed). Cover the action, pose, expression, gaze, view-relative position in the space, and the framing — plus any visible change from the references the script calls for. " +
+                    "Start Frame: image prompt for this shot's opening moment, written against the attached character/location references (see assetsUsed). " +
+                    "OPEN WITH THE FRAMING AND THE SUBJECT, in that order — 'Wide establishing shot of the monastery courtyard...', 'Medium shot of Nori carrying a clay pot...', 'Extreme close-up of the alms bowl in her hands...' — then the action, pose, expression, gaze, and view-relative position in the space, then any visible change from the references the script calls for. " +
                     "Do not re-describe character appearance, wardrobe, or room layout that the attached references already show. No camera movement, lighting rig, art-style, or render-engine keywords — camera goes in the `camera` field, and style is injected separately by the app.",
                 },
                 videoPrompt: {
@@ -98,6 +176,7 @@ export const STORYBOARD_SCHEMA = {
                 "durationS",
                 "aspect",
                 "camera",
+                "shotScale",
                 "prompt",
                 "videoPrompt",
                 "motionMode",
@@ -109,12 +188,12 @@ export const STORYBOARD_SCHEMA = {
             },
           },
         },
-        required: ["title", "slug", "shots"],
+        required: ["title", "slug", "lighting", "shots"],
         additionalProperties: false,
       },
     },
   },
-  required: ["scenes"],
+  required: ["siteMap", "scenes"],
   additionalProperties: false,
 } as const;
 
@@ -144,6 +223,10 @@ export function storyboardSystemPrompt(
     "- You are provided with a list of Known Assets (characters, locations, and/or props, given below) — this tells the user which reference images/prompts to attach when generating.\n" +
     "- When generating a shot's `prompt`, check which Known Assets appear in your text description.\n" +
     "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
+    siteMapBlock() +
+    lightingBlock() +
+    shotScaleBlock() +
+    scriptFidelityBlock() +
     identityAnchorBlock() +
     ambientPopulationBlock() +
     locationSpatialConsistencyBlock() +
@@ -155,5 +238,67 @@ export function storyboardSystemPrompt(
     styleContextBlock(styleContext) +
     regionAdaptationBlock(region) +
     outputLanguageBlock()
+  );
+}
+
+// Single-scene regeneration reuses every storyboard rule above, so the shots it
+// returns stay format-identical to the ones generated in a full pass. Only the
+// scope and the continuity handshake with the untouched neighbour scenes differ.
+export const SCENE_SHOTS_SCHEMA = {
+  type: "object",
+  properties: { shots: STORYBOARD_SCHEMA.properties.scenes.items.properties.shots },
+  required: ["shots"],
+  additionalProperties: false,
+} as const;
+
+export type SceneRegenerationTarget = {
+  index: number;
+  title: string | null;
+  slug: string | null;
+  // Continuity ledger handshake: the neighbouring scenes are NOT regenerated,
+  // so the new shots have to start where the previous scene ended and end where
+  // the next scene already begins, or the state ledger breaks at the seams.
+  previousEndState: string | null;
+  nextStartState: string | null;
+  // The chapter's stored site map, already rendered as text. This pass emits
+  // no map of its own — re-deriving chapter geography from one scene is how a
+  // revisited place picks up a second establishing shot and a character's
+  // travel direction flips at the seam.
+  siteMap: string | null;
+  // The scene row is not replaced by a regeneration, so its lighting line
+  // survives the re-shoot and the new shots must be written under it.
+  lighting: string | null;
+};
+
+export function regenerateSceneSystemPrompt(
+  target: SceneRegenerationTarget,
+  styleContext?: string | null,
+  aspectRatio: string = DEFAULT_ASPECT_RATIO,
+  region: Region = "english",
+  motionStyleId?: string | null
+) {
+  const heading = [target.slug, target.title].filter(Boolean).join(" — ") || `scene ${target.index}`;
+  return (
+    storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId) +
+    "\n\nSCOPE — SINGLE SCENE REGENERATION:\n" +
+    (target.siteMap
+      ? "This chapter's SITE MAP is already settled — do NOT produce a new one, and do not renegotiate which place this scene plays in. Shoot the scene against it, including its establishing-coverage and travel-direction rules:\n" +
+        target.siteMap +
+        "\n"
+      : "This chapter has no stored site map, so judge this scene's place and any establishing coverage from the script alone.\n") +
+    `You are given the whole script for context, but you re-shoot ONLY scene ${target.index}: ${heading}. ` +
+    "Return that scene's shot list and nothing else — no other scene's shots, no scene title, no slug. " +
+    "Cover exactly the script lines that belong to this scene heading, from it up to (but excluding) the next [SCENE] heading. " +
+    "Every rule above still applies inside this scene: establishing coverage for a location this scene opens, camera variety, shot distinctness, duration caps, and assetsUsed cross-checking.\n" +
+    (target.previousEndState
+      ? `The scene before this one ends in this state — your first shot's startState must continue from it unless the script explicitly changes something: ${target.previousEndState}\n`
+      : "This is the chapter's first scene, so its opening state is set by the script alone.\n") +
+    (target.nextStartState
+      ? `The scene after this one is NOT being regenerated and already opens in this state — your last shot's endState must hand off to it: ${target.nextStartState}\n`
+      : "This is the chapter's last scene, so nothing follows it.\n") +
+    (target.lighting
+      ? `This scene's lighting is already set and is NOT regenerated — write every shot under it, stating light only as a delta the script calls for: ${target.lighting}\n`
+      : "This scene has no stored lighting line, so judge its light from the script alone.\n") +
+    "Produce at least one shot, and at least one distinct shot for every [VOICE_OVER] block falling inside this scene."
   );
 }

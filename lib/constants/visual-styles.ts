@@ -39,10 +39,13 @@ const SINGLE_FRAME_TAIL = "Characters ignore the camera. Uncropped full frame, t
 // english/myanmar duplication — the style is already Buddha-era in subject, so
 // there is nothing region-specific to adapt yet.
 const BUDDHA_ERA_3D_BASE =
-  "Premium stylized 3D animated feature-film look, with cinematic but soft natural lighting, clean sculpted forms, refined materials and textures, warm balanced colors, gentle depth of field, subtle atmospheric depth, and polished high-end rendering. Clearly animated and non-photorealistic. " +
+  "Premium stylized 3D animated feature-film look, with clean sculpted forms, refined materials and textures, balanced natural colors, subtle atmospheric depth, and polished high-end rendering. Clearly animated and non-photorealistic. " +
   "Ancient South Asian Buddha-era aesthetic, historically grounded, peaceful, dignified, natural, and serene, with a restrained sacred atmosphere inspired by early Buddhist life and culture. Maintain believable proportions, natural forms, historically appropriate architecture, clothing, tools, furnishings, and materials while preserving a refined animated-film appearance. " +
   "Favor simple hand-crafted materials such as natural wood, clay, stone, woven reed, handwoven fabric, packed earth, and other period-appropriate surfaces. Keep environments organic, hand-built, and lived-in rather than ornate or fantastical, with detailing and finish restrained. The size, building count, and grandeur of a place follow the story and the place itself, not a default of smallness. " +
-  "Use soft warm sunlight, gentle ambient illumination, controlled highlights, natural shadows, balanced contrast, and subtle atmospheric depth. The overall image should feel calm, contemplative, culturally grounded, and visually coherent without becoming overly mystical. " +
+  // Light QUALITY only — how light behaves in this style. The scene's actual
+  // light (hour, source, warmth) is the scene's [Lighting] line, composed at
+  // copy time; naming an hour here contradicts every night or lamp-lit scene.
+  "Render light softly and naturally: gentle ambient illumination, controlled highlights, natural shadows, balanced contrast, and subtle atmospheric depth. The overall image should feel calm, contemplative, culturally grounded, and visually coherent without becoming overly mystical. " +
   "Avoid dramatic fantasy lighting, divine beams, excessive golden glow, artificial halos made of light, magical particles, hyper-real textures or skin, live-action realism, plastic toy appearance, exaggerated cartoon proportions, anime styling, overly decorative fantasy elements, luxurious modern-looking materials, or excessive visual effects.";
 
 export const VISUAL_STYLES: VisualStylePreset[] = [

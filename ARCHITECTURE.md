@@ -99,11 +99,12 @@ return normal API authentication errors.
 ### API to AI
 
 `lib/openai.ts` calls `gpt-5.6-luna` through Chat Completions with strict JSON
-schemas. The three operations are:
+schemas. The operations are:
 
 - `extractAssets()` — characters, locations, and story-relevant props.
 - `regenerateAssetPrompt()` — one existing chapter asset.
-- `generateStoryboard()` — scenes and shots from script plus known assets.
+- `generateStoryboard()` — the chapter site map, then scenes and shots, from script plus known assets.
+- `regenerateSceneShots()` — replacement shots for one existing scene.
 - `assignVoiceOvers()` — ordered, non-overlapping narration ranges over finalized shots.
 
 Tiptap JSON is flattened by `tiptapToText()` into tagged lines such as
@@ -160,14 +161,20 @@ promotion. Characters and props currently have no reference-image rows.
 
 - Prompt rules: `lib/prompts/storyboard.ts`, `lib/prompts/shared.ts`
 - Generate: `POST /api/chapters/:id/storyboard/generate`
+- Regenerate one scene: `POST /api/scenes/:id/regenerate`
 - Read: `GET /api/chapters/:id/storyboard`
 - Prompt edit/restore: `PATCH /api/shots/:id`
 - UI: `app/stories/[id]/chapters/[chapterId]/storyboard/page.tsx`
 
 Generation sends the tagged script and all chapter asset prompts to the model,
-then replaces the chapter's existing scenes and shots. Every shot stores its
-beat, duration, aspect, camera, motion mode, image prompt, video prompt, assets
-used, and start/end continuity state. Duration is clamped to 1–10 seconds. The
+then replaces the chapter's existing scenes and shots. The model first returns a
+**site map** — which physical place each `[SCENE]` heading plays in, and how the
+places connect (the layout anchor a move passes through, and its screen
+direction across the cut) — and shoots the chapter against it. The map is stored
+on `chapters.site_map` (`lib/site-map.ts` parses and renders it). Every shot stores its
+beat, duration, aspect, camera, framing scale, motion mode, image prompt, video
+prompt, assets used, and start/end continuity state. Each scene also stores a `lighting` line
+shared by its shots, composed into copied prompts rather than baked into them. Duration is clamped to 1–10 seconds. The
 model's motion mode passes through `resolveMotionMode()` (`lib/motion.ts`),
 which clamps it to a mode the story's motion style allows and reconciles it
 with whether the video prompt quotes a spoken line.
@@ -177,13 +184,22 @@ generated originals remain intact. Clearing an override restores the original.
 
 When the script contains Voice Over blocks, a second model call maps each block
 to a contiguous start/end shot range after the visual shot list is finalized.
-Ranges preserve script order and cannot overlap. `voice_over_segments` stores
+Ranges preserve script order and cannot overlap.
+
+A single scene can also be re-shot in place. That call keeps the scene row and
+every other scene, hands the model the neighbouring scenes' boundary continuity
+states plus the chapter's stored site map (that pass emits no map of its own),
+and then re-runs the narration pass over the whole chapter, because
+narration ranges may start or end inside the replaced scene. `voice_over_segments` stores
 the script snapshot and a nullable text override; narration is copied and
 edited separately and is never injected into per-shot video prompts.
 
 ### Prompt copying
 
-Stored asset and shot prompts intentionally omit literal style tags. The client
+Copied shot prompts are composed as shot text, then `[Style]`, then
+`[Lighting]` (the scene's light), then `[Framing]` (the shot scale's optics line
+from `lib/constants/shot-scales.ts`). Asset copies keep `[Style]` first, ahead of
+the reference-sheet preset. Stored asset and shot prompts intentionally omit literal style tags. The client
 uses `resolveStyleContext()` plus helpers in `lib/prompt-copy.ts` to assemble
 the final clipboard text from:
 
@@ -221,22 +237,23 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | Table | Responsibility |
 |---|---|
 | `stories` | Ownership, title, description, style slug, motion style slug, region, aspect, soft delete |
-| `chapters` | Episode order, Tiptap script, workflow status, aspect override |
+| `chapters` | Episode order, Tiptap script, workflow status, aspect override, storyboard site map |
 | `chapter_assets` | Chapter-local extracted asset and bible match state |
 | `bible_entries` | Story-wide approved character/location/prop identity |
 | `chapter_asset_images` | Pending chapter-scoped location image URLs |
 | `bible_entry_images` | Promoted story-wide location image URLs |
-| `scenes` | Ordered storyboard scenes |
-| `shots` | Ordered prompts, overrides, references, beat, motion mode, and continuity state |
+| `scenes` | Ordered storyboard scenes and their lighting line |
+| `shots` | Ordered prompts, overrides, references, beat, framing scale, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;
 normal story deletion is soft deletion through `stories.deleted_at`, while the
 Trash screen can permanently delete it.
 
-Visual styles, motion styles, and system presets are not tables. Their sources
-of truth are `lib/constants/visual-styles.ts`, `lib/constants/motion-styles.ts`,
-and `lib/constants/system-prompts.ts`.
+Visual styles, motion styles, shot-scale optics, and system presets are not
+tables. Their sources of truth are `lib/constants/visual-styles.ts`,
+`lib/constants/motion-styles.ts`, `lib/constants/shot-scales.ts`, and
+`lib/constants/system-prompts.ts`.
 
 ## Implemented surface and current limits
 
@@ -245,7 +262,8 @@ multi-chapter stories, Tiptap screenplay import/editing, three-kind asset
 extraction, chapter-local character-info and prompt editing, story bible promotion,
 location reference-image URLs, storyboard
 generation, editable/restorable shot prompts, style/region selection,
-story-wide motion style with a per-shot motion mode override, and
+story-wide motion style with a per-shot motion mode override, per-scene
+storyboard regeneration, and
 story/chapter aspect ratios. Anonymous Voice Over blocks are mapped to editable
 storyboard shot ranges as a separate narration overlay.
 
@@ -263,6 +281,9 @@ images. The `demo/` directory is reference-only.
 | Story regions and cultural/historical adaptation | `history/regions.md` |
 | Voice Over blocks, mapping, and range editing | `history/voice-over.md` |
 | Motion styles and per-shot motion modes | `history/motion-styles.md` |
+| Per-scene storyboard regeneration | `history/storyboard-scene-regeneration.md` |
+| Chapter site map fed into shot generation | `history/storyboard-site-map.md` |
+| Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 
 ## Maintenance rule

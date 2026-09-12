@@ -56,6 +56,32 @@ fantasy painting; chiaroscuro gold/blue, volumetric rays, Southeast Asian
 Buddhist iconography with modern concept art. Appears automatically in all three
 pickers.
 
+## 2026-09-11 — Buddha Era 3D no longer states the hour or the depth of field
+
+Two clauses left `BUDDHA_ERA_3D_BASE`, both because the pipeline now owns them
+elsewhere and a style asserting them contradicts it:
+
+- `"Use soft warm sunlight..."` became `"Render light softly and naturally..."`,
+  and `"cinematic but soft natural lighting"` / `"warm balanced colors"` became
+  `"balanced natural colors"`. The style now describes light QUALITY only. The
+  scene's actual light is `scenes.lighting`, composed at copy time — a style
+  naming warm sunlight fights every night, storm, or lamp-lit scene.
+- `"gentle depth of field"` was dropped: depth of field is per shot now
+  (`shots.shot_scale`), and it is the one look property that must differ between
+  an establishing wide and an extreme close-up.
+
+The style's identity is unchanged. See `history/shot-prompt-composition.md`.
+Other styles' lighting wording (e.g. 3D Animation's "volumetric lighting") was
+left alone — only this style was reviewed.
+
+## 2026-09-11 — Style no longer leads shot copies (superseded ordering)
+
+The `[Style]` prefix used to lead every copied prompt. For shot start-frame and
+video copies it now follows the shot text instead — see
+`history/shot-prompt-composition.md` for the new order and for the measured
+photoreal-drift reasoning the old order came from, which is retained there as
+the thing to re-check if drift returns. Asset copies still lead with `[Style]`.
+
 ## 2026-09-10 — Refined the Mythic Fantasy Painting prompt
 
 The English and Myanmar variants now use the same refined, serene cinematic-realism

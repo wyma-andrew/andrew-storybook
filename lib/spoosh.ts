@@ -132,6 +132,11 @@ type ApiSchema = {
   "chapters/:id/storyboard/generate": {
     POST: { data: Scene[] };
   };
+  // Re-shoots one scene and returns the chapter's full scene list, because
+  // narration ranges are remapped chapter-wide by the same request.
+  "scenes/:id/regenerate": {
+    POST: { data: Scene[] };
+  };
 };
 
 // Caching + auto-invalidation are NOT built into @spoosh/core itself — they
