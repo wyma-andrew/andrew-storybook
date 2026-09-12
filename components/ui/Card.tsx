@@ -23,13 +23,29 @@ export function CardFooter({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Actions that CHANGE the asset (regenerate, add to bible), split off from the
-// copy buttons above by a divider — everything in CardFooter only copies text
-// out of the card, and mixing the two in one grid made a destructive action
-// read as one more copy button. Same two-column rules as CardFooter.
-export function CardActions({ children }: { children: React.ReactNode }) {
+// Footer for a card whose secondary actions live behind a trailing menu button:
+// the named copy buttons, then an auto-width trigger. The trigger must not be
+// stretched into an equal column — it is an affordance, not an action of the
+// same weight as the named ones.
+//
+// The menu also does the job the old CardActions divider did: actions that
+// CHANGE the asset (regenerate, add to bible) must not sit in the same row as
+// buttons that only copy text out of it, or a destructive action reads as one
+// more copy button.
+export function CardFooterWithMenu({
+  children,
+  actions = 2,
+}: {
+  children: React.ReactNode;
+  /** How many named buttons precede the trigger — locations have two, everything else one. */
+  actions?: 1 | 2;
+}) {
   return (
-    <div className="grid grid-cols-2 gap-2 border-t border-line px-3.5 pt-3 pb-3.5 [&>*:last-child:nth-child(odd)]:col-span-2">
+    <div
+      className={`mt-auto grid gap-2 px-3.5 pb-3.5 ${
+        actions === 1 ? "grid-cols-[1fr_auto]" : "grid-cols-[1fr_1fr_auto]"
+      }`}
+    >
       {children}
     </div>
   );

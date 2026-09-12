@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, ListPlus as AddToBible } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
-import { Card, CardHeader, CardFooter, CardActions } from "@/components/ui/Card";
+import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
-import { MatchBadge, InjectRow } from "@/components/ui/Badge";
+import { MatchBadge } from "@/components/ui/Badge";
 import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
-import { ConfirmDialog, Dialog, Input, Textarea } from "@geckoui/geckoui";
+import { ConfirmDialog, Dialog, Input, Textarea, Menu, MenuItem, MenuTrigger } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
 import {
@@ -174,8 +174,6 @@ function AssetCard({
         </div>
       </CardHeader>
 
-      <InjectRow kind={asset.kind} />
-
       <ClampedText
         text={asset.realPrompt}
         containerClassName="p-3.5 pt-2.5"
@@ -190,8 +188,12 @@ function AssetCard({
         </CardFooter>
       ) : (
         <>
-          <CardFooter>
-            {asset.kind === "location" && (
+          {asset.kind === "location" ? (
+            // Site plan and view are the two copies a location is actually
+            // reached for; the sheet, the extra angle and the mutating actions
+            // are occasional, and four copy buttons plus two action buttons made
+            // the card a wall of equally-weighted choices.
+            <CardFooterWithMenu>
               <PromptHint hint={hints.plan}>
                 <MiniButton
                   className="justify-center"
@@ -207,8 +209,6 @@ function AssetCard({
                   <Grid2x2 size={12} /> Copy {locationPlanLabel(asset.spaceKind).toLowerCase()}
                 </MiniButton>
               </PromptHint>
-            )}
-            {asset.kind === "location" ? (
               <PromptHint hint={hints.view}>
                 <MiniButton
                   className="justify-center"
@@ -219,35 +219,40 @@ function AssetCard({
                   <ImageIcon size={12} /> Copy view
                 </MiniButton>
               </PromptHint>
-            ) : (
-              <MiniButton
-                className="justify-center"
-                onClick={() =>
-                  copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
-                }
-              >
-                Copy prompt
-              </MiniButton>
-            )}
-            {asset.kind === "location" && hasMultipleViews(asset.realPrompt) && (
-              <PromptHint hint={hints.sheet}>
-                <MiniButton
-                  className="justify-center"
-                  onClick={() =>
-                    copyText(
-                      withAssetContext(asset.realPrompt, SYSTEM_PROMPTS.locationViewsSheet, styleContext),
-                      `${asset.name} views sheet prompt`
-                    )
-                  }
-                >
-                  <Columns2 size={12} /> Copy views sheet
-                </MiniButton>
-              </PromptHint>
-            )}
-            {asset.kind === "location" && (
-              <PromptHint hint={hints.angle}>
-                <MiniButton
-                  className="justify-center"
+              <Menu menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <MiniButton
+                      ghost
+                      className="!w-8 !min-w-0 justify-center !p-0"
+                      onClick={toggleMenu}
+                      disabled={regenerating || loading}
+                      aria-label={`More actions for ${asset.name}`}
+                      title="More actions"
+                    >
+                      {regenerating || loading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <MoreVertical size={14} />
+                      )}
+                    </MiniButton>
+                  )}
+                </MenuTrigger>
+                {hasMultipleViews(asset.realPrompt) && (
+                  <MenuItem
+                    onClick={() =>
+                      copyText(
+                        withAssetContext(asset.realPrompt, SYSTEM_PROMPTS.locationViewsSheet, styleContext),
+                        `${asset.name} views sheet prompt`
+                      )
+                    }
+                  >
+                    <span className="flex items-center gap-2 text-[13px]">
+                      <Columns2 size={14} /> Copy views sheet
+                    </span>
+                  </MenuItem>
+                )}
+                <MenuItem
                   onClick={() =>
                     copyText(
                       withAssetContext(
@@ -259,26 +264,78 @@ function AssetCard({
                     )
                   }
                 >
-                  <Camera size={12} /> Copy angle
-                </MiniButton>
-              </PromptHint>
-            )}
-          </CardFooter>
-
-          <CardActions>
-            <MiniLoadingButton className="justify-center" onClick={confirmRegenerate} loading={regenerating}>
-              <RefreshCw size={12} /> Regenerate
-            </MiniLoadingButton>
-            {asset.matchStatus === "new" && (
-              <MiniLoadingButton
-                className="justify-center text-accent"
-                onClick={() => promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })}
-                loading={loading}
+                  <span className="flex items-center gap-2 text-[13px]">
+                    <Camera size={14} /> Copy angle
+                  </span>
+                </MenuItem>
+                <MenuItem disabled={regenerating} onClick={confirmRegenerate}>
+                  <span className="flex items-center gap-2 text-[13px]">
+                    <RefreshCw size={14} /> Regenerate
+                  </span>
+                </MenuItem>
+                {asset.matchStatus === "new" && (
+                  <MenuItem
+                    disabled={loading}
+                    onClick={() =>
+                      promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })
+                    }
+                  >
+                    <span className="flex items-center gap-2 text-[13px] text-accent">
+                      <AddToBible size={14} /> Add to bible
+                    </span>
+                  </MenuItem>
+                )}
+              </Menu>
+            </CardFooterWithMenu>
+          ) : (
+            <CardFooterWithMenu actions={1}>
+              <MiniButton
+                className="justify-center"
+                onClick={() =>
+                  copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
+                }
               >
-                + Add to bible
-              </MiniLoadingButton>
-            )}
-          </CardActions>
+                Copy prompt
+              </MiniButton>
+              <Menu menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <MiniButton
+                      ghost
+                      className="!w-8 !min-w-0 justify-center !p-0"
+                      onClick={toggleMenu}
+                      disabled={regenerating || loading}
+                      aria-label={`More actions for ${asset.name}`}
+                      title="More actions"
+                    >
+                      {regenerating || loading ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <MoreVertical size={14} />
+                      )}
+                    </MiniButton>
+                  )}
+                </MenuTrigger>
+                <MenuItem disabled={regenerating} onClick={confirmRegenerate}>
+                  <span className="flex items-center gap-2 text-[13px]">
+                    <RefreshCw size={14} /> Regenerate
+                  </span>
+                </MenuItem>
+                {asset.matchStatus === "new" && (
+                  <MenuItem
+                    disabled={loading}
+                    onClick={() =>
+                      promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })
+                    }
+                  >
+                    <span className="flex items-center gap-2 text-[13px] text-accent">
+                      <AddToBible size={14} /> Add to bible
+                    </span>
+                  </MenuItem>
+                )}
+              </Menu>
+            </CardFooterWithMenu>
+          )}
         </>
       )}
     </Card>
