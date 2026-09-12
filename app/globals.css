@@ -133,8 +133,8 @@ html.dark {
   /* Scene badge hue: the hue itself is computed per scene in
      lib/constants/scene-colors.ts; only its weight changes with the theme. A
      light fill needs dark text, a dark fill needs light text. */
-  --scene-s: 42%;
-  --scene-l: 72%;
+  --scene-s: 65%;
+  --scene-l: 66%;
   --scene-fg: #101010;
 
   /* GeckoUI (plain variables, not Tailwind tokens) */
@@ -241,8 +241,8 @@ html.light {
   --c-avatar-from: #d5dce6;
   --c-avatar-to: #edf0f5;
 
-  --scene-s: 55%;
-  --scene-l: 38%;
+  --scene-s: 72%;
+  --scene-l: 36%;
   --scene-fg: #ffffff;
 
   /* GeckoUI */

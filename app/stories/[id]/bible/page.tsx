@@ -78,10 +78,10 @@ function BibleCard({
 
       {editing ? (
         <div className="px-3.5 pt-2.5">
-          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-[90px] font-mono text-[12.5px]" />
+          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-[90px] text-[14px] leading-relaxed" />
         </div>
       ) : (
-        <div className="p-3.5 font-mono text-[12.5px] whitespace-pre-wrap text-fg-code">{entry.realPrompt}</div>
+        <div className="p-3.5 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{entry.realPrompt}</div>
       )}
 
 

@@ -18,10 +18,18 @@ import type { CSSProperties } from "react";
 // Only the hue is a property of the scene.
 const GOLDEN_ANGLE = 137.508;
 
+// HSL hue is not perceptually even — a big stretch of the wheel between ~60 and
+// ~180 is all "green", so several scenes in a row landed in it and read as the
+// same colour despite being far apart in degrees. Anchoring the first few scenes
+// on named, obviously-different hues fixes the cases anyone actually sees; past
+// the anchors the golden angle takes over, offset so it never lands back on one.
+const ANCHOR_HUES = [4, 210, 45, 140, 280, 25, 190, 330, 95, 255];
+
 /** Hue in degrees for a 1-based scene number. */
 export function sceneHue(index: number): number {
   const step = Math.trunc(index) - 1;
-  return (((step * GOLDEN_ANGLE) % 360) + 360) % 360;
+  if (step >= 0 && step < ANCHOR_HUES.length) return ANCHOR_HUES[step];
+  return ((((step - ANCHOR_HUES.length) * GOLDEN_ANGLE + 68) % 360) + 360) % 360;
 }
 
 // Handed to the element as custom properties rather than Tailwind classes with

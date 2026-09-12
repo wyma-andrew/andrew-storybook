@@ -9,11 +9,22 @@ export function Card({ children, className = "" }: { children: React.ReactNode; 
 export function CardHeader({
   children,
   className = "",
+  divider = true,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Off for cards with no body: a rule between two adjacent rows boxes each of them. */
+  divider?: boolean;
 }) {
-  return <div className={`flex items-center gap-2.5 border-b border-line px-3.5 py-3 ${className}`}>{children}</div>;
+  return (
+    <div
+      className={`flex items-center gap-2.5 px-3.5 ${
+        divider ? "border-b border-line py-3" : "pt-3.5 pb-1"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 // Two columns: location cards carry up to four actions (copy prompt, copy
@@ -43,13 +54,14 @@ export function CardFooterWithMenu({
   actions = 2,
 }: {
   children: React.ReactNode;
-  /** How many named buttons precede the trigger — locations have two, everything else one. */
+  /** How many named buttons precede the trailing icon buttons — locations have two,
+   *  everything else one. The two auto columns are the view-prompt button and the menu. */
   actions?: 1 | 2;
 }) {
   return (
     <div
-      className={`mt-auto grid gap-2 px-3.5 pb-3.5 ${
-        actions === 1 ? "grid-cols-[1fr_auto]" : "grid-cols-[1fr_1fr_auto]"
+      className={`mt-auto grid gap-2 px-3.5 pt-3.5 pb-3.5 ${
+        actions === 1 ? "grid-cols-[1fr_auto_auto]" : "grid-cols-[1fr_1fr_auto_auto]"
       }`}
     >
       {children}

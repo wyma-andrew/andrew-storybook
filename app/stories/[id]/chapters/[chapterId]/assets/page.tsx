@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, ListPlus as AddToBible } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ListPlus as AddToBible } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
@@ -11,7 +11,6 @@ import { MatchBadge } from "@/components/ui/Badge";
 import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
-import { ClampedText } from "@/components/ui/ClampedText";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
@@ -86,7 +85,7 @@ function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss:
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           aria-label={`Character prompt for ${asset.name}`}
-          className="min-h-[260px] font-mono text-[12.5px]"
+          className="min-h-[260px] text-[14px] leading-relaxed"
           disabled={loading}
         />
       </div>
@@ -98,6 +97,50 @@ function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss:
         <LoadingButton variant="primary" onClick={save} loading={loading} disabled={!prompt.trim()}>
           Save
         </LoadingButton>
+      </div>
+    </div>
+  );
+}
+
+// The prompt is long, every card carries one, and it is read only occasionally —
+// on a grid it was most of the page's height for something nobody was looking at.
+// It lives behind "View prompt" now; editing is still the pencil in the header.
+function AssetPromptDialog({
+  asset,
+  onCopy,
+  dismiss,
+}: {
+  asset: ChapterAsset;
+  onCopy: () => void;
+  dismiss: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col gap-3.5">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[16px] font-semibold text-fg">{asset.name}</h2>
+          <p className="mt-1 text-[12.5px] text-fg-3">{asset.meta}</p>
+        </div>
+        <MiniButton
+          ghost
+          className="!h-7 !w-7 !min-w-0 shrink-0 cursor-pointer justify-center !p-0"
+          onClick={dismiss}
+          aria-label="Close"
+          title="Close"
+        >
+          <X size={15} />
+        </MiniButton>
+      </div>
+      <div className="max-h-[60vh] overflow-auto rounded-lg border border-line-2 bg-sunken p-3.5">
+        <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{asset.realPrompt}</div>
+      </div>
+      <div className="flex justify-end gap-2.5">
+        <Button variant="secondary" onClick={dismiss}>
+          Close
+        </Button>
+        <Button variant="primary" onClick={onCopy} className="flex items-center gap-1.5">
+          <Copy size={13} /> Copy prompt
+        </Button>
       </div>
     </div>
   );
@@ -158,6 +201,19 @@ function AssetCard({
     });
   }
 
+  // What the dialog's Copy does: for a location that is its wide view (the
+  // same as "Copy view"), for everything else the single prompt copy.
+  function copyDefaultPrompt() {
+    copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`);
+  }
+
+  function openPromptDialog() {
+    Dialog.show({
+      className: "w-[calc(100vw-2rem)] max-w-[720px]",
+      content: ({ dismiss }) => <AssetPromptDialog asset={asset} onCopy={copyDefaultPrompt} dismiss={dismiss} />,
+    });
+  }
+
   function openCharacterInfoDialog() {
     Dialog.show({
       className: "w-[calc(100vw-2rem)] max-w-[640px]",
@@ -167,7 +223,7 @@ function AssetCard({
 
   return (
     <Card className={borderClass}>
-      <CardHeader>
+      <CardHeader divider={false}>
         {/* Kind icon: the three grids are far apart on a long page, so a card
             scrolled past its section head no longer says what it is. */}
         <span className={`grid size-8 shrink-0 place-items-center rounded-lg border ${KIND_TILE[asset.kind]}`}>
@@ -180,8 +236,11 @@ function AssetCard({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13.5px] leading-tight font-semibold">{asset.name}</div>
-          <div className="truncate text-[11.5px] text-fg-3">{asset.meta}</div>
+          {/* leading-normal, not leading-tight: Burmese stacks marks above and below
+              the baseline, and truncate's overflow-hidden clips them off a tight line
+              box. Latin looks the same either way. */}
+          <div className="truncate text-[13.5px] leading-normal font-semibold">{asset.name}</div>
+          <div className="truncate text-[11.5px] leading-normal text-fg-3">{asset.meta}</div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {/* Only a bible-backed asset is badged. "New" needed no badge: it is the
@@ -203,12 +262,6 @@ function AssetCard({
           )}
         </div>
       </CardHeader>
-
-      <ClampedText
-        text={asset.realPrompt}
-        containerClassName="p-3.5 pt-2.5"
-        className="font-mono text-[12.5px] whitespace-pre-wrap text-fg-code"
-      />
 
       {asset.matchStatus === "stale" ? (
         <CardFooter>
@@ -249,12 +302,28 @@ function AssetCard({
                   <ImageIcon size={12} /> Copy view
                 </MiniButton>
               </PromptHint>
-              <Menu menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1">
+              <MiniButton
+                ghost
+                className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
+                onClick={openPromptDialog}
+                aria-label={`View prompt for ${asset.name}`}
+                title="View prompt"
+              >
+                <Eye size={14} />
+              </MiniButton>
+              {/* Card is overflow-hidden (for its rounded corners), which clips an
+                  open menu at the card's edge — floatingStrategy="fixed" takes the
+                  dropdown out of that clipping context. */}
+              <Menu
+                floatingStrategy="fixed"
+                placement="bottom-end"
+                menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1"
+              >
                 <MenuTrigger>
                   {({ toggleMenu }) => (
                     <MiniButton
                       ghost
-                      className="!w-8 !min-w-0 justify-center !p-0"
+                      className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
                       onClick={toggleMenu}
                       disabled={regenerating || loading}
                       aria-label={`More actions for ${asset.name}`}
@@ -327,12 +396,28 @@ function AssetCard({
               >
                 Copy prompt
               </MiniButton>
-              <Menu menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1">
+              <MiniButton
+                ghost
+                className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
+                onClick={openPromptDialog}
+                aria-label={`View prompt for ${asset.name}`}
+                title="View prompt"
+              >
+                <Eye size={14} />
+              </MiniButton>
+              {/* Card is overflow-hidden (for its rounded corners), which clips an
+                  open menu at the card's edge — floatingStrategy="fixed" takes the
+                  dropdown out of that clipping context. */}
+              <Menu
+                floatingStrategy="fixed"
+                placement="bottom-end"
+                menuClassName="w-[200px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1"
+              >
                 <MenuTrigger>
                   {({ toggleMenu }) => (
                     <MiniButton
                       ghost
-                      className="!w-8 !min-w-0 justify-center !p-0"
+                      className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
                       onClick={toggleMenu}
                       disabled={regenerating || loading}
                       aria-label={`More actions for ${asset.name}`}
@@ -516,7 +601,6 @@ export default function AssetsPage() {
                 <SectionHead
                   title="Character Prompts"
                   count={`${characters.length} detected · ${matched} matched · ${isNew} new${staleCharacters ? ` · ${staleCharacters} stale` : ""}`}
-                  sub="Matched entries reuse the bible's locked prompt — edits apply to this episode only unless promoted."
                   action={!!characters.length && <RegenerateAllButton assets={characters} chapterId={chapterId} />}
                 />
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">

@@ -106,14 +106,14 @@ export default function SettingsPage() {
               <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">{character}</div>
+              <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{character}</div>
             </AdminBlock>
 
             <AdminBlock title="Location preset — interior" badge="LOCKED" className="mt-3.5">
               <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">
+              <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">
                 {locationInterior}
               </div>
             </AdminBlock>
@@ -122,7 +122,7 @@ export default function SettingsPage() {
               <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> Used when a location&apos;s space kind is exterior.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">
+              <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">
                 {locationExterior}
               </div>
             </AdminBlock>

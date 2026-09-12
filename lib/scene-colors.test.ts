@@ -4,7 +4,7 @@ import { sceneColorVars, sceneHue } from "./constants/scene-colors";
 describe("sceneHue", () => {
   it("maps a scene number to the same hue every time", () => {
     expect(sceneHue(6)).toBe(sceneHue(6));
-    expect(sceneHue(1)).toBe(0);
+    expect(sceneHue(1)).toBe(4);
   });
 
   it("gives every scene number its own hue", () => {
@@ -15,7 +15,7 @@ describe("sceneHue", () => {
   it("keeps consecutive scenes far apart on the wheel", () => {
     for (let index = 1; index < 60; index++) {
       const gap = Math.abs(sceneHue(index + 1) - sceneHue(index));
-      expect(Math.min(gap, 360 - gap)).toBeGreaterThan(100);
+      expect(Math.min(gap, 360 - gap)).toBeGreaterThan(60);
     }
   });
 

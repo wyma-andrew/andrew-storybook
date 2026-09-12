@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus } from "lucide-react";
-import { ConfirmDialog, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus } from "lucide-react";
+import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -65,10 +65,10 @@ function PromptBox({
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="min-h-[120px] flex-1 font-mono text-[12.5px]"
+            className="min-h-[120px] flex-1 text-[14px] leading-relaxed"
           />
         ) : (
-          <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-fg-code">{text}</div>
+          <div className="flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{text}</div>
         )}
         <div className="flex shrink-0 flex-col gap-1.5">
           {editing ? (
@@ -117,18 +117,39 @@ function PromptBox({
   );
 }
 
+// Which of a shot's two prompts is on screen. One choice for the whole chapter,
+// not per shot: the reader is working in one mode at a time — writing start
+// frames, or writing video prompts — and a per-shot switch would mean setting it
+// again on every card.
+export type PromptTab = "start" | "video";
+
+function promptTabKey(chapterId: string) {
+  return `storyboard-prompt-tab:${chapterId}`;
+}
+
+function readPromptTab(chapterId: string): PromptTab {
+  if (typeof window === "undefined") return "start";
+  try {
+    return localStorage.getItem(promptTabKey(chapterId)) === "video" ? "video" : "start";
+  } catch {
+    return "start";
+  }
+}
+
 function ShotPrompts({
   shot,
   chapterId,
   styleContext,
   motionStyleId,
   lighting,
+  tab,
 }: {
   shot: Shot;
   chapterId: string;
   styleContext: string | null;
   motionStyleId: string;
   lighting: string | null;
+  tab: PromptTab;
 }) {
   const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
 
@@ -149,23 +170,18 @@ function ShotPrompts({
   const activeMode = shot.motionMode ?? motionStyle.defaultMode;
   const activeScale = shot.shotScale ?? DEFAULT_SHOT_SCALE;
 
+  // A shot with no video prompt falls back to the start frame rather than
+  // rendering an empty card — the chapter-wide tab must not blank out shots
+  // that simply have nothing to show in that mode.
+  const showVideo = tab === "video" && !!shot.videoPrompt;
+
   return (
     <>
-      <PromptBox
-        key={`start-${shot.id}-${shot.prompt}-${shot.promptEdited}`}
-        label="Start Frame"
-        text={shot.prompt}
-        edited={shot.promptEdited}
-        saving={saving}
-        onCopy={() => copyText(withStyle(shot.prompt, styleContext, lighting, optics), "Start Frame prompt")}
-        onSave={async (next) => void (await write({ prompt: next }))}
-        onRestore={async () => void (await write({ prompt: null }))}
-      />
-      {shot.videoPrompt && (
+      {showVideo ? (
         <PromptBox
           key={`video-${shot.id}-${shot.videoPrompt}-${shot.videoPromptEdited}`}
           label="Video Prompt"
-          text={shot.videoPrompt}
+          text={shot.videoPrompt!}
           edited={shot.videoPromptEdited}
           saving={saving}
           onCopy={() =>
@@ -176,6 +192,17 @@ function ShotPrompts({
           }
           onSave={async (next) => void (await write({ videoPrompt: next }))}
           onRestore={async () => void (await write({ videoPrompt: null }))}
+        />
+      ) : (
+        <PromptBox
+          key={`start-${shot.id}-${shot.prompt}-${shot.promptEdited}`}
+          label={tab === "video" ? "Start Frame — no video prompt for this shot" : "Start Frame"}
+          text={shot.prompt}
+          edited={shot.promptEdited}
+          saving={saving}
+          onCopy={() => copyText(withStyle(shot.prompt, styleContext, lighting, optics), "Start Frame prompt")}
+          onSave={async (next) => void (await write({ prompt: next }))}
+          onRestore={async () => void (await write({ prompt: null }))}
         />
       )}
       {/* Temporarily hidden from the UI - the picker still writes shotScale and the
@@ -297,10 +324,10 @@ function VoiceOverCard({
           <Textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            className="min-h-[100px] flex-1 font-mono text-[12.5px]"
+            className="min-h-[100px] flex-1 text-[14px] leading-relaxed"
           />
         ) : (
-          <div className="min-h-10 flex-1 whitespace-pre-wrap text-[13px] text-fg-code">{segment.text}</div>
+          <div className="min-h-10 flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{segment.text}</div>
         )}
         <div className="flex shrink-0 flex-col gap-1.5">
           {editing ? (
@@ -492,6 +519,18 @@ export default function StoryboardPage() {
 
   const [voiceOverCollapsed, setVoiceOverCollapsed] = useState<boolean>(() => readVoiceOverCollapsed(chapterId));
 
+  // Chapter-wide, so switching on one shot switches every shot in every scene.
+  const [promptTab, setPromptTab] = useState<PromptTab>(() => readPromptTab(chapterId));
+
+  function changePromptTab(next: PromptTab) {
+    setPromptTab(next);
+    try {
+      localStorage.setItem(promptTabKey(chapterId), next);
+    } catch {
+      // ignore (private browsing / storage disabled) — the choice just won't persist
+    }
+  }
+
   const sceneRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   function toggleVoiceOver() {
@@ -633,6 +672,30 @@ export default function StoryboardPage() {
         {!!scenes?.length && (
           <>
             <div className={toolbarSep} />
+            {/* One switch for the whole chapter, in the toolbar rather than on every
+                card: the mode is chapter-wide, and a copy per shot implied otherwise
+                while adding a bordered box to each one. */}
+            <div className="flex shrink-0 gap-1 rounded-full border border-line bg-panel-3 p-1">
+              {(
+                [
+                  ["start", "Image Prompt"],
+                  ["video", "Video Prompt"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => changePromptTab(value)}
+                  aria-pressed={promptTab === value}
+                  className={`cursor-pointer rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap ${
+                    promptTab === value ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className={toolbarSep} />
             <span>{sceneCount} scenes</span>
             <div className={toolbarSep} />
             <span>{shotCount} shots</span>
@@ -663,7 +726,7 @@ export default function StoryboardPage() {
               <button
                 type="button"
                 onClick={toggleVoiceOver}
-                className={`flex w-full flex-wrap items-center gap-2 text-left ${voiceOverCollapsed ? "" : "mb-3.5"}`}
+                className={`flex w-full cursor-pointer flex-wrap items-center gap-2 text-left ${voiceOverCollapsed ? "" : "mb-3.5"}`}
               >
                 <Mic size={15} className="text-style-badge" />
                 <h2 className="text-[14px] font-semibold">Voice Over</h2>
@@ -725,7 +788,7 @@ export default function StoryboardPage() {
                 <button
                   type="button"
                   onClick={() => toggleScene(scene.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 text-left"
                 >
                   {/* Not AccentTag: its own bg-accent-dim/text-accent would collide with the
                       per-scene hue, and which class wins is decided by CSS order, not by
@@ -736,7 +799,7 @@ export default function StoryboardPage() {
                     {scene.index}
                   </span>
                   <div className="min-w-0">
-                    <h3 className="truncate text-[15px] font-semibold">{scene.slug ?? scene.title}</h3>
+                    <h3 className="truncate text-[15px] leading-normal font-semibold">{scene.slug ?? scene.title}</h3>
                   </div>
                   <div className="ml-auto flex items-center gap-2.5">
                     <span
@@ -746,22 +809,45 @@ export default function StoryboardPage() {
                     >
                       {scene.shots.length} shots
                     </span>
-                    <ChevronDown
-                      size={16}
-                      className={`shrink-0 text-fg-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                    />
                   </div>
                 </button>
-                <MiniLoadingButton
-                  ghost
-                  loading={regeneratingSceneId === scene.id}
-                  disabled={generating || regeneratingSceneId !== null}
-                  onClick={() => confirmRegenerateScene(scene)}
-                  title="Regenerate this scene only"
-                  className="shrink-0"
+                {/* shrink-0: the wrapper is a flex child next to a flex-1 button and
+                    was being squeezed, clipping the trigger against the card's
+                    rounded edge. floatingStrategy="fixed": the section is
+                    overflow-hidden, which would otherwise clip the open menu. */}
+                <Menu
+                  className="mr-0.5 shrink-0"
+                  floatingStrategy="fixed"
+                  placement="bottom-end"
+                  menuClassName="w-[210px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] py-1"
                 >
-                  <RefreshCw size={13} />
-                </MiniLoadingButton>
+                  <MenuTrigger>
+                    {({ toggleMenu }) => (
+                      <MiniButton
+                        ghost
+                        className="!h-8 !w-8 !min-w-0 shrink-0 cursor-pointer justify-center !p-0"
+                        onClick={toggleMenu}
+                        disabled={generating || regeneratingSceneId !== null}
+                        aria-label={`More actions for scene ${scene.index}`}
+                        title="More actions"
+                      >
+                        {regeneratingSceneId === scene.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <MoreVertical size={14} />
+                        )}
+                      </MiniButton>
+                    )}
+                  </MenuTrigger>
+                  <MenuItem
+                    disabled={generating || regeneratingSceneId !== null}
+                    onClick={() => confirmRegenerateScene(scene)}
+                  >
+                    <span className="flex items-center gap-2 text-[13px]">
+                      <RefreshCw size={14} /> Regenerate scene
+                    </span>
+                  </MenuItem>
+                </Menu>
               </div>
               {!isCollapsed && (
               <div className="flex flex-col gap-3 px-4.5 py-4">
@@ -792,8 +878,15 @@ export default function StoryboardPage() {
                         >
                           <Copy size={12} />
                         </MiniButton>
-                        {shot.durationS != null && <Tag>{shot.durationS}s</Tag>}
-                        {shot.aspect && <AccentTag>{shot.aspect}</AccentTag>}
+                        {/* Plain text, not tags: duration and ratio are glanceable facts,
+                            and outlining each one made the row read as a toolbar. */}
+                        {(shot.durationS != null || shot.aspect) && (
+                          <span className="text-[12px] font-medium text-fg-2">
+                            {[shot.durationS != null ? `${shot.durationS}s` : null, shot.aspect]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        )}
                         {coveringVoiceOvers.map((segment) => (
                           <AccentTag
                             key={segment.id}
@@ -803,31 +896,44 @@ export default function StoryboardPage() {
                           </AccentTag>
                         ))}
                       </div>
-                      {!!shot.assetsUsed.length && (
-                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-fg-3">
-                          <Paperclip size={12} className="shrink-0" />
-                          Attach:
-                          {shot.assetsUsed.map((a) => (
-                            <span
-                              key={`${a.kind}-${a.name}`}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-accent/45 bg-accent-dim px-3 py-1 font-medium text-accent"
-                            >
-                              {a.kind === "character" ? <User size={11} /> : a.kind === "location" ? <MapPin size={11} /> : <Package size={11} />}
-                              {a.name}
-                            </span>
-                          ))}
+                      {(!!shot.assetsUsed.length || !!referenceHints.length) && (
+                        // One attach block, one paperclip: the reference list and the
+                        // continuity note are the same instruction, and opening both with
+                        // the same icon read as two unrelated warnings.
+                        <div className="mb-2 flex gap-1.5 text-[11.5px]">
+                          <Paperclip size={12} className="mt-[3px] shrink-0 text-fg-3" />
+                          <div className="min-w-0 flex-1">
+                            {!!shot.assetsUsed.length && (
+                              // Badges here, plain text for duration/ratio above: these
+                              // name things that have to be ATTACHED before the prompt is
+                              // used, so they are targets to check off, not facts to skim.
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {shot.assetsUsed.map((a) => (
+                                  <span
+                                    key={`${a.kind}-${a.name}`}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-line-2 bg-chip px-2.5 py-0.5 text-fg-2"
+                                  >
+                                    {a.kind === "character" ? (
+                                      <User size={11} className="shrink-0 text-fg-3" />
+                                    ) : a.kind === "location" ? (
+                                      <MapPin size={11} className="shrink-0 text-fg-3" />
+                                    ) : (
+                                      <Package size={11} className="shrink-0 text-fg-3" />
+                                    )}
+                                    {a.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {referenceHints.map((hint) => (
+                              <div key={`${hint.sceneIndex}.${hint.shotIndex}`} className="mt-1 text-isnew">
+                                Also attach shot {hint.sceneIndex}.{hint.shotIndex}&apos;s image —{" "}
+                                {hint.names.join(" and ")} continuity.
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                      {referenceHints.map((hint) => (
-                        <div
-                          key={`${hint.sceneIndex}.${hint.shotIndex}`}
-                          className="mb-2 flex items-center gap-1.5 text-[11.5px] text-isnew"
-                        >
-                          <Paperclip size={12} className="shrink-0" />
-                          Also attach shot {hint.sceneIndex}.{hint.shotIndex}&apos;s image —{" "}
-                          {hint.names.join(" and ")} continuity.
-                        </div>
-                      ))}
                       {/* Temporarily hidden from the UI - beat and the state ledger are still generated and stored. */}
                       {shot.beat && (
                         <div hidden className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
@@ -860,6 +966,7 @@ export default function StoryboardPage() {
                         styleContext={styleContext}
                         motionStyleId={story.motionStyleId}
                         lighting={scene.lighting}
+                        tab={promptTab}
                       />
                     </div>
                   </div>
