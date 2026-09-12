@@ -791,7 +791,7 @@ export default function StoryboardPage() {
                           {shot.assetsUsed.map((a) => (
                             <span
                               key={`${a.kind}-${a.name}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-line-2 bg-panel-2 px-2 py-0.5 text-fg-2"
+                              className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 font-medium text-[#101010]"
                             >
                               {a.kind === "character" ? <User size={11} /> : a.kind === "location" ? <MapPin size={11} /> : <Package size={11} />}
                               {a.name}
