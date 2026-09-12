@@ -16,6 +16,7 @@ import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
+import { sceneColor } from "@/lib/constants/scene-colors";
 import {
   DEFAULT_SHOT_SCALE,
   SHOT_SCALE_OPTIONS,
@@ -168,7 +169,9 @@ function ShotPrompts({
           onRestore={async () => void (await write({ videoPrompt: null }))}
         />
       )}
-      <div className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+      {/* Temporarily hidden from the UI - the picker still writes shotScale and the
+          optics line is still composed into copied prompts. */}
+      <div hidden className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
         <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
           <Focus size={12} /> Framing
         </div>
@@ -188,8 +191,9 @@ function ShotPrompts({
           </p>
         </div>
       </div>
+      {/* Temporarily hidden from the UI - motionMode is still written and appended. */}
       {shot.videoPrompt && (
-        <div className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+        <div hidden className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
           <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
             <Gauge size={12} /> Motion · {motionStyle.name}
           </div>
@@ -435,6 +439,22 @@ function collapsedStorageKey(chapterId: string) {
   return `storyboard-collapsed:${chapterId}`;
 }
 
+function voiceOverCollapsedKey(chapterId: string) {
+  return `storyboard-vo-collapsed:${chapterId}`;
+}
+
+// The narration list is long and is reference material, not per-shot work, so
+// it starts folded; the choice persists per chapter like the scene accordion.
+function readVoiceOverCollapsed(chapterId: string) {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = localStorage.getItem(voiceOverCollapsedKey(chapterId));
+    return raw === null ? true : (JSON.parse(raw) as boolean);
+  } catch {
+    return true;
+  }
+}
+
 function readCollapsedScenes(chapterId: string) {
   if (typeof window === "undefined") return new Set<string>();
   try {
@@ -468,7 +488,21 @@ export default function StoryboardPage() {
   // Persisted per-chapter in localStorage so a viewer's fold state survives reloads.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScenes(chapterId));
 
+  const [voiceOverCollapsed, setVoiceOverCollapsed] = useState<boolean>(() => readVoiceOverCollapsed(chapterId));
+
   const sceneRefs = useRef<Map<string, HTMLElement>>(new Map());
+
+  function toggleVoiceOver() {
+    setVoiceOverCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(voiceOverCollapsedKey(chapterId), JSON.stringify(next));
+      } catch {
+        // ignore (private browsing / storage disabled) — fold state just won't persist
+      }
+      return next;
+    });
+  }
 
   function toggleScene(sceneId: string) {
     setCollapsed((prev) => {
@@ -612,13 +646,21 @@ export default function StoryboardPage() {
 
           {!!voiceOvers?.length && !!shotOptions.length && (
             <section className="mb-4.5 rounded-xl border border-style-badge-border bg-panel-2 p-4.5">
-              <div className="mb-3.5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleVoiceOver}
+                className={`flex w-full flex-wrap items-center gap-2 text-left ${voiceOverCollapsed ? "" : "mb-3.5"}`}
+              >
                 <Mic size={15} className="text-style-badge" />
                 <h2 className="text-[14px] font-semibold">Voice Over</h2>
                 <Tag>{voiceOvers.length} segments</Tag>
                 <span className="text-[11.5px] text-fg-3 sm:ml-auto">Separate narration overlay · not added to video prompts</span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                <ChevronDown
+                  size={16}
+                  className={`shrink-0 text-fg-3 transition-transform ${voiceOverCollapsed ? "-rotate-90" : ""}`}
+                />
+              </button>
+              <div className={`grid-cols-1 gap-3 xl:grid-cols-2 ${voiceOverCollapsed ? "hidden" : "grid"}`}>
                 {voiceOvers.map((segment, index) => {
                   const previous = voiceOvers[index - 1];
                   const next = voiceOvers[index + 1];
@@ -643,6 +685,7 @@ export default function StoryboardPage() {
 
           {scenes?.map((scene, sceneIdx) => {
             const isCollapsed = collapsed.has(scene.id);
+            const color = sceneColor(scene.index);
             return (
             <section
               key={scene.id}
@@ -664,12 +707,16 @@ export default function StoryboardPage() {
                   onClick={() => toggleScene(scene.id)}
                   className="flex min-w-0 flex-1 items-center gap-3.5 text-left"
                 >
-                  <AccentTag className="bg-accent font-mono text-xs font-bold tracking-normal text-[#101010] normal-case">
+                  {/* Not AccentTag: its own bg-accent-dim/text-accent would collide with the
+                      per-scene hue, and which class wins is decided by CSS order, not by
+                      the order they are listed here. */}
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-bold tracking-normal normal-case ${color.badge}`}
+                  >
                     SC {String(scene.index).padStart(2, "0")}
-                  </AccentTag>
+                  </span>
                   <div className="min-w-0">
-                    <h3 className="truncate text-[15px] font-semibold">{scene.shots[0]?.label ?? scene.title}</h3>
-                    <div className="truncate text-xs tracking-wide text-fg-3 uppercase">{scene.slug}</div>
+                    <h3 className="truncate text-[15px] font-semibold">{scene.slug ?? scene.title}</h3>
                   </div>
                   <div className="ml-auto flex items-center gap-2.5">
                     <Tag>{scene.shots.length} shots</Tag>
@@ -712,7 +759,7 @@ export default function StoryboardPage() {
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
                         <b className="text-[13px] font-semibold">
-                          <span className="font-mono text-accent">
+                          <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${color.pill}`}>
                             {scene.index}.{shot.index}
                           </span>{" "}
                           {sceneName}
@@ -763,8 +810,9 @@ export default function StoryboardPage() {
                           {hint.shotIndex}&apos;s generated image alongside the references above.
                         </div>
                       ))}
+                      {/* Temporarily hidden from the UI - beat and the state ledger are still generated and stored. */}
                       {shot.beat && (
-                        <div className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
+                        <div hidden className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
                           <Target size={12} className="mt-[3px] shrink-0" />
                           <div>
                             <span className="text-fg-2">Beat:</span> {shot.beat}
@@ -772,7 +820,7 @@ export default function StoryboardPage() {
                         </div>
                       )}
                       {(shot.startState || shot.endState) && (
-                        <div className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
+                        <div hidden className="mb-2 flex gap-1.5 text-[11.5px] text-fg-3">
                           <GitCommitHorizontal size={12} className="mt-[3px] shrink-0" />
                           <div className="flex flex-col gap-0.5">
                             {shot.startState && (
