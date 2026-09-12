@@ -16,7 +16,7 @@ import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
-import { sceneColor } from "@/lib/constants/scene-colors";
+import { SCENE_BADGE_CLASS, SCENE_PILL_CLASS, sceneColorVars } from "@/lib/constants/scene-colors";
 import {
   DEFAULT_SHOT_SCALE,
   SHOT_SCALE_OPTIONS,
@@ -685,7 +685,7 @@ export default function StoryboardPage() {
 
           {scenes?.map((scene, sceneIdx) => {
             const isCollapsed = collapsed.has(scene.id);
-            const color = sceneColor(scene.index);
+            const sceneVars = sceneColorVars(scene.index);
             return (
             <section
               key={scene.id}
@@ -711,7 +711,8 @@ export default function StoryboardPage() {
                       per-scene hue, and which class wins is decided by CSS order, not by
                       the order they are listed here. */}
                   <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-bold tracking-normal normal-case ${color.badge}`}
+                    style={sceneVars}
+                    className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-bold tracking-normal normal-case ${SCENE_BADGE_CLASS}`}
                   >
                     SC {String(scene.index).padStart(2, "0")}
                   </span>
@@ -750,29 +751,27 @@ export default function StoryboardPage() {
                   const coveringVoiceOvers = voiceOversForShot(shot.id);
 
                   const sceneName = scene.shots[0]?.label ?? scene.title;
-                  const shotTitle = `${scene.index}.${shot.index} ${sceneName}${
-                    shot.label && shot.label !== sceneName ? ` · ${shot.label}` : ""
-                  }`;
+                  const shotNumber = `${scene.index}.${shot.index}`;
 
                   return (
                   <div key={shot.id} className="rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
-                        <b className="text-[13px] font-semibold">
-                          <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${color.pill}`}>
-                            {scene.index}.{shot.index}
-                          </span>{" "}
-                          {sceneName}
-                          {shot.label && shot.label !== sceneName && <> · {shot.label}</>}
-                        </b>
+                        <span style={sceneVars} className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${SCENE_PILL_CLASS}`}>
+                          {shotNumber}
+                        </span>
                         <MiniButton
                           ghost
                           className="!h-5.5 !w-5.5 !p-0"
-                          onClick={() => copyText(shotTitle, "Shot title")}
-                          title="Copy shot title"
+                          onClick={() => copyText(shotNumber, "Shot number")}
+                          title="Copy shot number"
                         >
                           <Copy size={12} />
                         </MiniButton>
+                        <b className="text-[13px] font-semibold">
+                          {sceneName}
+                          {shot.label && shot.label !== sceneName && <> · {shot.label}</>}
+                        </b>
                         {shot.durationS != null && <Tag>{shot.durationS}s</Tag>}
                         {shot.aspect && <AccentTag>{shot.aspect}</AccentTag>}
                         {coveringVoiceOvers.map((segment) => (
@@ -806,8 +805,8 @@ export default function StoryboardPage() {
                           className="mb-2 flex items-center gap-1.5 text-[11.5px] text-isnew"
                         >
                           <Paperclip size={12} className="shrink-0" />
-                          For {hint.names.join(" and ")}&apos;s continuity, also attach shot {hint.sceneIndex}.
-                          {hint.shotIndex}&apos;s generated image alongside the references above.
+                          Also attach shot {hint.sceneIndex}.{hint.shotIndex}&apos;s image —{" "}
+                          {hint.names.join(" and ")} continuity.
                         </div>
                       ))}
                       {/* Temporarily hidden from the UI - beat and the state ledger are still generated and stored. */}

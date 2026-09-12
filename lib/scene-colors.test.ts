@@ -1,20 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { SCENE_COLORS, sceneColor } from "./constants/scene-colors";
+import { sceneColorVars, sceneHue } from "./constants/scene-colors";
 
-describe("sceneColor", () => {
-  it("maps a scene number to the same color every time", () => {
-    expect(sceneColor(6)).toBe(sceneColor(6));
-    expect(sceneColor(1)).toBe(SCENE_COLORS[0]);
-    expect(sceneColor(6)).toBe(SCENE_COLORS[5]);
+describe("sceneHue", () => {
+  it("maps a scene number to the same hue every time", () => {
+    expect(sceneHue(6)).toBe(sceneHue(6));
+    expect(sceneHue(1)).toBe(0);
   });
 
-  it("cycles past the end of the palette", () => {
-    expect(sceneColor(SCENE_COLORS.length + 1)).toBe(SCENE_COLORS[0]);
-    expect(sceneColor(SCENE_COLORS.length * 2 + 3)).toBe(SCENE_COLORS[2]);
+  it("gives every scene number its own hue", () => {
+    const hues = new Set(Array.from({ length: 60 }, (_, i) => sceneHue(i + 1).toFixed(2)));
+    expect(hues.size).toBe(60);
   });
 
-  it("never returns undefined for a non-positive index", () => {
-    expect(sceneColor(0)).toBeDefined();
-    expect(sceneColor(-1)).toBeDefined();
+  it("keeps consecutive scenes far apart on the wheel", () => {
+    for (let index = 1; index < 60; index++) {
+      const gap = Math.abs(sceneHue(index + 1) - sceneHue(index));
+      expect(Math.min(gap, 360 - gap)).toBeGreaterThan(100);
+    }
+  });
+
+  it("stays in range for a non-positive index", () => {
+    expect(sceneHue(0)).toBeGreaterThanOrEqual(0);
+    expect(sceneHue(0)).toBeLessThan(360);
+    expect(sceneHue(-3)).toBeGreaterThanOrEqual(0);
+    expect(sceneHue(-3)).toBeLessThan(360);
+  });
+});
+
+describe("sceneColorVars", () => {
+  it("exposes the hue as the custom property the classes read", () => {
+    const vars = sceneColorVars(4) as Record<string, string>;
+    expect(vars["--scene-color"]).toBe(`hsl(${sceneHue(4).toFixed(2)} 42% 72%)`);
   });
 });
