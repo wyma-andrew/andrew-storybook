@@ -6,8 +6,14 @@ export function Card({ children, className = "" }: { children: React.ReactNode; 
   );
 }
 
-export function CardHeader({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-center gap-2.5 border-b border-line px-3.5 py-3">{children}</div>;
+export function CardHeader({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={`flex items-center gap-2.5 border-b border-line px-3.5 py-3 ${className}`}>{children}</div>;
 }
 
 // Two columns: location cards carry up to four actions (copy prompt, copy

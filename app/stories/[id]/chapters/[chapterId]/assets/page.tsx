@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, ListPlus as AddToBible } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, ListPlus as AddToBible } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
@@ -28,6 +28,17 @@ import {
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset } from "@/lib/api/types";
+
+// Kind color lives on the icon tile alone. The three kinds are rendered as
+// three separate grids, but a card scrolled away from its section head has
+// nothing else to say which grid it came from. A tinted header BAND was tried
+// and rejected — it colored the biggest surface on the card for the smallest
+// piece of information on it.
+const KIND_TILE: Record<"character" | "location" | "prop", string> = {
+  character: "border-kind-character-border bg-kind-character-bg text-kind-character",
+  location: "border-kind-location-border bg-kind-location-bg text-kind-location",
+  prop: "border-kind-prop-border bg-kind-prop-bg text-kind-prop",
+};
 
 function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss: () => void }) {
   const [info, setInfo] = useState(asset.meta ?? "");
@@ -154,12 +165,28 @@ function AssetCard({
   return (
     <Card className={borderClass}>
       <CardHeader>
+        {/* Kind icon: the three grids are far apart on a long page, so a card
+            scrolled past its section head no longer says what it is. */}
+        <span className={`grid size-8 shrink-0 place-items-center rounded-lg border ${KIND_TILE[asset.kind]}`}>
+          {asset.kind === "character" ? (
+            <User size={14} />
+          ) : asset.kind === "location" ? (
+            <MapPin size={14} />
+          ) : (
+            <Package size={14} />
+          )}
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="font-semibold">{asset.name}</div>
-          <div className="text-[11.5px] text-fg-3">{asset.meta}</div>
+          <div className="truncate text-[13.5px] leading-tight font-semibold">{asset.name}</div>
+          <div className="truncate text-[11.5px] text-fg-3">{asset.meta}</div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {asset.matchStatus !== "local" && <MatchBadge status={asset.matchStatus} />}
+          {/* Only a bible-backed asset is badged. "New" needed no badge: it is the
+              default state of most cards, and "Add to bible" in the menu already
+              says it. "Stale" keeps its badge — that one is a warning. */}
+          {(asset.matchStatus === "matched" || asset.matchStatus === "stale") && (
+            <MatchBadge status={asset.matchStatus} />
+          )}
           {asset.kind === "character" && (
             <MiniButton
               ghost

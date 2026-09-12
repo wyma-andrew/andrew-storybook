@@ -27,6 +27,15 @@
   --color-style-badge: #c9b98a;
   --color-style-badge-bg: #1a1608;
   --color-style-badge-border: #3a331e;
+  --color-kind-character: #7fb3ab;
+  --color-kind-character-bg: #0d1614;
+  --color-kind-character-border: #22403b;
+  --color-kind-location: #d9b978;
+  --color-kind-location-bg: #17130a;
+  --color-kind-location-border: #40361e;
+  --color-kind-prop: #cf9a97;
+  --color-kind-prop-bg: #170f0f;
+  --color-kind-prop-border: #3d2827;
   --color-sys-badge: #8fa8c9;
   --color-sys-badge-bg: #0c1218;
   --color-sys-badge-border: #1e2c3a;
