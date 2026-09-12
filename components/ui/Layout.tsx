@@ -15,7 +15,7 @@ export function Wrap({
 }
 
 export function Foot() {
-  return <div className="px-0 pb-1.5 text-center text-[11px] text-[#2c2c2c]">AI Storybook</div>;
+  return <div className="px-0 pb-1.5 text-center text-[11px] text-line-3">AI Storybook</div>;
 }
 
 export function TopBar({ children }: { children: React.ReactNode }) {

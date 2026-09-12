@@ -14,9 +14,17 @@ import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
+import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
-import { SCENE_BADGE_CLASS, SCENE_PILL_CLASS, sceneColorVars } from "@/lib/constants/scene-colors";
+import {
+  SCENE_BADGE_CLASS,
+  SCENE_BORDER_CLASS,
+  SCENE_CHIP_CLASS,
+  SCENE_PILL_CLASS,
+  SCENE_SURFACE_CLASS,
+  sceneColorVars,
+} from "@/lib/constants/scene-colors";
 import {
   DEFAULT_SHOT_SCALE,
   SHOT_SCALE_OPTIONS,
@@ -51,7 +59,7 @@ function PromptBox({
         {label}
         {edited && <Tag>Edited</Tag>}
       </div>
-      <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-[#080808] p-3">
+      <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-sunken p-3">
         {editing ? (
           <Textarea
             value={draft}
@@ -59,7 +67,7 @@ function PromptBox({
             className="min-h-[120px] flex-1 font-mono text-[12.5px]"
           />
         ) : (
-          <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-[#c2c2c2]">{text}</div>
+          <div className="flex-1 font-mono text-[12.5px] whitespace-pre-wrap text-fg-code">{text}</div>
         )}
         <div className="flex shrink-0 flex-col gap-1.5">
           {editing ? (
@@ -171,7 +179,7 @@ function ShotPrompts({
       )}
       {/* Temporarily hidden from the UI - the picker still writes shotScale and the
           optics line is still composed into copied prompts. */}
-      <div hidden className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+      <div hidden className="mt-2 rounded-lg border border-line-2 bg-sunken p-3">
         <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
           <Focus size={12} /> Framing
         </div>
@@ -193,7 +201,7 @@ function ShotPrompts({
       </div>
       {/* Temporarily hidden from the UI - motionMode is still written and appended. */}
       {shot.videoPrompt && (
-        <div hidden className="mt-2 rounded-lg border border-line-2 bg-[#080808] p-3">
+        <div hidden className="mt-2 rounded-lg border border-line-2 bg-sunken p-3">
           <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
             <Gauge size={12} /> Motion · {motionStyle.name}
           </div>
@@ -224,18 +232,6 @@ type ShotOption = {
   label: string;
 };
 
-// Shot labels ("1.2 — Close reaction · Child in arms") overflow the Select
-// trigger. GeckoUI has no prop for the value span, and its own styles rule out
-// truncation twice over: `__content` is `flex-wrap: wrap; overflow-x: scroll`,
-// and `__value` is `display: flex`, which makes `truncate` a no-op. Override
-// both through `wrapperClassName`.
-//
-// `String.raw` is required, not style: a bare `_` in a Tailwind arbitrary
-// variant means a space, so the underscores have to be backslash-escaped — and
-// Tailwind generates utilities by scanning this file's raw text, so a normal
-// string literal would register a class with two backslashes while the runtime
-// value has one, and nothing would match.
-const TRUNCATE_SELECT_VALUE = String.raw`[&_.GeckoUISelectButton\_\_content]:flex-nowrap [&_.GeckoUISelectButton\_\_content]:overflow-hidden [&_.GeckoUISelectButton\_\_value]:block [&_.GeckoUISelectButton\_\_value]:min-w-0 [&_.GeckoUISelectButton\_\_value]:truncate`;
 
 function VoiceOverCard({
   segment,
@@ -287,7 +283,7 @@ function VoiceOverCard({
   }
 
   return (
-    <div className="rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
+    <div className="rounded-[10px] border border-line bg-panel-3 p-3.5">
       <div className="mb-2.5 flex items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-style-badge uppercase">
           <Mic size={12} /> Voice Over {String(segment.sourceIndex).padStart(2, "0")}
@@ -303,7 +299,7 @@ function VoiceOverCard({
             className="min-h-[100px] flex-1 font-mono text-[12.5px]"
           />
         ) : (
-          <div className="min-h-10 flex-1 whitespace-pre-wrap text-[13px] text-[#cfcfcf]">{segment.text}</div>
+          <div className="min-h-10 flex-1 whitespace-pre-wrap text-[13px] text-fg-code">{segment.text}</div>
         )}
         <div className="flex shrink-0 flex-col gap-1.5">
           {editing ? (
@@ -455,13 +451,16 @@ function readVoiceOverCollapsed(chapterId: string) {
   }
 }
 
-function readCollapsedScenes(chapterId: string) {
-  if (typeof window === "undefined") return new Set<string>();
+// null means "this viewer has never folded anything here" — distinct from an
+// empty set, which means they deliberately left every scene open. Without the
+// distinction there is no way to default to closed only on a first visit.
+function readCollapsedScenes(chapterId: string): Set<string> | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(collapsedStorageKey(chapterId));
-    return raw ? new Set(JSON.parse(raw) as string[]) : new Set<string>();
+    return raw ? new Set(JSON.parse(raw) as string[]) : null;
   } catch {
-    return new Set<string>();
+    return null;
   }
 }
 
@@ -484,9 +483,11 @@ export default function StoryboardPage() {
   // card fired, and only that card's button should spin.
   const [regeneratingSceneId, setRegeneratingSceneId] = useState<string | null>(null);
 
-  // Default open for every scene; a scene id in this set is collapsed.
-  // Persisted per-chapter in localStorage so a viewer's fold state survives reloads.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScenes(chapterId));
+  // A scene id in this set is collapsed. Persisted per-chapter in localStorage so
+  // a viewer's fold state survives reloads; null until they have folded anything,
+  // and the fallback for null is EVERY scene closed — a chapter opens as a
+  // readable list of scene headings rather than one long wall of shots.
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(() => readCollapsedScenes(chapterId));
 
   const [voiceOverCollapsed, setVoiceOverCollapsed] = useState<boolean>(() => readVoiceOverCollapsed(chapterId));
 
@@ -509,8 +510,9 @@ export default function StoryboardPage() {
       // Accordion: opening a scene collapses every other one, so only one
       // scene's shots are ever on screen at a time — no more guessing which
       // scene a shot list belongs to.
-      const wasCollapsed = prev.has(sceneId);
       const allIds = (scenes ?? []).map((s) => s.id);
+      // null (never folded) means everything is currently closed.
+      const wasCollapsed = prev === null || prev.has(sceneId);
       const next = wasCollapsed
         ? new Set(allIds.filter((id) => id !== sceneId)) // was collapsed -> expand it, collapse rest
         : new Set(allIds); // was expanded -> collapse it (and everything else already is)
@@ -684,7 +686,7 @@ export default function StoryboardPage() {
           )}
 
           {scenes?.map((scene, sceneIdx) => {
-            const isCollapsed = collapsed.has(scene.id);
+            const isCollapsed = collapsed === null || collapsed.has(scene.id);
             const sceneVars = sceneColorVars(scene.index);
             return (
             <section
@@ -693,13 +695,19 @@ export default function StoryboardPage() {
                 if (el) sceneRefs.current.set(scene.id, el);
                 else sceneRefs.current.delete(scene.id);
               }}
-              className={`mb-4.5 overflow-hidden rounded-xl border bg-panel-2 ${
-                isCollapsed ? "border-line" : "border-accent/50"
+              // --scene-hue is set here so the header, the badge and every shot
+              // pill inside this card all read the same scene color.
+              style={sceneVars}
+              className={`mb-4.5 overflow-hidden rounded-xl border bg-panel-2 shadow-sm ${
+                isCollapsed ? "border-line" : SCENE_BORDER_CLASS
               }`}
             >
+              {/* The header's bottom rule only exists to separate it from the shot
+                  list; collapsed there is no list under it, and the rule read as a
+                  stray second border inside the card. */}
               <div
-                className={`flex w-full items-center gap-2.5 border-b px-4.5 py-4 ${
-                  isCollapsed ? "border-line bg-[#101010]" : "border-accent/30 bg-accent-dim"
+                className={`flex w-full items-center gap-2.5 px-4.5 py-4 ${
+                  isCollapsed ? "bg-sunken" : `border-b ${SCENE_BORDER_CLASS} ${SCENE_SURFACE_CLASS}`
                 }`}
               >
                 <button
@@ -711,16 +719,21 @@ export default function StoryboardPage() {
                       per-scene hue, and which class wins is decided by CSS order, not by
                       the order they are listed here. */}
                   <span
-                    style={sceneVars}
                     className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-bold tracking-normal normal-case ${SCENE_BADGE_CLASS}`}
                   >
-                    SC {String(scene.index).padStart(2, "0")}
+                    {scene.index}
                   </span>
                   <div className="min-w-0">
                     <h3 className="truncate text-[15px] font-semibold">{scene.slug ?? scene.title}</h3>
                   </div>
                   <div className="ml-auto flex items-center gap-2.5">
-                    <Tag>{scene.shots.length} shots</Tag>
+                    <span
+                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${
+                        isCollapsed ? "border-line-2 bg-chip text-fg-2" : SCENE_CHIP_CLASS
+                      }`}
+                    >
+                      {scene.shots.length} shots
+                    </span>
                     <ChevronDown
                       size={16}
                       className={`shrink-0 text-fg-3 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
@@ -750,14 +763,13 @@ export default function StoryboardPage() {
                   const referenceHints = characterReferenceHints(scenes, sceneIdx, shotIdx);
                   const coveringVoiceOvers = voiceOversForShot(shot.id);
 
-                  const sceneName = scene.shots[0]?.label ?? scene.title;
                   const shotNumber = `${scene.index}.${shot.index}`;
 
                   return (
-                  <div key={shot.id} className="rounded-[10px] border border-line bg-[#0c0c0c] p-3.5">
+                  <div key={shot.id} className="rounded-[10px] border border-line bg-panel-3 p-3.5 shadow-sm">
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
-                        <span style={sceneVars} className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${SCENE_PILL_CLASS}`}>
+                        <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${SCENE_PILL_CLASS}`}>
                           {shotNumber}
                         </span>
                         <MiniButton
@@ -768,10 +780,6 @@ export default function StoryboardPage() {
                         >
                           <Copy size={12} />
                         </MiniButton>
-                        <b className="text-[13px] font-semibold">
-                          {sceneName}
-                          {shot.label && shot.label !== sceneName && <> · {shot.label}</>}
-                        </b>
                         {shot.durationS != null && <Tag>{shot.durationS}s</Tag>}
                         {shot.aspect && <AccentTag>{shot.aspect}</AccentTag>}
                         {coveringVoiceOvers.map((segment) => (
@@ -782,16 +790,15 @@ export default function StoryboardPage() {
                             <Mic size={10} /> VO {String(segment.sourceIndex).padStart(2, "0")}
                           </AccentTag>
                         ))}
-                        {shot.camera && <span className="text-[11.5px] text-fg-3">{shot.camera}</span>}
                       </div>
                       {!!shot.assetsUsed.length && (
-                        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-fg-3">
+                        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11.5px] text-fg-3">
                           <Paperclip size={12} className="shrink-0" />
                           Attach:
                           {shot.assetsUsed.map((a) => (
                             <span
                               key={`${a.kind}-${a.name}`}
-                              className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 font-medium text-[#101010]"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-accent/45 bg-accent-dim px-3 py-1 font-medium text-accent"
                             >
                               {a.kind === "character" ? <User size={11} /> : a.kind === "location" ? <MapPin size={11} /> : <Package size={11} />}
                               {a.name}

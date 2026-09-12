@@ -28,8 +28,8 @@ describe("sceneHue", () => {
 });
 
 describe("sceneColorVars", () => {
-  it("exposes the hue as the custom property the classes read", () => {
+  it("exposes only the hue — weight and text color come from the theme", () => {
     const vars = sceneColorVars(4) as Record<string, string>;
-    expect(vars["--scene-color"]).toBe(`hsl(${sceneHue(4).toFixed(2)} 42% 72%)`);
+    expect(vars).toEqual({ "--scene-hue": sceneHue(4).toFixed(2) });
   });
 });

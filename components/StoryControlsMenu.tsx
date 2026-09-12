@@ -162,7 +162,7 @@ export function StoryControlsMenu({
           <div className="overflow-hidden rounded-b-[10px] border-t border-line">
             <Link
               href={`/stories/${storyId}/bible`}
-              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-[#1c1c1c]"
+              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-hover"
               onClick={() => setOpen(false)}
             >
               Manage Bible
@@ -170,7 +170,7 @@ export function StoryControlsMenu({
             <button
               type="button"
               onClick={handleDelete}
-              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-danger hover:bg-[#1c1c1c]"
+              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-danger hover:bg-hover"
             >
               Delete story
             </button>

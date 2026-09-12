@@ -7,6 +7,7 @@ import { ChevronRight, ArrowRight, MoreVertical, Copy, Trash2, Loader2, Pencil, 
 import { Menu, MenuItem, MenuTrigger, ConfirmDialog, Input, Textarea } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { StoryControlsMenu } from "@/components/StoryControlsMenu";
 import { LoadingButton, MiniButton } from "@/components/ui/Button";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
@@ -101,6 +102,7 @@ export default function StoryDetailPage() {
           <Link href="/stories">Stories</Link> / <span className="text-fg">{story.title}</span>
         </Crumb>
         <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggleButton />
           <AccountMenu />
         </div>
       </TopBar>
@@ -140,7 +142,7 @@ export default function StoryDetailPage() {
               <>
                 <div className="mb-1.5 flex items-center gap-2.5">
                   <h1 className="text-2xl font-semibold">{story.title}</h1>
-                  <span className="rounded-full border border-line-2 bg-[#161616] px-2.5 py-1 text-[10.5px] text-fg-2">
+                  <span className="rounded-full border border-line-2 bg-chip px-2.5 py-1 text-[10.5px] text-fg-2">
                     {story.visualStyleName ?? "No style"}
                   </span>
                   <MiniButton ghost className="!h-7 !w-7 !p-0" onClick={startEditDetails} title="Edit title & description">
@@ -191,13 +193,13 @@ export default function StoryDetailPage() {
                 {chapters.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center gap-4 rounded-[10px] border border-line bg-panel-2 px-4 py-3.5 hover:border-line-2"
+                    className="flex items-center gap-4 rounded-[10px] border border-line bg-panel-2 px-4 py-3.5 shadow-sm hover:border-line-2"
                   >
                     <Link
                       href={`/stories/${id}/chapters/${c.id}/${c.status === "done" ? "storyboard" : c.status}`}
                       className="flex min-w-0 flex-1 items-center gap-4 text-fg no-underline"
                     >
-                      <div className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[9px] border border-line-2 bg-[#151515] font-mono text-xs font-semibold text-fg-2">
+                      <div className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[9px] border border-line-2 bg-raised font-mono text-xs font-semibold text-fg-2">
                         {String(c.index).padStart(2, "0")}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -214,7 +216,7 @@ export default function StoryDetailPage() {
                             type="button"
                             onClick={toggleMenu}
                             disabled={duplicatingId === c.id || deletingId === c.id}
-                            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-fg-3 hover:bg-[#1c1c1c] hover:text-fg disabled:opacity-60"
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-fg-3 hover:bg-hover hover:text-fg disabled:opacity-60"
                             aria-label="Episode options"
                           >
                             {duplicatingId === c.id || deletingId === c.id ? (

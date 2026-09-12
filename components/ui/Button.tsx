@@ -15,7 +15,7 @@ const extraClass: Record<Variant, string> = {
   primary: "",
   secondary: "",
   ghost: "",
-  danger: "!border-danger-border !text-danger hover:!bg-[#1e1010]",
+  danger: "!border-danger-border !text-danger hover:!bg-danger-hover",
 };
 
 type ButtonOwnProps = Omit<React.ComponentProps<typeof GeckoButton>, "variant" | "color"> & { variant?: Variant };

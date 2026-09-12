@@ -48,10 +48,11 @@ export function PromptHint({ hint, children }: { hint: PromptHintText; children:
         triggerAsChild
         placement="top"
         sideOffset={6}
-        // GeckoUI's tooltip ships a light-theme background and inherits the
-        // trigger's text color, which on this dark UI rendered dark-on-dark.
-        // backgroundColor also paints the arrow, so it can't be done in CSS alone.
-        backgroundColor="#1e1e1e"
+        // GeckoUI's tooltip ships its own background and inherits the trigger's
+        // text color, which on the dark UI rendered dark-on-dark. backgroundColor
+        // also paints the arrow, so it can't be done in CSS alone — hence a var()
+        // rather than a class, which is also what keeps it theme-aware.
+        backgroundColor="var(--color-line)"
         className="max-w-64 rounded-lg border border-line-2 px-2.5 py-2 text-left"
         content={
           <span className="block text-[11.5px] leading-snug !text-fg">

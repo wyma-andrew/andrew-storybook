@@ -12,11 +12,11 @@ import type { CSSProperties } from "react";
 // Stepping by the golden angle puts every scene number on its own hue and keeps
 // consecutive scenes as far apart as the wheel allows, for any scene count.
 //
-// Saturation and lightness are fixed and muted so that every hue, however far
-// around the wheel, still sits at the same weight against the dark panel.
+// Saturation and lightness are NOT set here: they come from --scene-s/--scene-l
+// in app/globals.css, because the weight a badge needs depends on the theme it
+// sits in — a 72% fill reads on the dark panel and washes out on the light one.
+// Only the hue is a property of the scene.
 const GOLDEN_ANGLE = 137.508;
-const SATURATION = 42;
-const LIGHTNESS = 72;
 
 /** Hue in degrees for a 1-based scene number. */
 export function sceneHue(index: number): number {
@@ -29,12 +29,19 @@ export function sceneHue(index: number): number {
 // source, so a per-scene color can never be a generated class name. The classes
 // stay static (`bg-(--scene-color)`) and only the variable moves.
 export function sceneColorVars(index: number): CSSProperties {
-  const hue = sceneHue(index);
-  return { "--scene-color": `hsl(${hue.toFixed(2)} ${SATURATION}% ${LIGHTNESS}%)` } as CSSProperties;
+  return { "--scene-hue": sceneHue(index).toFixed(2) } as CSSProperties;
 }
 
-/** Solid pill: the scene's hue behind near-black text. */
-export const SCENE_BADGE_CLASS = "bg-(--scene-color) text-[#101010]";
+/** Solid pill: the scene's hue behind text the theme picks for contrast. */
+export const SCENE_BADGE_CLASS = "bg-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l))] text-(--scene-fg)";
 /** Shot-number pill — the same solid fill as the badge, so a shot reads as the
  *  scene's at a glance. Only the size differs. */
 export const SCENE_PILL_CLASS = SCENE_BADGE_CLASS;
+
+/** Open scene header: the scene's hue as a wash, weak enough to read as a tint. */
+export const SCENE_SURFACE_CLASS = "bg-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l)_/_0.12)]";
+/** Open scene card outline, in the same hue as its badge. */
+export const SCENE_BORDER_CLASS = "border-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l)_/_0.5)]";
+/** Quiet chip inside a scene header (shot count): the hue, at label weight. */
+export const SCENE_CHIP_CLASS =
+  "border-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l)_/_0.35)] bg-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l)_/_0.1)] text-[hsl(var(--scene-hue)_var(--scene-s)_var(--scene-l))]";

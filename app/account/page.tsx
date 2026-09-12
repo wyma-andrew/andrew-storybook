@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { AdminBlock } from "@/components/ui/AdminBlock";
 import { LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -46,6 +47,7 @@ export default function AccountPage() {
           <Link href="/stories">Stories</Link> / <span className="text-fg">Account</span>
         </Crumb>
         <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggleButton />
           <AccountMenu />
         </div>
       </TopBar>

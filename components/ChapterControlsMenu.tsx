@@ -76,7 +76,7 @@ export function ChapterControlsMenu({
         <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[260px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)]">
           <div className="border-b border-line px-3.5 py-3">
             <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
-            <div className="flex items-center rounded-lg border border-line-2 bg-[#151515] px-3 py-2 text-[13px] text-fg-2">
+            <div className="flex items-center rounded-lg border border-line-2 bg-raised px-3 py-2 text-[13px] text-fg-2">
               {styleName}
             </div>
           </div>

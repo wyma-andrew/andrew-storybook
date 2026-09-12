@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Lock } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { AdminBlock } from "@/components/ui/AdminBlock";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
@@ -24,6 +25,7 @@ export default function SettingsPage() {
           <Link href="/stories">Stories</Link> / <span className="text-fg">Settings</span>
         </Crumb>
         <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggleButton />
           <AccountMenu />
         </div>
       </TopBar>
@@ -101,26 +103,26 @@ export default function SettingsPage() {
             </div>
 
             <AdminBlock title="Character preset" badge="LOCKED">
-              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-[#0f0f0f] px-3 py-2.5 text-xs text-fg-3">
+              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">{character}</div>
+              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">{character}</div>
             </AdminBlock>
 
             <AdminBlock title="Location preset — interior" badge="LOCKED" className="mt-3.5">
-              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-[#0f0f0f] px-3 py-2.5 text-xs text-fg-3">
+              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">
+              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">
                 {locationInterior}
               </div>
             </AdminBlock>
 
             <AdminBlock title="Location preset — exterior" badge="LOCKED" className="mt-3.5">
-              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-[#0f0f0f] px-3 py-2.5 text-xs text-fg-3">
+              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
                 <Lock size={13} /> Used when a location&apos;s space kind is exterior.
               </div>
-              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#c6c6c6]">
+              <div className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-fg-code">
                 {locationExterior}
               </div>
             </AdminBlock>

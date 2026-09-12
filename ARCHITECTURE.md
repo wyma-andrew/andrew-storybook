@@ -265,7 +265,9 @@ generation, editable/restorable shot prompts, style/region selection,
 story-wide motion style with a per-shot motion mode override, per-scene
 storyboard regeneration, and
 story/chapter aspect ratios. Anonymous Voice Over blocks are mapped to editable
-storyboard shot ranges as a separate narration overlay.
+storyboard shot ranges as a separate narration overlay. The UI ships a dark and a
+light theme, chosen by the user in the account menu (dark by default, OS
+preference deliberately ignored).
 
 Current intentional limits: no OAuth, magic link, password-reset flow,
 database style editor, file upload/storage flow, or character/prop reference
@@ -284,6 +286,7 @@ images. The `demo/` directory is reference-only.
 | Per-scene storyboard regeneration | `history/storyboard-scene-regeneration.md` |
 | Chapter site map fed into shot generation | `history/storyboard-site-map.md` |
 | Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |
+| Light/dark theming and color tokens | `history/theming.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 
 ## Maintenance rule

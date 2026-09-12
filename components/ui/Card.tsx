@@ -1,6 +1,6 @@
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <article className={`flex h-full flex-col overflow-hidden rounded-[10px] border border-line bg-panel-2 ${className}`}>
+    <article className={`flex h-full flex-col overflow-hidden rounded-[10px] border border-line bg-panel-2 shadow-sm ${className}`}>
       {children}
     </article>
   );

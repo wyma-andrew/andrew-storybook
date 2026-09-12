@@ -68,15 +68,20 @@ chapter override.
 ## UI rules — MANDATORY
 
 - **Tailwind CSS only.** No hand-rolled component CSS classes — see `app/globals.css`'s
-  `@theme` block for the color tokens (`bg-panel`, `text-fg-3`, `border-line-2`, etc).
+  `@theme inline` block for the color tokens (`bg-panel`, `text-fg-3`, `border-line-2`, etc).
   The only exception is Tiptap's rendered node typography (`.tiptap-doc *` in
   `app/globals.css`), since that's arbitrary HTML the editor produces, not JSX.
+- **Never write a raw color into JSX** (`bg-[#191919]`, `text-[#c6c6c6]`). Every
+  color is a token, because the app has a light theme and a hardcoded hex only
+  works in one of them — see `history/theming.md`. Add a token to both palettes
+  instead.
 - **Form inputs, selects, and other interactive elements come from GeckoUI**
   (`@geckoui/geckoui`) — `Input`, `Textarea`, `Select`/`SelectOption`, `Menu`/`MenuItem`,
   `Switch`, `ConfirmDialog`, etc. `components/ui/Button.tsx` already wraps GeckoUI's
   `Button` — use it (or GeckoUI's directly) rather than a bare `<button>`. Never a raw
-  `<input>`/`<textarea>`/`<select>`. GeckoUI's theme is set on `:root` in
-  `app/globals.css` (dark-only, reuses the same palette) — don't touch it per-component.
+  `<input>`/`<textarea>`/`<select>`. GeckoUI's theme is set in
+  `app/globals.css` on `:root`/`html.dark` and `html.light` (it reuses the same
+  palette) — don't touch it per-component.
 - **Icons come from `lucide-react`.** No emoji, no unicode glyphs (›, ▾, 🔒, ⚡, ✦, ⋮,
   etc) standing in for icons in the UI.
 

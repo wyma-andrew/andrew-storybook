@@ -147,9 +147,9 @@ export function ScriptEditor({
 
   const toolbarState = state ?? inactiveState;
   const toolBtn = (active?: boolean) =>
-    `rounded-md px-3 py-1.5 font-semibold hover:bg-[#191919] ${active ? "bg-[#191919] text-fg" : "text-fg"}`;
+    `rounded-md px-3 py-1.5 font-semibold hover:bg-hover ${active ? "bg-hover text-fg" : "text-fg"}`;
   const iconBtn = (active?: boolean) =>
-    `rounded-md px-3 py-1.5 font-normal hover:bg-[#191919] ${active ? "bg-[#191919] text-fg" : "text-fg-2"}`;
+    `rounded-md px-3 py-1.5 font-normal hover:bg-hover ${active ? "bg-hover text-fg" : "text-fg-2"}`;
   const sep = "mx-2.5 h-5.5 w-px bg-line-2";
 
   const setNode = (name: string) => editor.chain().focus().setNode(name).run();

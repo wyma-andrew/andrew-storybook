@@ -8,7 +8,7 @@ export function ToolbarButton({ className = "", ...props }: React.ComponentProps
   return (
     <Button
       variant="ghost"
-      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-[#191919] ${className}`}
+      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-hover ${className}`}
       {...props}
     />
   );
@@ -18,7 +18,7 @@ export function ToolbarLoadingButton({ className = "", ...props }: React.Compone
   return (
     <LoadingButton
       variant="ghost"
-      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-[#191919] ${className}`}
+      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-hover ${className}`}
       {...props}
     />
   );

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -80,7 +81,7 @@ function BibleCard({
           <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-[90px] font-mono text-[12.5px]" />
         </div>
       ) : (
-        <div className="p-3.5 font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]">{entry.realPrompt}</div>
+        <div className="p-3.5 font-mono text-[12.5px] whitespace-pre-wrap text-fg-code">{entry.realPrompt}</div>
       )}
 
 
@@ -203,6 +204,7 @@ export default function BiblePage() {
           <span className="text-fg">Asset Bible</span>
         </Crumb>
         <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggleButton />
           <AccountMenu />
         </div>
       </TopBar>

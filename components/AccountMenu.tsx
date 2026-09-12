@@ -22,7 +22,7 @@ export function AccountMenu() {
       <MenuTrigger>
         {({ toggleMenu }) => (
           <div
-            className="grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-line-2 bg-[#1c1c1c] text-[12.5px] font-semibold text-fg-2 hover:bg-[#232323]"
+            className="grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-line-2 bg-hover text-[12.5px] font-semibold text-fg-2 hover:bg-hover-2"
             onClick={toggleMenu}
           >
             {me.email.slice(0, 2).toUpperCase()}

@@ -6,6 +6,7 @@ import { RotateCcw, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { LinkButton, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
@@ -42,6 +43,7 @@ export default function StoriesTrashPage() {
           <Link href="/stories">Stories</Link> / <span className="text-fg">Trash</span>
         </Crumb>
         <div className="ml-auto flex items-center gap-2.5">
+          <ThemeToggleButton />
           <AccountMenu />
         </div>
       </TopBar>
@@ -60,7 +62,7 @@ export default function StoriesTrashPage() {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
             {stories?.map((s) => (
               <div key={s.id} className="flex flex-col overflow-hidden rounded-xl border border-line bg-panel-2">
-                <div className="flex h-[130px] items-end border-b border-line bg-gradient-to-br from-[#1c1c1c] to-[#0a0a0a] p-3">
+                <div className="flex h-[130px] items-end border-b border-line bg-gradient-to-br from-thumb-from to-thumb-to p-3">
                   <AccentTag className="uppercase tracking-wide">{s.visualStyleName ?? "No style"}</AccentTag>
                 </div>
                 <div className="px-4 pt-3.5 pb-4">

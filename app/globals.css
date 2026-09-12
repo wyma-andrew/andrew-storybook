@@ -4,90 +4,292 @@
   @import "@geckoui/geckoui/styles.css";
 }
 
-@theme {
-  --color-bg: #070707;
-  --color-panel: #0d0d0d;
-  --color-panel-2: #121212;
-  --color-line: #1e1e1e;
-  --color-line-2: #2a2a2a;
-  --color-fg: #f2f2f2;
-  --color-fg-2: #9a9a9a;
-  --color-fg-3: #5c5c5c;
-  --color-accent: #e8e2d4;
-  --color-accent-dim: #2a2722;
-  --color-ok: #5f8f6a;
-  --color-warn: #8f7a4a;
+/* Theming
+   --------
+   Dark is the default and the app's identity; light is a user choice, never the
+   OS's — see history/theming.md. `<html>` always carries `dark` or `light`, set
+   before paint by the inline script in app/layout.tsx.
 
-  --color-matched: #8fb99a;
-  --color-matched-bg: #152018;
-  --color-matched-border: #294232;
-  --color-isnew: #d9b978;
-  --color-isnew-bg: #241d10;
-  --color-isnew-border: #4a3c1e;
-  --color-style-badge: #c9b98a;
-  --color-style-badge-bg: #1a1608;
-  --color-style-badge-border: #3a331e;
-  --color-kind-character: #7fb3ab;
-  --color-kind-character-bg: #0d1614;
-  --color-kind-character-border: #22403b;
-  --color-kind-location: #d9b978;
-  --color-kind-location-bg: #17130a;
-  --color-kind-location-border: #40361e;
-  --color-kind-prop: #cf9a97;
-  --color-kind-prop-bg: #170f0f;
-  --color-kind-prop-border: #3d2827;
-  --color-sys-badge: #8fa8c9;
-  --color-sys-badge-bg: #0c1218;
-  --color-sys-badge-border: #1e2c3a;
-  --color-danger: #e08585;
-  --color-danger-bg: #160f0f;
-  --color-danger-border: #3a1e1e;
+   The raw palette lives on those two selectors as `--c-*`. `@theme inline` maps
+   our semantic names onto them, so every Tailwind utility resolves through the
+   variable and switches with the class instead of being baked in at build time.
+   GeckoUI's own variables are not Tailwind tokens, so they are set on the same
+   two selectors directly. */
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-panel-2: var(--c-panel-2);
+  --color-panel-3: var(--c-panel-3);
+  --color-sunken: var(--c-sunken);
+  --color-raised: var(--c-raised);
+  --color-chip: var(--c-chip);
+  --color-hover: var(--c-hover);
+  --color-hover-2: var(--c-hover-2);
+  --color-line: var(--c-line);
+  --color-line-2: var(--c-line-2);
+  --color-line-3: var(--c-line-3);
+  --color-fg: var(--c-fg);
+  --color-fg-2: var(--c-fg-2);
+  --color-fg-3: var(--c-fg-3);
+  --color-fg-code: var(--c-fg-code);
+  --color-accent: var(--c-accent);
+  --color-accent-dim: var(--c-accent-dim);
+  --color-on-accent: var(--c-on-accent);
+  --color-ok: var(--c-ok);
+  --color-warn: var(--c-warn);
+
+  --color-matched: var(--c-matched);
+  --color-matched-bg: var(--c-matched-bg);
+  --color-matched-border: var(--c-matched-border);
+  --color-isnew: var(--c-isnew);
+  --color-isnew-bg: var(--c-isnew-bg);
+  --color-isnew-border: var(--c-isnew-border);
+  --color-new-card-border: var(--c-new-card-border);
+  --color-style-badge: var(--c-style-badge);
+  --color-style-badge-bg: var(--c-style-badge-bg);
+  --color-style-badge-border: var(--c-style-badge-border);
+  --color-sys-badge: var(--c-sys-badge);
+  --color-sys-badge-bg: var(--c-sys-badge-bg);
+  --color-sys-badge-border: var(--c-sys-badge-border);
+  --color-danger: var(--c-danger);
+  --color-danger-bg: var(--c-danger-bg);
+  --color-danger-border: var(--c-danger-border);
+  --color-danger-hover: var(--c-danger-hover);
+
+  --color-kind-character: var(--c-kind-character);
+  --color-kind-character-bg: var(--c-kind-character-bg);
+  --color-kind-character-border: var(--c-kind-character-border);
+  --color-kind-location: var(--c-kind-location);
+  --color-kind-location-bg: var(--c-kind-location-bg);
+  --color-kind-location-border: var(--c-kind-location-border);
+  --color-kind-prop: var(--c-kind-prop);
+  --color-kind-prop-bg: var(--c-kind-prop-bg);
+  --color-kind-prop-border: var(--c-kind-prop-border);
+
+  --color-thumb-from: var(--c-thumb-from);
+  --color-thumb-to: var(--c-thumb-to);
+  --color-avatar-from: var(--c-avatar-from);
+  --color-avatar-to: var(--c-avatar-to);
 }
 
-/* GeckoUI theme — this app is always dark, so these are set directly on
-   :root (not under a .dark class). Values reuse the palette above. */
-:root {
-  --color-primary-50: #f4f2ec;
-  --color-primary-100: #ece7d9;
-  --color-primary-200: #e8e2d4;
-  --color-primary-300: #ded5c0;
-  --color-primary-400: #d0c4a8;
-  --color-primary-500: #c2b18e;
-  --color-primary-600: #e8e2d4;
-  --color-primary-700: #f2ede0;
-  --color-primary-800: #b8a37e;
-  --color-primary-900: #8f7a4a;
-  --color-primary-950: #2a2722;
+:root,
+html.dark {
+  --c-bg: #06080c;
+  --c-panel: #0c0f14;
+  --c-panel-2: #11151b;
+  --c-panel-3: #0b0e13;
+  --c-sunken: #070a0e;
+  --c-raised: #141820;
+  --c-chip: #151a21;
+  --c-hover: #181d25;
+  --c-hover-2: #222a35;
+  --c-line: #1e1e1e;
+  --c-line-2: #2a2a2a;
+  --c-line-3: #2c2c2c;
+  --c-fg: #f0f2f5;
+  --c-fg-2: #98a1ad;
+  --c-fg-3: #5b6472;
+  --c-fg-code: #c2c9d2;
+  --c-accent: #7aa2d8;
+  --c-accent-dim: #141c28;
+  --c-on-accent: #0a0f18;
+  --c-ok: #5f8f6a;
+  --c-warn: #8f7a4a;
 
-  --color-surface-primary: #121212;
-  --color-surface-secondary: #0d0d0d;
-  --color-surface-tertiary: #1a1a1a;
-  --color-surface-hover: #1c1c1c;
-  --color-surface-hover-strong: #232323;
-  --color-surface-active: #2a2a2a;
-  --color-surface-disabled: #161616;
-  --color-surface-overlay: #000000;
-  --color-surface-autofill: #0a0a0a;
-  --color-surface-emphasis: #2a2722;
+  --c-matched: #8fb99a;
+  --c-matched-bg: #152018;
+  --c-matched-border: #294232;
+  --c-isnew: #d9b978;
+  --c-isnew-bg: #241d10;
+  --c-isnew-border: #4a3c1e;
+  --c-new-card-border: #3a3226;
+  --c-style-badge: #c9b98a;
+  --c-style-badge-bg: #1a1608;
+  --c-style-badge-border: #3a331e;
+  --c-sys-badge: #8fa8c9;
+  --c-sys-badge-bg: #0c1218;
+  --c-sys-badge-border: #1e2c3a;
+  --c-danger: #e08585;
+  --c-danger-bg: #160f0f;
+  --c-danger-border: #3a1e1e;
+  --c-danger-hover: #1e1010;
 
-  --color-text-primary: #f2f2f2;
-  --color-text-secondary: #d8d8d8;
-  --color-text-tertiary: #9a9a9a;
-  --color-text-disabled: #5c5c5c;
-  --color-text-placeholder: #5c5c5c;
-  --color-text-inverse: #101010;
-  --color-text-muted: #9a9a9a;
-  --color-text-on-primary: #101010;
+  --c-kind-character: #7fb3ab;
+  --c-kind-character-bg: #0d1614;
+  --c-kind-character-border: #22403b;
+  --c-kind-location: #d9b978;
+  --c-kind-location-bg: #17130a;
+  --c-kind-location-border: #40361e;
+  --c-kind-prop: #cf9a97;
+  --c-kind-prop-bg: #170f0f;
+  --c-kind-prop-border: #3d2827;
+
+  --c-thumb-from: #222a35;
+  --c-thumb-to: #090c11;
+  --c-avatar-from: #2c3440;
+  --c-avatar-to: #141820;
+
+  /* Scene badge hue: the hue itself is computed per scene in
+     lib/constants/scene-colors.ts; only its weight changes with the theme. A
+     light fill needs dark text, a dark fill needs light text. */
+  --scene-s: 42%;
+  --scene-l: 72%;
+  --scene-fg: #101010;
+
+  /* GeckoUI (plain variables, not Tailwind tokens) */
+  --color-primary-50: #eef3fa;
+  --color-primary-100: #d9e4f3;
+  --color-primary-200: #b9cdea;
+  --color-primary-300: #9bb8e1;
+  --color-primary-400: #7aa2d8;
+  --color-primary-500: #5e88c4;
+  --color-primary-600: #7aa2d8;
+  --color-primary-700: #9bb8e1;
+  --color-primary-800: #3f5f94;
+  --color-primary-900: #2b4269;
+  --color-primary-950: #141c28;
+
+  --color-surface-primary: #11151b;
+  --color-surface-secondary: #0c0f14;
+  --color-surface-tertiary: #181d25;
+  --color-surface-hover: #181d25;
+  --color-surface-hover-strong: #222a35;
+  --color-surface-active: #28303c;
+  --color-surface-disabled: #151a21;
+  --color-surface-overlay: #000208;
+  --color-surface-autofill: #090c11;
+  --color-surface-emphasis: #141c28;
+
+  --color-text-primary: #f0f2f5;
+  --color-text-secondary: #d5dae1;
+  --color-text-tertiary: #98a1ad;
+  --color-text-disabled: #5b6472;
+  --color-text-placeholder: #5b6472;
+  --color-text-inverse: #0a0f18;
+  --color-text-muted: #98a1ad;
+  --color-text-on-primary: #0a0f18;
 
   --color-border-primary: #1e1e1e;
   --color-border-secondary: #2a2a2a;
-  --color-border-focus: #e8e2d4;
-  --color-border-hover: #5c5c5c;
+  --color-border-focus: #7aa2d8;
+  --color-border-hover: #5b6472;
   --color-border-disabled: #1e1e1e;
 
-  --gecko-ui-scrollbar-track: #0a0a0a;
-  --gecko-ui-scrollbar-thumb: #2a2a2a;
-  --gecko-ui-scrollbar-thumb-hover: #3a3a3a;
+  --gecko-ui-scrollbar-track: #090c11;
+  --gecko-ui-scrollbar-thumb: #28303c;
+  --gecko-ui-scrollbar-thumb-hover: #3a4554;
+
+  /* Tiptap body copy (see .tiptap-doc below) */
+  --c-script-body: #d5dae1;
+  --c-script-dialog: #c6ccd5;
+}
+
+html.light {
+  --c-bg: #f4f6f9;
+  --c-panel: #ffffff;
+  --c-panel-2: #ffffff;
+  --c-panel-3: #ffffff;
+  --c-sunken: #eef1f6;
+  --c-raised: #ffffff;
+  --c-chip: #edf0f5;
+  --c-hover: #e8ecf2;
+  --c-hover-2: #d7dee8;
+  --c-line: #e3e3e3;
+  --c-line-2: #d1d1d1;
+  --c-line-3: #c6c6c6;
+  --c-fg: #141a22;
+  --c-fg-2: #4e5866;
+  --c-fg-3: #858e9c;
+  --c-fg-code: #2f3742;
+  --c-accent: #1e3a6b;
+  --c-accent-dim: #e6ecf6;
+  --c-on-accent: #ffffff;
+  --c-ok: #3f7a4f;
+  --c-warn: #8a6a25;
+
+  --c-matched: #2f6b42;
+  --c-matched-bg: #e6f0e7;
+  --c-matched-border: #b9d3bf;
+  --c-isnew: #7a5a12;
+  --c-isnew-bg: #f6eddb;
+  --c-isnew-border: #ddc99a;
+  --c-new-card-border: #ddc99a;
+  --c-style-badge: #6d5c2a;
+  --c-style-badge-bg: #f4efdf;
+  --c-style-badge-border: #ddd2ae;
+  --c-sys-badge: #2f5478;
+  --c-sys-badge-bg: #e7eef6;
+  --c-sys-badge-border: #bdd0e3;
+  --c-danger: #a32f2f;
+  --c-danger-bg: #fbeaea;
+  --c-danger-border: #e3bcbc;
+  --c-danger-hover: #f7dede;
+
+  --c-kind-character: #256b62;
+  --c-kind-character-bg: #e3f0ee;
+  --c-kind-character-border: #b3d7d1;
+  --c-kind-location: #7a5a12;
+  --c-kind-location-bg: #f6eddb;
+  --c-kind-location-border: #ddc99a;
+  --c-kind-prop: #9a4744;
+  --c-kind-prop-bg: #f8e8e7;
+  --c-kind-prop-border: #e2bfbd;
+
+  --c-thumb-from: #ced5e0;
+  --c-thumb-to: #e8ecf2;
+  --c-avatar-from: #d5dce6;
+  --c-avatar-to: #edf0f5;
+
+  --scene-s: 55%;
+  --scene-l: 38%;
+  --scene-fg: #ffffff;
+
+  /* GeckoUI */
+  --color-primary-50: #eef3fa;
+  --color-primary-100: #dde6f4;
+  --color-primary-200: #c3d2e8;
+  --color-primary-300: #8fa9cd;
+  --color-primary-400: #5c7dab;
+  --color-primary-500: #2f5187;
+  --color-primary-600: #1e3a6b;
+  --color-primary-700: #162c52;
+  --color-primary-800: #122544;
+  --color-primary-900: #0e1d36;
+  --color-primary-950: #e6ecf6;
+
+  --color-surface-primary: #ffffff;
+  --color-surface-secondary: #f4f6f9;
+  --color-surface-tertiary: #eef1f6;
+  --color-surface-hover: #e8ecf2;
+  --color-surface-hover-strong: #d7dee8;
+  --color-surface-active: #ccd4de;
+  --color-surface-disabled: #eef1f6;
+  --color-surface-overlay: #141a22;
+  --color-surface-autofill: #f4f6f9;
+  --color-surface-emphasis: #e6ecf6;
+
+  --color-text-primary: #141a22;
+  --color-text-secondary: #2f3742;
+  --color-text-tertiary: #4e5866;
+  --color-text-disabled: #9aa3b1;
+  --color-text-placeholder: #9aa3b1;
+  --color-text-inverse: #ffffff;
+  --color-text-muted: #4e5866;
+  --color-text-on-primary: #ffffff;
+
+  --color-border-primary: #e3e3e3;
+  --color-border-secondary: #d1d1d1;
+  --color-border-focus: #1e3a6b;
+  --color-border-hover: #858e9c;
+  --color-border-disabled: #e3e3e3;
+
+  --gecko-ui-scrollbar-track: #eef1f6;
+  --gecko-ui-scrollbar-thumb: #ccd4de;
+  --gecko-ui-scrollbar-thumb-hover: #adb8c6;
+
+  --c-script-body: #2f3742;
+  --c-script-dialog: #3d4553;
 }
 
 *{box-sizing:border-box}
@@ -102,13 +304,13 @@ body{
 
 /* Tiptap renders arbitrary nested HTML we don't control node-by-node, so
    this block stays plain CSS rather than per-node Tailwind classes. */
-.tiptap-doc{outline:none;min-height:400px;color:#d8d8d8;font-size:16px;line-height:1.6}
+.tiptap-doc{outline:none;min-height:400px;color:var(--c-script-body);font-size:16px;line-height:1.6}
 .tiptap-doc [data-type="title"]{font-size:18px;text-align:center;letter-spacing:.08em;text-transform:uppercase;margin:0 0 34px;color:var(--color-fg);font-weight:700;line-height:1.35}
 .tiptap-doc [data-type="scene-heading"]{color:var(--color-fg);letter-spacing:.16em;text-transform:uppercase;font-size:17px;margin:28px 0 12px;font-weight:700;line-height:1.35}
 .tiptap-doc [data-type="character"]{text-align:center;letter-spacing:.08em;text-transform:uppercase;color:var(--color-fg);margin:16px 0 2px;font-weight:700}
 .tiptap-doc [data-type="parenthetical"]{text-align:center;font-style:italic;color:var(--color-fg-2);font-size:15px;margin:0 0 2px}
-.tiptap-doc [data-type="dialog"]{margin:0 0 14px 96px;color:#cfcfcf;max-width:560px}
-.tiptap-doc [data-type="voice-over"]{margin:16px 48px;padding:10px 14px;border-left:2px solid var(--color-style-badge);background:var(--color-style-badge-bg);color:#cfcfcf;font-style:italic}
+.tiptap-doc [data-type="dialog"]{margin:0 0 14px 96px;color:var(--c-script-dialog);max-width:560px}
+.tiptap-doc [data-type="voice-over"]{margin:16px 48px;padding:10px 14px;border-left:2px solid var(--color-style-badge);background:var(--color-style-badge-bg);color:var(--c-script-dialog);font-style:italic}
 .tiptap-doc [data-type="voice-over"]::before{content:"VOICE OVER";display:block;margin-bottom:3px;color:var(--color-style-badge);font-size:10px;font-style:normal;font-weight:700;letter-spacing:.14em}
 .tiptap-doc [data-type="transition"]{text-align:right;letter-spacing:.14em;text-transform:uppercase;color:var(--color-fg-2);margin:20px 0;font-size:13px;font-weight:600}
 .tiptap-doc p{margin:0 0 12px;font-size:16px;line-height:1.6}

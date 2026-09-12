@@ -126,8 +126,10 @@ function AssetCard({
   const viewPreset = asset.kind === "location" ? locationViewPreset(asset.spaceKind) : systemPrompt;
   const hints = locationPromptHints(asset.spaceKind);
 
-  const borderClass =
-    asset.matchStatus === "new" ? "border-[#3a3226]" : asset.matchStatus === "stale" ? "border-danger-border" : "";
+  // "new" carries no border tint: it is the default state of most cards, and
+  // "Add to bible" in the card's menu already says it. Only "stale" is marked,
+  // because that one is a warning.
+  const borderClass = asset.matchStatus === "stale" ? "border-danger-border" : "";
 
   function confirmRegenerate() {
     ConfirmDialog.show({
@@ -204,7 +206,7 @@ function AssetCard({
       <ClampedText
         text={asset.realPrompt}
         containerClassName="p-3.5 pt-2.5"
-        className="font-mono text-[12.5px] whitespace-pre-wrap text-[#c6c6c6]"
+        className="font-mono text-[12.5px] whitespace-pre-wrap text-fg-code"
       />
 
       {asset.matchStatus === "stale" ? (

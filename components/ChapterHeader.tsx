@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, CircleCheck, CircleAlert, Pencil } from "lucide-react";
 import { Select, SelectOption, Dialog, Input } from "@geckoui/geckoui";
 import { AccountMenu } from "@/components/AccountMenu";
+import { ThemeToggleButton } from "@/components/ThemeToggleButton";
+import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
 import { ChapterControlsMenu } from "@/components/ChapterControlsMenu";
 import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
 import { useRead, useWrite } from "@/lib/spoosh";
@@ -111,14 +113,14 @@ export function ChapterHeader({
         <Link
           href={`/stories/${storyId}`}
           aria-label={`Back to ${storyTitle}`}
-          className="flex shrink-0 items-center justify-center rounded-md p-1 text-fg-2 hover:bg-[#191919] hover:text-fg"
+          className="flex shrink-0 items-center justify-center rounded-md p-1 text-fg-2 hover:bg-hover hover:text-fg"
         >
           <ArrowLeft size={22} />
         </Link>
         <Select
           value={chapterId}
           onChange={handleChapterChange}
-          wrapperClassName="w-[220px] max-w-[220px]"
+          wrapperClassName={`w-[220px] max-w-[220px] ${TRUNCATE_SELECT_VALUE}`}
           placeholder={chapterTitle}
         >
           {chapters.map((c) => (
@@ -133,13 +135,13 @@ export function ChapterHeader({
         {saveStatus === "error" && <CircleAlert size={15} className="shrink-0 text-danger" aria-label="Failed to save" />}
       </div>
 
-      <nav className="flex justify-self-center gap-1 rounded-full border border-line bg-[#111] p-1">
+      <nav className="flex justify-self-center gap-1 rounded-full border border-line bg-panel-3 p-1">
         {TABS.map((t) => (
           <Link
             key={t.key}
             href={`/stories/${storyId}/chapters/${chapterId}/${t.key}`}
             className={`rounded-full px-4.5 py-1.5 text-sm font-medium whitespace-nowrap no-underline ${
-              active === t.key ? "bg-[#232323] text-fg" : "text-fg-2 hover:bg-[#171717] hover:text-fg"
+              active === t.key ? "bg-hover-2 text-fg" : "text-fg-2 hover:bg-hover hover:text-fg"
             }`}
           >
             {t.label}
@@ -156,7 +158,8 @@ export function ChapterHeader({
           storyAspectRatio={storyAspectRatio}
           chapterAspectRatio={chapterAspectRatio}
         />
-        <AccountMenu />
+        <ThemeToggleButton />
+          <AccountMenu />
       </div>
     </header>
   );
