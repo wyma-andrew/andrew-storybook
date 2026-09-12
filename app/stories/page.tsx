@@ -8,6 +8,7 @@ import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { LinkButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
 import { TopBar, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { SkeletonStoryGrid } from "@/components/ui/Skeleton";
 import { useRead } from "@/lib/spoosh";
 
 export default function StoriesPage() {
@@ -37,7 +38,7 @@ export default function StoriesPage() {
           </div>
 
           {error && <p className="text-danger">Couldn&apos;t load stories: {error.error}</p>}
-          {loading && !stories && <p className="text-fg-3">Loading…</p>}
+          {loading && !stories && <SkeletonStoryGrid label="Loading stories" />}
 
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
             {stories?.map((s) => (

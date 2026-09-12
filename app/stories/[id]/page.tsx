@@ -11,6 +11,7 @@ import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { StoryControlsMenu } from "@/components/StoryControlsMenu";
 import { LoadingButton, MiniButton } from "@/components/ui/Button";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
 export default function StoryDetailPage() {
@@ -87,7 +88,7 @@ export default function StoryDetailPage() {
       <Frame>
         <Body>
           <Wrap wide>
-            <p className="text-fg-3">Loading…</p>
+            <SkeletonRows label="Loading episodes" />
           </Wrap>
         </Body>
       </Frame>

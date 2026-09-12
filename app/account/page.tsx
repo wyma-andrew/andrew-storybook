@@ -10,6 +10,7 @@ import { LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@geckoui/geckoui";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
 export default function AccountPage() {
@@ -38,7 +39,22 @@ export default function AccountPage() {
     }
   }
 
-  if (!me) return null;
+  if (!me) {
+    return (
+      <Frame>
+        <Body>
+          <Wrap>
+            <div role="status" aria-label="Loading account" className="pt-6">
+              <Skeleton className="mb-6 h-5 w-32" />
+              <Skeleton className="mb-2 h-3 w-16" />
+              <Skeleton className="mb-6 h-9 w-full" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          </Wrap>
+        </Body>
+      </Frame>
+    );
+  }
 
   return (
     <Frame>

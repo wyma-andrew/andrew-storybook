@@ -11,6 +11,7 @@ import { Tag, AccentTag } from "@/components/ui/Tag";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
+import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
@@ -585,7 +586,19 @@ export default function StoryboardPage() {
     });
   }
 
-  if (!story || !chapter) return null;
+  if (!story || !chapter) {
+    return (
+      <Frame>
+        <Body>
+          <Wrap wide>
+            <div className="pt-6">
+              <SkeletonCards count={3} label="Loading storyboard" columns="grid-cols-1" />
+            </div>
+          </Wrap>
+        </Body>
+      </Frame>
+    );
+  }
 
   const styleContext = resolveStyleContext(story.region, story.visualStyleId);
 
@@ -603,7 +616,6 @@ export default function StoryboardPage() {
       />
 
       <Toolbar>
-        <span className="mr-1.5 text-fg-3">Storyboard:</span>
         {generating ? (
           <ToolbarButton onClick={() => abortGenerate()} className="!text-danger">
             <Loader2 size={13} className="animate-spin" />

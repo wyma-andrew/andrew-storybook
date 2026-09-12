@@ -10,6 +10,7 @@ import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { LinkButton, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
 import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { SkeletonStoryGrid } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
 export default function StoriesTrashPage() {
@@ -56,7 +57,7 @@ export default function StoriesTrashPage() {
           </div>
 
           {error && <p className="text-danger">Couldn&apos;t load trash: {error.error}</p>}
-          {loading && !stories && <p className="text-fg-3">Loading…</p>}
+          {loading && !stories && <SkeletonStoryGrid count={3} label="Loading trash" />}
           {!loading && !stories?.length && <p className="text-fg-3">Nothing in the trash.</p>}
 
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Spinner } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { ScriptEditor, type SaveStatus } from "@/components/ScriptEditor";
 import { Foot } from "@/components/ui/Layout";
+import { SkeletonScript } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
 export default function ScriptPage() {
@@ -40,8 +40,8 @@ export default function ScriptPage() {
     if (loading) {
       return (
         <Frame>
-          <div className="flex flex-1 items-center justify-center" role="status" aria-label="Loading script">
-            <Spinner className="size-5 text-fg-3" />
+          <div className="flex-1 overflow-hidden">
+            <SkeletonScript label="Loading script" />
           </div>
           <Foot />
         </Frame>

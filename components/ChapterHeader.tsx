@@ -141,7 +141,7 @@ export function ChapterHeader({
             key={t.key}
             href={`/stories/${storyId}/chapters/${chapterId}/${t.key}`}
             className={`rounded-full px-4.5 py-1.5 text-sm font-medium whitespace-nowrap no-underline ${
-              active === t.key ? "bg-hover-2 text-fg" : "text-fg-2 hover:bg-hover hover:text-fg"
+              active === t.key ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"
             }`}
           >
             {t.label}

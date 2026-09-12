@@ -14,6 +14,7 @@ import { PromptHint } from "@/components/ui/PromptHint";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
+import { SkeletonCards } from "@/components/ui/Skeleton";
 import { ConfirmDialog, Dialog, Input, Textarea, Menu, MenuItem, MenuTrigger } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
@@ -446,7 +447,21 @@ export default function AssetsPage() {
     refetchAssets();
   }
 
-  if (!story || !chapter) return null;
+  // Blank until story+chapter land is a white screen on every navigation into
+  // this tab; the grids below have a known shape, so show it.
+  if (!story || !chapter) {
+    return (
+      <Frame>
+        <Body>
+          <Wrap wide>
+            <div className="pt-6">
+              <SkeletonCards label="Loading assets" />
+            </div>
+          </Wrap>
+        </Body>
+      </Frame>
+    );
+  }
 
   const styleContext = resolveStyleContext(story.region, story.visualStyleId);
   // A location's wide view is copied with its floor plan attached, and the plan
@@ -471,7 +486,6 @@ export default function AssetsPage() {
       />
 
       <Toolbar>
-        <span className="mr-1.5 text-fg-3">Extracted from script:</span>
         <ToolbarLoadingButton onClick={confirmReanalyze} loading={analyzing}>
           <RefreshCw size={13} /> Re-analyze
         </ToolbarLoadingButton>
