@@ -316,15 +316,26 @@ function AssetCard({
             )}
           </>
         ) : (
-          <span className="grid size-full place-items-center text-fg-3">
-            {asset.kind === "character" ? (
-              <User size={22} />
-            ) : asset.kind === "location" ? (
-              <MapPin size={22} />
-            ) : (
-              <Package size={22} />
-            )}
-          </span>
+          // The empty state IS the upload control, not a decorative tile with
+          // the real button elsewhere in the footer: an empty slot the size of a
+          // card header is the most obvious place to aim at, and the kind icon
+          // alone said what the card was without offering anything to do.
+          <button
+            type="button"
+            onClick={openFiles}
+            disabled={uploading}
+            // Inset dashed box, icon only — the same placeholder the storyboard
+            // shot cards use, so an empty image slot looks the same wherever it
+            // appears. No label: the icon says it, and a word inside a card
+            // header competes with the asset's own name directly below.
+            className="grid size-full cursor-pointer place-items-center p-3 disabled:cursor-default"
+            aria-label={`Upload images for ${asset.name}`}
+            title="Upload images"
+          >
+            <span className="grid size-full place-items-center rounded-lg border border-dashed border-line-2 text-accent">
+              {uploading ? <Loader2 size={22} className="animate-spin" /> : <ImagePlus size={22} />}
+            </span>
+          </button>
         )}
       </div>
 
