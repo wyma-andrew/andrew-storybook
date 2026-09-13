@@ -1,0 +1,4 @@
+-- NO-OP. This file was pushed empty by mistake and is already recorded in the
+-- remote migration history, so its contents can never run. The work it was meant
+-- to do is in 20260913110000_chapter_image_links_real.sql. Left in place rather
+-- than deleted: removing a migration the remote has recorded reports as drift.

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -13,6 +13,7 @@ import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/comp
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { AttachedImages } from "@/components/AttachedImages";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
@@ -33,7 +34,7 @@ import {
   findShotScale,
   resolveShotOptics,
 } from "@/lib/constants/shot-scales";
-import type { Scene, Shot, VoiceOverSegment } from "@/lib/api/types";
+import type { Scene, Shot, VoiceOverSegment, ChapterImage } from "@/lib/api/types";
 
 // Which prompt a shot is actually showing. The chapter-wide tab asks for one,
 // but a shot with no video prompt falls back to its start frame rather than
@@ -510,6 +511,23 @@ function readCollapsedScenes(chapterId: string): Set<string> | null {
   }
 }
 
+function hintsHiddenKey(chapterId: string) {
+  return `storyboard-hints-hidden:${chapterId}`;
+}
+
+// The continuity hints are working notes — they matter while you are generating
+// a chapter's images and are noise the rest of the time, so they start hidden
+// and the toolbar toggle brings them back. SHOWN is the stored value, which is
+// what makes hidden the default for a chapter nobody has touched.
+function readHintsHidden(chapterId: string) {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(hintsHiddenKey(chapterId)) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 function lastCopiedKey(chapterId: string) {
   return `storyboard-last-copied:${chapterId}`;
 }
@@ -539,6 +557,19 @@ export default function StoryboardPage() {
   const { data: voiceOvers, trigger: refetchVoiceOvers } = useRead((api) =>
     api("chapters/:id/voice-overs").GET({ params: { id: chapterId } })
   );
+  // One read for every shot on the page. A regenerated scene deletes and
+  // reinserts its shots, so the FK nulls those links — the renders survive and
+  // show as unused in the chapter gallery rather than disappearing.
+  const { data: chapterImages, trigger: refetchImages } = useRead((api) =>
+    api("chapters/:id/images").GET({ params: { id: chapterId } })
+  );
+  const imagesByShot = new Map<string, ChapterImage[]>();
+  for (const image of chapterImages ?? []) {
+    if (!image.shotId) continue;
+    const list = imagesByShot.get(image.shotId) ?? [];
+    list.push(image);
+    imagesByShot.set(image.shotId, list);
+  }
   const { trigger: generate, loading: generating, abort: abortGenerate } = useWrite((api) =>
     api("chapters/:id/storyboard/generate").POST()
   );
@@ -561,6 +592,20 @@ export default function StoryboardPage() {
   // it never fades on its own. Last copy wins outright, including a copy of an
   // earlier shot — going back is deliberate, so the highlight follows.
   const [lastCopiedShotId, setLastCopiedShotId] = useState<string | null>(() => readLastCopiedShot(chapterId));
+
+  const [hintsHidden, setHintsHidden] = useState<boolean>(() => readHintsHidden(chapterId));
+
+  function toggleHints() {
+    setHintsHidden((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(hintsHiddenKey(chapterId), next ? "1" : "0");
+      } catch {
+        // ignore (private browsing / storage disabled) — the choice just won't persist
+      }
+      return next;
+    });
+  }
 
   function markCopied(shotId: string) {
     setLastCopiedShotId(shotId);
@@ -767,6 +812,11 @@ export default function StoryboardPage() {
                 </button>
               ))}
             </div>
+            <div className={toolbarSep} />
+            <ToolbarButton onClick={toggleHints} title="Continuity hints on each shot">
+              {hintsHidden ? <EyeOff size={13} /> : <Eye size={13} />}
+              Hints
+            </ToolbarButton>
             <div className={toolbarSep} />
             {/* One comma-joined line, not three rules-separated cells: these are
                 one reading of the chapter, and a divider between each made them
@@ -1014,7 +1064,7 @@ export default function StoryboardPage() {
                           </AccentTag>
                         ))}
                       </div>
-                      {(!!shot.assetsUsed.length || !!referenceHints.length) && (
+                      {(!!shot.assetsUsed.length || (!hintsHidden && !!referenceHints.length)) && (
                         // One attach block, one paperclip: the reference list and the
                         // continuity note are the same instruction, and opening both with
                         // the same icon read as two unrelated warnings.
@@ -1043,12 +1093,13 @@ export default function StoryboardPage() {
                                 ))}
                               </div>
                             )}
-                            {referenceHints.map((hint) => (
-                              <div key={`${hint.sceneIndex}.${hint.shotIndex}`} className="mt-1 text-isnew">
-                                Also attach shot {hint.sceneIndex}.{hint.shotIndex}&apos;s image —{" "}
-                                {hint.names.join(" and ")} continuity.
-                              </div>
-                            ))}
+                            {!hintsHidden &&
+                              referenceHints.map((hint) => (
+                                <div key={`${hint.sceneIndex}.${hint.shotIndex}`} className="mt-1 text-isnew">
+                                  Also attach shot {hint.sceneIndex}.{hint.shotIndex}&apos;s image —{" "}
+                                  {hint.names.join(" and ")} continuity.
+                                </div>
+                              ))}
                           </div>
                         </div>
                       )}
@@ -1078,15 +1129,35 @@ export default function StoryboardPage() {
                           </div>
                         </div>
                       )}
-                      <ShotPrompts
-                        shot={shot}
-                        chapterId={chapterId}
-                        styleContext={styleContext}
-                        motionStyleId={story.motionStyleId}
-                        lighting={scene.lighting}
-                        tab={promptTab}
-                        onCopied={() => markCopied(shot.id)}
-                      />
+                      {/* Renders on the left, prompt on the right: the two are
+                          read together — you are checking whether the image
+                          matches the text — and stacking them meant scrolling
+                          between them on a full-width card. Stacks back to one
+                          column under sm, where a side column would leave the
+                          prompt too narrow to read. */}
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <div className="shrink-0 sm:w-44">
+                          <AttachedImages
+                            chapterId={chapterId}
+                            link={{ shotId: shot.id }}
+                            images={imagesByShot.get(shot.id) ?? []}
+                            onUploaded={refetchImages}
+                            label={`shot ${shotNumber}`}
+                            max={1}
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <ShotPrompts
+                            shot={shot}
+                            chapterId={chapterId}
+                            styleContext={styleContext}
+                            motionStyleId={story.motionStyleId}
+                            lighting={scene.lighting}
+                            tab={promptTab}
+                            onCopied={() => markCopied(shot.id)}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                   );

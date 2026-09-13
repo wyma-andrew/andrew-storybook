@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ListPlus as AddToBible } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, ListPlus as AddToBible } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
+import { useChapterImageUpload, useImagePickers } from "@/components/ChapterImageUpload";
+import { showImagePreview } from "@/components/ImagePreviewDialog";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MatchBadge } from "@/components/ui/Badge";
 import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -14,7 +16,7 @@ import { PromptHint } from "@/components/ui/PromptHint";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
 import { Body, Wrap, Foot } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
-import { ConfirmDialog, Dialog, Input, Textarea, Menu, MenuItem, MenuTrigger } from "@geckoui/geckoui";
+import { ConfirmDialog, Dialog, Input, Textarea, Menu, MenuItem, MenuTrigger, toast } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
 import { withAssetContext } from "@/lib/prompt-copy";
 import {
@@ -27,7 +29,7 @@ import {
 } from "@/lib/constants/system-prompts";
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
-import type { ChapterAsset } from "@/lib/api/types";
+import type { ChapterAsset, ChapterImage } from "@/lib/api/types";
 
 // Kind color lives on the icon tile alone. The three kinds are rendered as
 // three separate grids, but a card scrolled away from its section head has
@@ -155,15 +157,47 @@ function AssetCard({
   // dropped; an extra angle is copied with the finished wide view attached,
   // where that clause is exactly what should apply. See resolveStyleContext.
   angleStyleContext,
+  chapterId,
+  images,
+  onImagesChanged,
 }: {
   asset: ChapterAsset;
   systemPrompt?: string | null;
   styleContext?: string | null;
   angleStyleContext?: string | null;
+  chapterId: string;
+  // Already filtered to this asset by the page — one read of the chapter's
+  // images serves every card, rather than a request per card.
+  images: ChapterImage[];
+  onImagesChanged: () => void;
 }) {
   const { trigger: promote, loading } = useWrite((api) => api("chapter-assets/:id/promote").POST());
   const { trigger: regenerate, loading: regenerating } = useWrite((api) => api("chapter-assets/:id/regenerate").POST());
   const { trigger: removeAsset, loading: removing } = useWrite((api) => api("chapter-assets/:id").DELETE());
+
+  const { trigger: removeImage } = useWrite((api) => api("chapter-images/:id").DELETE());
+  const { upload, uploading, progress } = useChapterImageUpload(chapterId, onImagesChanged);
+  const { inputs, openFiles } = useImagePickers((files) => void upload(files, { chapterAssetId: asset.id }));
+
+  // Slider position. Clamped on render rather than synced in an effect: deleting
+  // the last image leaves the index past the end, and clamping is the whole fix.
+  const [slide, setSlide] = useState(0);
+  const index = images.length ? Math.min(slide, images.length - 1) : 0;
+  const hero = images[index] ?? null;
+
+  function step(delta: number) {
+    // Wraps, so the arrows never dead-end on a short set.
+    setSlide((prev) => {
+      const from = Math.min(prev, images.length - 1);
+      return (from + delta + images.length) % images.length;
+    });
+  }
+
+  async function deleteImage(imageId: string) {
+    const { error } = await removeImage({ params: { id: imageId } });
+    if (error) toast.error(error.error);
+    else onImagesChanged();
+  }
 
   // Locations pick their own preset from spaceKind (interior view + floor plan,
   // or exterior view + site plan); `systemPrompt` is the character preset.
@@ -223,6 +257,77 @@ function AssetCard({
 
   return (
     <Card className={borderClass}>
+      {/* Hero: the first render, above the title, so a grid of cards reads as
+          the cast and the sets rather than as a list of names. Only the first —
+          a carousel per card is a lot of chrome for something most assets have
+          one or two of, and the preview dialog is where you look through them.
+          With none, a placeholder keeps every card the same height, so adding
+          one image does not reflow the grid. */}
+      {inputs}
+
+      <div className="group relative h-36 w-full shrink-0 overflow-hidden border-b border-line bg-sunken">
+        {hero ? (
+          <>
+            <button
+              type="button"
+              onClick={() => showImagePreview(images, index, (image) => void deleteImage(image.id))}
+              className="block size-full cursor-pointer"
+              aria-label={`Preview ${hero.fileName}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={hero.url} alt={hero.fileName} className="size-full object-cover" loading="lazy" />
+            </button>
+
+            {images.length > 1 && (
+              <>
+                {/* Arrows appear on hover and on keyboard focus. Always-on
+                    controls turn a grid of cards into a wall of chevrons, and
+                    the dots below already say there is more than one. */}
+                {(
+                  [
+                    ["prev", -1, "left-0.5", ChevronLeft],
+                    ["next", 1, "right-0.5", ChevronRight],
+                  ] as const
+                ).map(([name, delta, side, Icon]) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => step(delta)}
+                    aria-label={`${name === "prev" ? "Previous" : "Next"} image for ${asset.name}`}
+                    // text-white, not a theme token: this sits on top of an
+                    // arbitrary render, not on a themed surface, so it has to
+                    // read against whatever the image happens to be. The drop
+                    // shadow is what carries it over a pale image.
+                    className={`absolute top-1/2 ${side} grid size-8 -translate-y-1/2 cursor-pointer place-items-center text-white opacity-0 drop-shadow-md transition-opacity group-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100`}
+                  >
+                    <Icon size={26} strokeWidth={2.25} />
+                  </button>
+                ))}
+
+                <div className="pointer-events-none absolute inset-x-0 bottom-1.5 flex justify-center gap-1">
+                  {images.map((image, i) => (
+                    <span
+                      key={image.id}
+                      className={`size-1.5 rounded-full ${i === index ? "bg-fg" : "bg-fg-3/50"}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <span className="grid size-full place-items-center text-fg-3">
+            {asset.kind === "character" ? (
+              <User size={22} />
+            ) : asset.kind === "location" ? (
+              <MapPin size={22} />
+            ) : (
+              <Package size={22} />
+            )}
+          </span>
+        )}
+      </div>
+
       <CardHeader divider={false}>
         {/* Kind icon: the three grids are far apart on a long page, so a card
             scrolled past its section head no longer says what it is. */}
@@ -279,7 +384,7 @@ function AssetCard({
             <CardFooterWithMenu>
               <PromptHint hint={hints.plan}>
                 <MiniButton
-                  className="justify-center"
+                  className="!min-w-0 justify-center overflow-hidden"
                   onClick={() =>
                     // No styleContext: the plan is a flat schematic, and rendering it
                     // in the story's visual style would make it decorative, not spatial.
@@ -289,19 +394,41 @@ function AssetCard({
                     )
                   }
                 >
-                  <Grid2x2 size={12} /> Copy {locationPlanLabel(asset.spaceKind).toLowerCase()}
+                  <Grid2x2 size={12} className="shrink-0" />
+                  <span className="truncate">Copy {locationPlanLabel(asset.spaceKind).toLowerCase()}</span>
                 </MiniButton>
               </PromptHint>
               <PromptHint hint={hints.view}>
                 <MiniButton
-                  className="justify-center"
+                  className="!min-w-0 justify-center overflow-hidden"
                   onClick={() =>
                     copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
                   }
                 >
-                  <ImageIcon size={12} /> Copy view
+                  <ImageIcon size={12} className="shrink-0" />
+                  <span className="truncate">Copy view</span>
                 </MiniButton>
               </PromptHint>
+              {/* Upload sits with the other card actions rather than as its own
+                  strip: it is one more thing you do to this asset, and the
+                  slider above is where the results show. */}
+              <MiniButton
+                ghost
+                className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
+                onClick={openFiles}
+                disabled={uploading}
+                aria-label={`Upload images for ${asset.name}`}
+                title="Upload images"
+              >
+                {uploading ? (
+                  <span className="flex items-center gap-0.5 text-[9px] text-fg-3">
+                    <Loader2 size={12} className="animate-spin" />
+                    {progress.done}/{progress.total}
+                  </span>
+                ) : (
+                  <ImagePlus size={14} />
+                )}
+              </MiniButton>
               <MiniButton
                 ghost
                 className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
@@ -389,12 +516,32 @@ function AssetCard({
           ) : (
             <CardFooterWithMenu actions={1}>
               <MiniButton
-                className="justify-center"
+                className="!min-w-0 justify-center overflow-hidden"
                 onClick={() =>
                   copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
                 }
               >
-                Copy prompt
+                <span className="truncate">Copy prompt</span>
+              </MiniButton>
+              {/* Upload sits with the other card actions rather than as its own
+                  strip: it is one more thing you do to this asset, and the
+                  slider above is where the results show. */}
+              <MiniButton
+                ghost
+                className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
+                onClick={openFiles}
+                disabled={uploading}
+                aria-label={`Upload images for ${asset.name}`}
+                title="Upload images"
+              >
+                {uploading ? (
+                  <span className="flex items-center gap-0.5 text-[9px] text-fg-3">
+                    <Loader2 size={12} className="animate-spin" />
+                    {progress.done}/{progress.total}
+                  </span>
+                ) : (
+                  <ImagePlus size={14} />
+                )}
               </MiniButton>
               <MiniButton
                 ghost
@@ -491,6 +638,20 @@ export default function AssetsPage() {
   const { data: assets, trigger: refetchAssets } = useRead((api) =>
     api("chapters/:id/assets").GET({ params: { id: chapterId } })
   );
+
+  // One read for the whole page; each card gets its own slice. An image whose
+  // asset was deleted has had its link nulled by the FK, so it simply stops
+  // appearing here and shows as unused in the chapter gallery.
+  const { data: chapterImages, trigger: refetchImages } = useRead((api) =>
+    api("chapters/:id/images").GET({ params: { id: chapterId } })
+  );
+  const imagesByAsset = new Map<string, ChapterImage[]>();
+  for (const image of chapterImages ?? []) {
+    if (!image.chapterAssetId) continue;
+    const list = imagesByAsset.get(image.chapterAssetId) ?? [];
+    list.push(image);
+    imagesByAsset.set(image.chapterAssetId, list);
+  }
   const { trigger: analyze, loading: analyzing } = useWrite((api) => api("chapters/:id/analyze").POST());
   const { trigger: sync, loading: syncing } = useWrite((api) => api("chapters/:id/sync").POST());
 
@@ -610,6 +771,9 @@ export default function AssetsPage() {
                       asset={a}
                       systemPrompt={characterPreset}
                       styleContext={styleContext}
+                      chapterId={chapterId}
+                      images={imagesByAsset.get(a.id) ?? []}
+                      onImagesChanged={refetchImages}
                     />
                   ))}
                 </div>
@@ -628,6 +792,9 @@ export default function AssetsPage() {
                       asset={a}
                       styleContext={locationStyleContext}
                       angleStyleContext={styleContext}
+                      chapterId={chapterId}
+                      images={imagesByAsset.get(a.id) ?? []}
+                      onImagesChanged={refetchImages}
                     />
                   ))}
                 </div>
@@ -641,7 +808,15 @@ export default function AssetsPage() {
                 />
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
                   {props.map((a) => (
-                    <AssetCard key={a.id} asset={a} systemPrompt={propPreset} styleContext={styleContext} />
+                    <AssetCard
+                      key={a.id}
+                      asset={a}
+                      systemPrompt={propPreset}
+                      styleContext={styleContext}
+                      chapterId={chapterId}
+                      images={imagesByAsset.get(a.id) ?? []}
+                      onImagesChanged={refetchImages}
+                    />
                   ))}
                 </div>
               </section>

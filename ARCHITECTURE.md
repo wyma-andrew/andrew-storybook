@@ -37,6 +37,8 @@ app/
     auth/                      Email/password session operations
     stories/                   Story list, detail, trash, bible, chapters
     chapters/                  Script persistence, extraction, sync, storyboard
+    chapters/:id/images/       List + record uploaded renders; /presign mints R2 PUT URLs
+    chapter-images/:id         Delete one uploaded render (row + R2 object)
     chapter-assets/            Edit, delete, promote, regenerate, add image
     chapter-asset-images/      Edit/delete/promote chapter location images
     bible-entries/             Edit shared story-bible entries and images
@@ -240,6 +242,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `chapters` | Episode order, Tiptap script, workflow status, aspect override, storyboard site map |
 | `chapter_assets` | Chapter-local extracted asset and bible match state |
 | `bible_entries` | Story-wide approved character/location/prop identity |
+| `chapter_images` | Externally generated renders uploaded to R2, per chapter |
 | `chapter_asset_images` | Pending chapter-scoped location image URLs |
 | `bible_entry_images` | Promoted story-wide location image URLs |
 | `scenes` | Ordered storyboard scenes and their lighting line |
@@ -264,14 +267,16 @@ location reference-image URLs, storyboard
 generation, editable/restorable shot prompts, style/region selection,
 story-wide motion style with a per-shot motion mode override, per-scene
 storyboard regeneration, and
-story/chapter aspect ratios. Anonymous Voice Over blocks are mapped to editable
+story/chapter aspect ratios, and a per-chapter gallery of externally generated
+images uploaded to R2 and ordered by file name. Anonymous Voice Over blocks are mapped to editable
 storyboard shot ranges as a separate narration overlay. The UI ships a dark and a
 light theme, chosen by the user in the account menu (dark by default, OS
 preference deliberately ignored).
 
 Current intentional limits: no OAuth, magic link, password-reset flow,
-database style editor, file upload/storage flow, or character/prop reference
-images. The `demo/` directory is reference-only.
+database style editor, or character/prop reference images. Uploaded chapter
+images go to Cloudflare R2 (presigned PUT straight from the browser); the
+location/character reference-image rows remain URL-only and unrelated to it. The `demo/` directory is reference-only.
 
 ## Decision-history index
 
@@ -287,6 +292,7 @@ images. The `demo/` directory is reference-only.
 | Chapter site map fed into shot generation | `history/storyboard-site-map.md` |
 | Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |
 | Shot prompts holding the location reference | `history/shot-location-consistency.md` |
+| Chapter image gallery and R2 uploads | `history/chapter-images.md` |
 | Light/dark theming and color tokens | `history/theming.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 

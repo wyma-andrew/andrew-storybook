@@ -18,6 +18,11 @@ const TABS = [
   { key: "script", label: "1. Script" },
   { key: "assets", label: "2. Assets" },
   { key: "storyboard", label: "3. Storyboard" },
+  // Not part of the three-step authoring flow — this is where the renders come
+  // BACK from the external image tool, after the three steps have produced the
+  // prompts. Numbered anyway, because an unnumbered fourth tab beside three
+  // numbered ones reads as a settings page rather than the next thing you do.
+  { key: "images", label: "4. Images" },
 ] as const;
 
 function RenameChapterForm({

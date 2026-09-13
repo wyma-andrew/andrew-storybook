@@ -42,6 +42,29 @@ export type ReferenceImage = {
   isCanonical: boolean;
 };
 
+// One image generated in an external tool and uploaded to R2 for this chapter.
+// Distinct from ReferenceImage: that is a hand-pasted identity/layout reference,
+// this is a finished render produced FROM the chapter's prompts. `url` is a
+// stored public URL rather than one composed from the bucket base, so an image
+// keeps resolving if R2_PUBLIC_BASE_URL later changes.
+export type ChapterImage = {
+  id: string;
+  chapterId: string;
+  fileName: string;
+  objectKey: string;
+  url: string;
+  contentType: string;
+  sizeBytes: number | null;
+  createdAt: string;
+  // At most one of these. Both are ON DELETE SET NULL, so deleting an asset or
+  // regenerating a scene drops the link on its own and the image becomes unused.
+  chapterAssetId: string | null;
+  shotId: string | null;
+  // What it is attached to, resolved server-side for display: the asset's name,
+  // or "1.2" for a shot. Null means unused — never linked, or the target is gone.
+  linkedLabel: string | null;
+};
+
 // Locations only (null on characters, and on rows extracted before the field
 // existed): which reference-image preset this location renders with — an
 // interior view + floor plan, or an exterior view + site plan.

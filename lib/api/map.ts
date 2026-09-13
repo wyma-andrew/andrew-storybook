@@ -4,6 +4,7 @@ import type {
   BibleEntry,
   ChapterAsset,
   ReferenceImage,
+  ChapterImage,
   SpaceKind,
   Scene,
   Shot,
@@ -53,6 +54,34 @@ export function mapReferenceImage(r: Row): ReferenceImage {
     angleLabel: r.angle_label as string,
     imageUrl: (r.image_url as string) ?? null,
     isCanonical: r.is_canonical as boolean,
+  };
+}
+
+export function mapChapterImage(r: Row): ChapterImage {
+  // The embedded rows are present only when the caller asked for them; a plain
+  // select (the insert and patch handlers) leaves the label null, which is
+  // correct — those responses are re-read through the list endpoint anyway.
+  const asset = r.chapter_assets as Row | null;
+  const shot = r.shots as Row | null;
+  const scene = (shot?.scenes as Row | null) ?? null;
+  const linkedLabel = asset
+    ? (asset.name as string)
+    : shot && scene
+      ? `${scene.index}.${shot.index}`
+      : null;
+
+  return {
+    id: r.id as string,
+    chapterId: r.chapter_id as string,
+    fileName: r.file_name as string,
+    objectKey: r.object_key as string,
+    url: r.url as string,
+    contentType: r.content_type as string,
+    sizeBytes: (r.size_bytes as number) ?? null,
+    createdAt: r.created_at as string,
+    chapterAssetId: (r.chapter_asset_id as string) ?? null,
+    shotId: (r.shot_id as string) ?? null,
+    linkedLabel,
   };
 }
 

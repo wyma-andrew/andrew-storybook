@@ -55,13 +55,14 @@ export function CardFooterWithMenu({
 }: {
   children: React.ReactNode;
   /** How many named buttons precede the trailing icon buttons — locations have two,
-   *  everything else one. The two auto columns are the view-prompt button and the menu. */
+   *  everything else one. The three auto columns are the upload button, the
+   *  view-prompt button and the menu. */
   actions?: 1 | 2;
 }) {
   return (
     <div
       className={`mt-auto grid gap-2 px-3.5 pt-3.5 pb-3.5 ${
-        actions === 1 ? "grid-cols-[1fr_auto_auto]" : "grid-cols-[1fr_1fr_auto_auto]"
+        actions === 1 ? "grid-cols-[1fr_auto_auto_auto]" : "grid-cols-[1fr_1fr_auto_auto_auto]"
       }`}
     >
       {children}

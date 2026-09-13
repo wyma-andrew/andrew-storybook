@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, Scene, Shot, VoiceOverSegment, Me } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 
 type ApiSchema = {
@@ -120,6 +120,32 @@ type ApiSchema = {
   };
   "chapters/:id/storyboard": {
     GET: { data: Scene[] };
+  };
+  // Uploaded renders for a chapter. POST records rows for objects the browser
+  // has already PUT to R2 — the bytes never pass through this API, so there is
+  // no body-size limit to work around.
+  "chapters/:id/images": {
+    GET: { data: ChapterImage[] };
+    POST: {
+      data: ChapterImage[];
+      body: {
+        images: { fileName: string; objectKey: string; url: string; contentType: string; sizeBytes: number }[];
+        // At most one. Omitted from a gallery upload, which starts unused.
+        chapterAssetId?: string | null;
+        shotId?: string | null;
+      };
+    };
+  };
+  "chapters/:id/images/presign": {
+    POST: {
+      data: { fileName: string; objectKey: string; contentType: string; url: string; uploadUrl: string }[];
+      body: { files: { fileName: string; contentType: string }[] };
+    };
+  };
+  "chapter-images/:id": {
+    // Renames the display name only; the R2 object key never changes.
+    PATCH: { data: ChapterImage; body: { fileName: string } };
+    DELETE: { data: null };
   };
   "chapters/:id/voice-overs": {
     GET: { data: VoiceOverSegment[] };
