@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Frame } from "@/components/Frame";
 import { LoadingButton } from "@/components/ui/Button";
@@ -43,9 +42,6 @@ export default function SignInPage() {
               Sign in
             </LoadingButton>
           </form>
-          <div className="mt-4.5 text-[13px] text-fg-3">
-            No account? <Link href="/sign-up" className="text-fg no-underline">Create one</Link>
-          </div>
         </div>
       </Body>
     </Frame>

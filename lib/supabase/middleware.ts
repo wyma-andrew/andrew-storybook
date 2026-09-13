@@ -26,7 +26,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthPage = pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up");
+  // /sign-up is closed. It is deliberately NOT in isAuthPage any more: leaving
+  // it there would let a signed-out visitor sit on a page that cannot work.
+  // Everyone is sent to /sign-in instead, signed in or not.
+  if (pathname.startsWith("/sign-up")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign-in";
+    return NextResponse.redirect(url);
+  }
+
+  const isAuthPage = pathname.startsWith("/sign-in");
   const isApi = pathname.startsWith("/api");
 
   if (!user && !isAuthPage && !isApi) {
