@@ -1,6 +1,7 @@
 # Copied-prompt composition: order, style position, scene lighting
 
-Covers: `lib/prompt-copy.ts`, `lib/constants/shot-scales.ts`, `lib/prompts/shared.ts` (`lightingBlock`),
+Covers: `lib/prompt-copy.ts`, `lib/constants/shot-scales.ts`, `lib/prompts/shared.ts`
+(`lightingBlock`, `shotDistinctnessBlock`),
 `lib/prompts/storyboard.ts` (`scenes[].lighting`,
 `SceneRegenerationTarget.lighting`), `lib/api/types.ts` / `lib/api/map.ts`
 (`Scene.lighting`), `app/stories/[id]/chapters/[chapterId]/storyboard/page.tsx`,
@@ -183,3 +184,66 @@ name) reach the image model as tokens it cannot read. They work only because the
 character's reference image is attached. Renaming is rejected in
 `history/asset-extraction.md` (name-based matching), so the candidate fix is an
 English gloss in prompt text only — not decided.
+
+## 2026-09-13 — An action line about speaking is not a beat of its own
+
+A Burmese market scene. The script's [ACTION] paragraph reads
+`ဝယ်သူတွေကြားအောင် အသံကျယ်ကျယ်နဲ့ အော်ရောင်းနေတယ်` — shouting loudly so buyers
+can hear — and is followed immediately by that character's [CHARACTER],
+[PARENTHETICAL] and [DIALOG]. That is one moment written twice, which is simply
+how screenplays are written: the action paragraph narrates the speaking, the
+line supplies the words.
+
+The storyboard split it into two shots. Shot 1.1 got the shouting with no words
+("calls out with confident energy, his mouth moving naturally"); shot 1.2 got
+the line. Generated, shot 1.1 came back with the character **speaking English** —
+a video model handed a moving mouth and no line does not render silence, it
+invents speech in whatever language it defaults to.
+
+**Decision: one rule, at the cause.** `shotDistinctnessBlock` gains the beat
+rule: an [ACTION] paragraph whose verb IS the act of speaking, followed by that
+same character's [CHARACTER]/[DIALOG], is ONE shot, carrying the line, with the
+paragraph's manner and the [PARENTHETICAL] as that shot's behaviour. It states
+the consequence (invented English speech) in the prompt text itself, because
+without it "make him call out" reads as a perfectly reasonable motion
+instruction and a later edit would strip the rule as redundant.
+
+**A second rule was drafted at the other end and deliberately NOT adopted —
+left open, to be decided after the beat rule is seen working.** It would have
+gone in the storyboard prompt's Video Prompt section: no lip movement without a
+line — a videoPrompt that says or implies speech must carry the quoted,
+language-tagged line, and with no line for that moment the action is written
+mouth-closed. It is a backstop for the case where the beat rule fails to merge
+the shots, not a second cause. Worth revisiting only if split speech shots keep
+appearing; the open question is whether a blanket mouth-closed default costs
+legitimate crowd noise, off-screen shouting, or a character talking with their
+words covered by narration.
+
+**Why the existing rules did not cover it.** The dialogue rule in the Video
+Prompt section fires on "an adjacent [CHARACTER]/[DIALOG] pair in the script" —
+true of shot 1.2, not of shot 1.1, which had been handed only the action
+paragraph. `shotDistinctnessBlock` forbids "the same moment re-labelled" but
+frames it entirely around camera ANGLES, so an action/dialogue duplicate did not
+read as the case it describes. Neither was wrong; both were narrower than the
+failure.
+
+**This does not weaken `scriptFidelityBlock`.** The action paragraph's manner
+still has to reach the shot as visible behaviour — it reaches the shot that
+carries the line, rather than justifying a silent shot of its own.
+
+**Rejected:**
+
+- *Defaulting the language tag from the story region when a line is missing.*
+  Treats the symptom. The shot has no words to speak in any language; the defect
+  is that it depicts speech at all.
+- *Forbidding mouth/speech wording in every videoPrompt.* Kills legitimate
+  dialogue shots, which are the majority of speech in a chapter. (Distinct from
+  the deferred backstop above, which forbids it only where no line exists.)
+- *Merging such shots in code after generation.* Requires deciding which
+  [ACTION] verbs are speech acts, in any language the script may be written in —
+  exactly the judgement the model is already making.
+
+**Consequence:** chapters storyboarded before this change keep their split
+shots. The silent half is the one that renders invented speech — regenerate that
+scene, or delete the wordless shot and let the one carrying the line cover the
+beat.

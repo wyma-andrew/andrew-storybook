@@ -17,6 +17,7 @@ import {
   scriptFidelityBlock,
 } from "./shared";
 import { DEFAULT_ASPECT_RATIO } from "../constants/aspect-ratios";
+import { coverageModeInstruction, type CoverageMode } from "../constants/coverage-modes";
 
 export const SITE_MAP_SCHEMA = {
   type: "object",
@@ -268,6 +269,12 @@ export type SceneRegenerationTarget = {
   // The scene row is not replaced by a regeneration, so its lighting line
   // survives the re-shoot and the new shots must be written under it.
   lighting: string | null;
+  // How many shots the take being replaced used, and what the user asked for
+  // relative to it. Without an anchor this pass re-derives coverage from
+  // nothing and drifts upward every time — see lib/constants/coverage-modes.ts.
+  // Null count = the scene has no stored shots, and every mode reads as "free".
+  previousShotCount: number | null;
+  coverageMode: CoverageMode;
 };
 
 export function regenerateSceneSystemPrompt(
@@ -299,6 +306,7 @@ export function regenerateSceneSystemPrompt(
     (target.lighting
       ? `This scene's lighting is already set and is NOT regenerated — write every shot under it, stating light only as a delta the script calls for: ${target.lighting}\n`
       : "This scene has no stored lighting line, so judge its light from the script alone.\n") +
-    "Produce at least one shot, and at least one distinct shot for every [VOICE_OVER] block falling inside this scene."
+    "Produce at least one shot, and at least one distinct shot for every [VOICE_OVER] block falling inside this scene.\n" +
+    coverageModeInstruction(target.coverageMode, target.previousShotCount)
   );
 }

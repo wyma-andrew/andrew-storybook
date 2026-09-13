@@ -6,6 +6,7 @@ import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
 import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, Scene, Shot, VoiceOverSegment, Me } from "@/lib/api/types";
+import type { CoverageMode } from "@/lib/constants/coverage-modes";
 
 type ApiSchema = {
   "auth/me": {
@@ -135,7 +136,7 @@ type ApiSchema = {
   // Re-shoots one scene and returns the chapter's full scene list, because
   // narration ranges are remapped chapter-wide by the same request.
   "scenes/:id/regenerate": {
-    POST: { data: Scene[] };
+    POST: { data: Scene[]; body: { coverageMode: CoverageMode } };
   };
 };
 

@@ -286,6 +286,7 @@ images. The `demo/` directory is reference-only.
 | Per-scene storyboard regeneration | `history/storyboard-scene-regeneration.md` |
 | Chapter site map fed into shot generation | `history/storyboard-site-map.md` |
 | Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |
+| Shot prompts holding the location reference | `history/shot-location-consistency.md` |
 | Light/dark theming and color tokens | `history/theming.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 

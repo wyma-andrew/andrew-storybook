@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus, Minus, Plus, Sparkles, MapPinned, X, Image as ImageIcon, Video } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, MapPinned, X, Image as ImageIcon, Video } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -35,6 +35,14 @@ import {
 } from "@/lib/constants/shot-scales";
 import type { Scene, Shot, VoiceOverSegment } from "@/lib/api/types";
 
+// Which prompt a shot is actually showing. The chapter-wide tab asks for one,
+// but a shot with no video prompt falls back to its start frame rather than
+// rendering an empty card — so the tab alone cannot answer this, and the card's
+// badge and its box must agree.
+function resolveShotView(tab: PromptTab, shot: Shot): PromptTab {
+  return tab === "video" && !!shot.videoPrompt ? "video" : "start";
+}
+
 function PromptBox({
   label,
   text,
@@ -57,10 +65,12 @@ function PromptBox({
 
   return (
     <div className="mb-2 last:mb-0">
-      <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
-        {label}
-        {edited && <Tag>Edited</Tag>}
-      </div>
+      {(label || edited) && (
+        <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
+          {label}
+          {edited && <Tag>Edited</Tag>}
+        </div>
+      )}
       <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-sunken p-3">
         {editing ? (
           <Textarea
@@ -175,17 +185,14 @@ function ShotPrompts({
   const activeMode = shot.motionMode ?? motionStyle.defaultMode;
   const activeScale = shot.shotScale ?? DEFAULT_SHOT_SCALE;
 
-  // A shot with no video prompt falls back to the start frame rather than
-  // rendering an empty card — the chapter-wide tab must not blank out shots
-  // that simply have nothing to show in that mode.
-  const showVideo = tab === "video" && !!shot.videoPrompt;
+  const showVideo = resolveShotView(tab, shot) === "video";
 
   return (
     <>
       {showVideo ? (
         <PromptBox
           key={`video-${shot.id}-${shot.videoPrompt}-${shot.videoPromptEdited}`}
-          label="Video Prompt"
+          label=""
           text={shot.videoPrompt!}
           edited={shot.videoPromptEdited}
           saving={saving}
@@ -202,7 +209,9 @@ function ShotPrompts({
       ) : (
         <PromptBox
           key={`start-${shot.id}-${shot.prompt}-${shot.promptEdited}`}
-          label={tab === "video" ? "Start Frame — no video prompt for this shot" : "Start Frame"}
+          // Only the exception is worth a line here; the card's badge already
+          // names the mode, and repeating it above every box was noise.
+          label={tab === "video" ? "No video prompt for this shot — showing its start frame" : ""}
           text={shot.prompt}
           edited={shot.promptEdited}
           saving={saving}
@@ -831,8 +840,8 @@ export default function StoryboardPage() {
             <div className="flex shrink-0 gap-0.5 rounded-md border border-line-2 bg-sunken p-0.5">
               {(
                 [
-                  ["start", "Image Prompt", ImageIcon],
-                  ["video", "Video Prompt", Video],
+                  ["start", "Image", ImageIcon],
+                  ["video", "Video", Video],
                 ] as const
               ).map(([value, label, Icon]) => (
                 <button
@@ -840,8 +849,9 @@ export default function StoryboardPage() {
                   type="button"
                   onClick={() => changePromptTab(value)}
                   aria-pressed={promptTab === value}
+                  title={`${label} prompt`}
                   className={`flex cursor-pointer items-center gap-1.5 rounded-[5px] px-3 py-1 text-[12px] font-medium whitespace-nowrap ${
-                    promptTab === value ? "bg-raised text-fg shadow-sm" : "text-fg-3 hover:text-fg"
+                    promptTab === value ? "bg-raised text-accent shadow-sm" : "text-fg-3 hover:text-fg"
                   }`}
                 >
                   <Icon size={12} />
@@ -1055,15 +1065,36 @@ export default function StoryboardPage() {
                         >
                           <Copy size={12} />
                         </MiniButton>
-                        {/* Plain text, not tags: duration and ratio are glanceable facts,
-                            and outlining each one made the row read as a toolbar. */}
-                        {(shot.durationS != null || shot.aspect) && (
-                          <span className="text-[12px] font-medium text-fg-2">
-                            {[shot.durationS != null ? `${shot.durationS}s` : null, shot.aspect]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        )}
+                        {/* Plain text, not tags: duration, ratio and which prompt is
+                            showing are glanceable facts, and outlining each one made
+                            the row read as a toolbar. The view is last because it is
+                            the one that changes under the reader, from the toolbar
+                            toggle — and it reads the RESOLVED view, not the tab, since
+                            a shot with no video prompt falls back to its start frame. */}
+                        <span className="flex items-center gap-1.5 text-[12px] font-medium text-fg-2">
+                          {shot.durationS != null && (
+                            <span className="inline-flex items-center gap-1" title="Recommended clip duration">
+                              <Clock size={12} className="text-fg-3" />
+                              {shot.durationS}s
+                            </span>
+                          )}
+                          {shot.durationS != null && shot.aspect && <span aria-hidden>·</span>}
+                          {shot.aspect && <span>{shot.aspect}</span>}
+                          <span aria-hidden>·</span>
+                          {/* Icon + colour, not a third word in the list: the mode is
+                              chapter-wide, so every card carries the same text and
+                              repeated identical words stop being read. A shape and a
+                              colour survive that; a word does not. */}
+                          {resolveShotView(promptTab, shot) === "video" ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-accent">
+                              <Video size={12} /> Video
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 font-semibold text-style-badge">
+                              <ImageIcon size={12} /> Image
+                            </span>
+                          )}
+                        </span>
                         {coveringVoiceOvers.map((segment) => (
                           <AccentTag
                             key={segment.id}

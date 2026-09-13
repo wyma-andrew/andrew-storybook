@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Settings } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
 import { Frame } from "@/components/Frame";
 import { AccountMenu } from "@/components/AccountMenu";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -38,8 +38,9 @@ export default function StoriesPage() {
           </div>
 
           {error && <p className="text-danger">Couldn&apos;t load stories: {error.error}</p>}
-          {loading && !stories && <SkeletonStoryGrid label="Loading stories" />}
-
+          {loading && !stories ? (
+            <SkeletonStoryGrid label="Loading stories" />
+          ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
             {stories?.map((s) => (
               <Link
@@ -67,10 +68,13 @@ export default function StoriesPage() {
               href="/stories/new"
               className="flex min-h-[216px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-2 text-fg-3 no-underline hover:border-fg-3 hover:text-fg-2"
             >
-              <div className="grid h-10 w-10 place-items-center rounded-full border border-line-2 text-[22px]">+</div>
+              <div className="grid h-10 w-10 place-items-center rounded-full border border-line-2">
+                <Plus size={22} />
+              </div>
               Create Story
             </Link>
           </div>
+          )}
         </Wrap>
       </Body>
 

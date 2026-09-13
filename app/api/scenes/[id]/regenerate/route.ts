@@ -9,6 +9,7 @@ import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 import { resolveMotionMode } from "@/lib/motion";
 import { resolveShotScale } from "@/lib/constants/shot-scales";
 import { formatSiteMap, parseSiteMap } from "@/lib/site-map";
+import { resolveCoverageMode } from "@/lib/constants/coverage-modes";
 
 type StoredShot = {
   id: string;
@@ -23,9 +24,13 @@ type StoredScene = { id: string; index: number; title: string | null; slug: stri
 // Re-shoots one scene without touching the rest of the storyboard. Narration is
 // remapped across the whole chapter afterwards, because Voice Over ranges are
 // chapter-ordered and may start or end inside the scene being replaced.
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: sceneId } = await params;
   const db = await supabaseRoute();
+  // Body is optional — an older client, or a plain retry, regenerates at the
+  // default mode ("same coverage").
+  const body = await req.json().catch(() => null);
+  const coverageMode = resolveCoverageMode((body as { coverageMode?: unknown } | null)?.coverageMode);
 
   const { data: scene, error: sceneErr } = await db
     .from("scenes")
@@ -103,6 +108,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       nextStartState: nextScene?.shots[0]?.start_state ?? null,
       siteMap: storedSiteMap ? formatSiteMap(storedSiteMap) : null,
       lighting: (scene.lighting as string) ?? null,
+      previousShotCount: storedScenes[targetPosition].shots.length || null,
+      coverageMode,
     },
     styleContext,
     aspectRatio,
