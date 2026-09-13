@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, MapPinned, X, Image as ImageIcon, Video } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -163,7 +163,7 @@ function ShotPrompts({
   lighting: string | null;
   tab: PromptTab;
   // Fired on either prompt copy — Image and Video are two prompts for ONE
-  // shot, so both move the place marker to the same place.
+  // shot, so both mark the same card.
   onCopied: () => void;
 }) {
   const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
@@ -514,11 +514,11 @@ function lastCopiedKey(chapterId: string) {
   return `storyboard-last-copied:${chapterId}`;
 }
 
-// Only the shot id is stored, never its number or label. Those are resolved
-// from the live scene list on every render, so a marker pointing at a shot that
-// no longer exists simply disappears instead of showing a stale "3.2". A scene
-// regeneration deletes and reinserts its shots, so it clears the marker — which
-// is right: the shots that were being walked are gone.
+// Only the shot id is stored. The highlight is resolved by matching that id
+// against the live scene list on every render, so a mark pointing at a shot
+// that no longer exists simply highlights nothing. A scene regeneration deletes
+// and reinserts its shots, so it drops the mark — which is right: the shot that
+// was copied is gone.
 function readLastCopiedShot(chapterId: string): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -526,50 +526,6 @@ function readLastCopiedShot(chapterId: string): string | null {
   } catch {
     return null;
   }
-}
-
-// Sits under the scrolling body, not in the toolbar. It only appears after the
-// first copy, and at the top that arrival shoves the whole scroll region down
-// mid-read — under the very card the user just clicked. It is also a navigation
-// aid, not chrome, so it does not belong beside Regenerate.
-//
-// A place marker, not a progress readout: it answers "where was I and what's
-// next", so it carries no
-// count of what has been copied and no completion state — copying a shot again
-// is a normal thing to do, and a tally would make it read as backwards motion.
-function ShotPlaceMarker({
-  current,
-  next,
-  onJump,
-  onClear,
-}: {
-  current: { number: string; label: string | null };
-  next: { number: string; label: string | null } | null;
-  onJump: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 border-t border-line bg-panel-2 px-5 py-2 text-[12px] text-fg-2">
-      <MapPinned size={13} className="shrink-0 text-fg-3" />
-      <span className="shrink-0">
-        At shot <span className="font-mono text-fg">{current.number}</span>
-      </span>
-      {current.label && <span className="truncate text-fg-3">{current.label}</span>}
-      <div className="flex-1" />
-      {next ? (
-        <MiniButton ghost onClick={onJump} className="shrink-0">
-          Next <span className="font-mono">{next.number}</span>
-          {next.label && <span className="hidden max-w-[220px] truncate text-fg-3 sm:inline">{next.label}</span>}
-          <ArrowRight size={12} />
-        </MiniButton>
-      ) : (
-        <span className="shrink-0 text-fg-3">End of chapter</span>
-      )}
-      <MiniButton ghost onClick={onClear} className="!h-5.5 !w-5.5 shrink-0 !p-0" title="Clear marker">
-        <X size={12} />
-      </MiniButton>
-    </div>
-  );
 }
 
 export default function StoryboardPage() {
@@ -599,8 +555,11 @@ export default function StoryboardPage() {
 
   const [voiceOverCollapsed, setVoiceOverCollapsed] = useState<boolean>(() => readVoiceOverCollapsed(chapterId));
 
-  // Last shot whose prompt was copied. Last copy wins outright, including a
-  // copy of an earlier shot — going back is deliberate, so the marker follows.
+  // Last shot whose prompt was copied — highlighted so the user can find their
+  // place again after leaving the page for the image tool. It persists until
+  // another shot is copied: it marks where they are, not a transient toast, so
+  // it never fades on its own. Last copy wins outright, including a copy of an
+  // earlier shot — going back is deliberate, so the highlight follows.
   const [lastCopiedShotId, setLastCopiedShotId] = useState<string | null>(() => readLastCopiedShot(chapterId));
 
   function markCopied(shotId: string) {
@@ -608,16 +567,7 @@ export default function StoryboardPage() {
     try {
       localStorage.setItem(lastCopiedKey(chapterId), shotId);
     } catch {
-      // Private window or blocked storage — the marker still works this session.
-    }
-  }
-
-  function clearCopiedMark() {
-    setLastCopiedShotId(null);
-    try {
-      localStorage.removeItem(lastCopiedKey(chapterId));
-    } catch {
-      // Same as above.
+      // Private window or blocked storage — the highlight still works this session.
     }
   }
 
@@ -727,48 +677,6 @@ export default function StoryboardPage() {
     }))
   ).map((shot, order) => ({ ...shot, order }));
   const shotOrder = new Map(shotOptions.map((shot) => [shot.id, shot.order]));
-
-  // Flat chapter-order walk, used by the place marker to answer "what's next".
-  const shotWalk = (scenes ?? []).flatMap((scene) =>
-    scene.shots.map((shot) => ({
-      id: shot.id,
-      sceneId: scene.id,
-      number: `${scene.index}.${shot.index}`,
-      label: shot.label ?? null,
-    }))
-  );
-  const markerPosition = lastCopiedShotId ? shotWalk.findIndex((s) => s.id === lastCopiedShotId) : -1;
-  // -1 covers both "nothing copied yet" and "that shot no longer exists" — a
-  // regenerated scene, or a chapter opened on another device.
-  const markerCurrent = markerPosition === -1 ? null : shotWalk[markerPosition];
-  const markerNext = markerPosition === -1 ? null : (shotWalk[markerPosition + 1] ?? null);
-
-  function jumpToShot(target: { id: string; sceneId: string }) {
-    // Scenes are an accordion, so the target's scene has to be the open one
-    // before its shot can be scrolled to — and the shot only mounts once it is.
-    setCollapsed((prev) => {
-      const allIds = (scenes ?? []).map((s) => s.id);
-      const alreadyOpen = prev !== null && !prev.has(target.sceneId);
-      if (alreadyOpen) return prev;
-      const next = new Set(allIds.filter((sceneId) => sceneId !== target.sceneId));
-      try {
-        localStorage.setItem(collapsedStorageKey(chapterId), JSON.stringify([...next]));
-      } catch {
-        // ignore (private browsing / storage disabled)
-      }
-      return next;
-    });
-    // Two frames: one for the scene to expand, one for its shots to lay out.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const el = document.getElementById(`shot-${target.id}`);
-        if (!el) return;
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("ring-2", "ring-accent");
-        setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 1400);
-      })
-    );
-  }
 
   function voiceOversForShot(shotId: string) {
     const order = shotOrder.get(shotId);
@@ -1050,7 +958,9 @@ export default function StoryboardPage() {
                   <div
                     key={shot.id}
                     id={`shot-${shot.id}`}
-                    className="scroll-mt-4 rounded-[10px] border border-line bg-panel-3 p-3.5 shadow-sm transition-shadow"
+                    className={`scroll-mt-4 rounded-[10px] border bg-panel-3 p-3.5 shadow-sm transition-shadow ${
+                      shot.id === lastCopiedShotId ? "border-ok" : "border-line"
+                    }`}
                   >
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
@@ -1189,19 +1099,7 @@ export default function StoryboardPage() {
         </Wrap>
       </Body>
 
-      {/* The marker takes the footer's slot rather than stacking above it — two
-          bottom strips read as a wall, and a wordmark is the one thing here with
-          nothing to say while the user is mid-walk. Clearing the marker restores it. */}
-      {markerCurrent ? (
-        <ShotPlaceMarker
-          current={markerCurrent}
-          next={markerNext}
-          onJump={() => markerNext && jumpToShot(markerNext)}
-          onClear={clearCopiedMark}
-        />
-      ) : (
-        <Foot />
-      )}
+      <Foot />
     </Frame>
   );
 }
