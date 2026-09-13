@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Sun, Focus, Minus, Plus, Sparkles, MapPinned, X, Image as ImageIcon, Video } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
@@ -17,6 +17,7 @@ import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
+import { COVERAGE_MODES, COVERAGE_MODE_LABELS, type CoverageMode } from "@/lib/constants/coverage-modes";
 import { MOTION_MODE_OPTIONS, resolveMotionStyle, resolveMotionText } from "@/lib/constants/motion-styles";
 import {
   SCENE_BADGE_CLASS,
@@ -143,6 +144,7 @@ function ShotPrompts({
   motionStyleId,
   lighting,
   tab,
+  onCopied,
 }: {
   shot: Shot;
   chapterId: string;
@@ -150,6 +152,9 @@ function ShotPrompts({
   motionStyleId: string;
   lighting: string | null;
   tab: PromptTab;
+  // Fired on either prompt copy — Image and Video are two prompts for ONE
+  // shot, so both move the place marker to the same place.
+  onCopied: () => void;
 }) {
   const { trigger: patchShot, loading: saving } = useWrite((api) => api("shots/:id").PATCH());
 
@@ -184,12 +189,13 @@ function ShotPrompts({
           text={shot.videoPrompt!}
           edited={shot.videoPromptEdited}
           saving={saving}
-          onCopy={() =>
-            copyText(
+          onCopy={async () => {
+            const copied = await copyText(
               withFrameDescription(shot.videoPrompt!, shot.prompt, styleContext, motionText, lighting, optics),
               "Video prompt"
-            )
-          }
+            );
+            if (copied) onCopied();
+          }}
           onSave={async (next) => void (await write({ videoPrompt: next }))}
           onRestore={async () => void (await write({ videoPrompt: null }))}
         />
@@ -200,7 +206,10 @@ function ShotPrompts({
           text={shot.prompt}
           edited={shot.promptEdited}
           saving={saving}
-          onCopy={() => copyText(withStyle(shot.prompt, styleContext, lighting, optics), "Start Frame prompt")}
+          onCopy={async () => {
+            const copied = await copyText(withStyle(shot.prompt, styleContext, lighting, optics), "Start Frame prompt");
+            if (copied) onCopied();
+          }}
           onSave={async (next) => void (await write({ prompt: next }))}
           onRestore={async () => void (await write({ prompt: null }))}
         />
@@ -492,6 +501,68 @@ function readCollapsedScenes(chapterId: string): Set<string> | null {
   }
 }
 
+function lastCopiedKey(chapterId: string) {
+  return `storyboard-last-copied:${chapterId}`;
+}
+
+// Only the shot id is stored, never its number or label. Those are resolved
+// from the live scene list on every render, so a marker pointing at a shot that
+// no longer exists simply disappears instead of showing a stale "3.2". A scene
+// regeneration deletes and reinserts its shots, so it clears the marker — which
+// is right: the shots that were being walked are gone.
+function readLastCopiedShot(chapterId: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(lastCopiedKey(chapterId));
+  } catch {
+    return null;
+  }
+}
+
+// Sits under the scrolling body, not in the toolbar. It only appears after the
+// first copy, and at the top that arrival shoves the whole scroll region down
+// mid-read — under the very card the user just clicked. It is also a navigation
+// aid, not chrome, so it does not belong beside Regenerate.
+//
+// A place marker, not a progress readout: it answers "where was I and what's
+// next", so it carries no
+// count of what has been copied and no completion state — copying a shot again
+// is a normal thing to do, and a tally would make it read as backwards motion.
+function ShotPlaceMarker({
+  current,
+  next,
+  onJump,
+  onClear,
+}: {
+  current: { number: string; label: string | null };
+  next: { number: string; label: string | null } | null;
+  onJump: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 border-t border-line bg-panel-2 px-5 py-2 text-[12px] text-fg-2">
+      <MapPinned size={13} className="shrink-0 text-fg-3" />
+      <span className="shrink-0">
+        At shot <span className="font-mono text-fg">{current.number}</span>
+      </span>
+      {current.label && <span className="truncate text-fg-3">{current.label}</span>}
+      <div className="flex-1" />
+      {next ? (
+        <MiniButton ghost onClick={onJump} className="shrink-0">
+          Next <span className="font-mono">{next.number}</span>
+          {next.label && <span className="hidden max-w-[220px] truncate text-fg-3 sm:inline">{next.label}</span>}
+          <ArrowRight size={12} />
+        </MiniButton>
+      ) : (
+        <span className="shrink-0 text-fg-3">End of chapter</span>
+      )}
+      <MiniButton ghost onClick={onClear} className="!h-5.5 !w-5.5 shrink-0 !p-0" title="Clear marker">
+        <X size={12} />
+      </MiniButton>
+    </div>
+  );
+}
+
 export default function StoryboardPage() {
   const { id, chapterId } = useParams<{ id: string; chapterId: string }>();
 
@@ -518,6 +589,28 @@ export default function StoryboardPage() {
   const [collapsed, setCollapsed] = useState<Set<string> | null>(() => readCollapsedScenes(chapterId));
 
   const [voiceOverCollapsed, setVoiceOverCollapsed] = useState<boolean>(() => readVoiceOverCollapsed(chapterId));
+
+  // Last shot whose prompt was copied. Last copy wins outright, including a
+  // copy of an earlier shot — going back is deliberate, so the marker follows.
+  const [lastCopiedShotId, setLastCopiedShotId] = useState<string | null>(() => readLastCopiedShot(chapterId));
+
+  function markCopied(shotId: string) {
+    setLastCopiedShotId(shotId);
+    try {
+      localStorage.setItem(lastCopiedKey(chapterId), shotId);
+    } catch {
+      // Private window or blocked storage — the marker still works this session.
+    }
+  }
+
+  function clearCopiedMark() {
+    setLastCopiedShotId(null);
+    try {
+      localStorage.removeItem(lastCopiedKey(chapterId));
+    } catch {
+      // Same as above.
+    }
+  }
 
   // Chapter-wide, so switching on one shot switches every shot in every scene.
   const [promptTab, setPromptTab] = useState<PromptTab>(() => readPromptTab(chapterId));
@@ -580,17 +673,28 @@ export default function StoryboardPage() {
     if (error) toast.error(error.error);
   }
 
-  function confirmRegenerateScene(scene: Scene) {
+  // The mode only sizes the new shot list — the destructive part is identical
+  // across all four, so they share one confirm.
+  function confirmRegenerateScene(scene: Scene, coverageMode: CoverageMode) {
+    const coverage =
+      coverageMode === "free"
+        ? "The model decides how many shots the scene needs."
+        : coverageMode === "same"
+          ? `Aims for the same ${scene.shots.length} shots.`
+          : coverageMode === "tighter"
+            ? `Aims for fewer than ${scene.shots.length} shots.`
+            : `Aims for more than ${scene.shots.length} shots.`;
     ConfirmDialog.show({
       title: `Regenerate scene ${scene.index}?`,
       content:
-        "Re-shoots only this scene against the script, keeping every other scene. Its current shots and any prompt edits in it are replaced, and Voice Over ranges are remapped across the chapter — narration text edits are discarded. Cannot be undone.",
+        `${coverage} Re-shoots only this scene against the script, keeping every other scene. ` +
+        "Its current shots and any prompt edits in it are replaced, and Voice Over ranges are remapped across the chapter — narration text edits are discarded. Cannot be undone.",
       confirmButtonLabel: "Regenerate scene",
       cancelButtonLabel: "Cancel",
       onConfirm: async ({ dismiss }) => {
         dismiss();
         setRegeneratingSceneId(scene.id);
-        const { data, error } = await regenerateScene({ params: { id: scene.id } });
+        const { data, error } = await regenerateScene({ params: { id: scene.id }, body: { coverageMode } });
         setRegeneratingSceneId(null);
         if (data) {
           refetchScenes();
@@ -614,6 +718,48 @@ export default function StoryboardPage() {
     }))
   ).map((shot, order) => ({ ...shot, order }));
   const shotOrder = new Map(shotOptions.map((shot) => [shot.id, shot.order]));
+
+  // Flat chapter-order walk, used by the place marker to answer "what's next".
+  const shotWalk = (scenes ?? []).flatMap((scene) =>
+    scene.shots.map((shot) => ({
+      id: shot.id,
+      sceneId: scene.id,
+      number: `${scene.index}.${shot.index}`,
+      label: shot.label ?? null,
+    }))
+  );
+  const markerPosition = lastCopiedShotId ? shotWalk.findIndex((s) => s.id === lastCopiedShotId) : -1;
+  // -1 covers both "nothing copied yet" and "that shot no longer exists" — a
+  // regenerated scene, or a chapter opened on another device.
+  const markerCurrent = markerPosition === -1 ? null : shotWalk[markerPosition];
+  const markerNext = markerPosition === -1 ? null : (shotWalk[markerPosition + 1] ?? null);
+
+  function jumpToShot(target: { id: string; sceneId: string }) {
+    // Scenes are an accordion, so the target's scene has to be the open one
+    // before its shot can be scrolled to — and the shot only mounts once it is.
+    setCollapsed((prev) => {
+      const allIds = (scenes ?? []).map((s) => s.id);
+      const alreadyOpen = prev !== null && !prev.has(target.sceneId);
+      if (alreadyOpen) return prev;
+      const next = new Set(allIds.filter((sceneId) => sceneId !== target.sceneId));
+      try {
+        localStorage.setItem(collapsedStorageKey(chapterId), JSON.stringify([...next]));
+      } catch {
+        // ignore (private browsing / storage disabled)
+      }
+      return next;
+    });
+    // Two frames: one for the scene to expand, one for its shots to lay out.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`shot-${target.id}`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-accent");
+        setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 1400);
+      })
+    );
+  }
 
   function voiceOversForShot(shotId: string) {
     const order = shotOrder.get(shotId);
@@ -674,33 +820,42 @@ export default function StoryboardPage() {
             <div className={toolbarSep} />
             {/* One switch for the whole chapter, in the toolbar rather than on every
                 card: the mode is chapter-wide, and a copy per shot implied otherwise
-                while adding a bordered box to each one. */}
-            <div className="flex shrink-0 gap-1 rounded-full border border-line bg-panel-3 p-1">
+                while adding a bordered box to each one.
+
+                Deliberately NOT the accent pill the chapter tabs use. The two sat
+                forty pixels apart in identical clothing — same rounded-full border,
+                same bg-accent active state — so a view filter read as a fourth
+                destination. Navigation keeps the pill and the accent; this is a
+                squarer, quieter segmented control with icons, because it changes
+                what a card SHOWS, not where you are. */}
+            <div className="flex shrink-0 gap-0.5 rounded-md border border-line-2 bg-sunken p-0.5">
               {(
                 [
-                  ["start", "Image Prompt"],
-                  ["video", "Video Prompt"],
+                  ["start", "Image Prompt", ImageIcon],
+                  ["video", "Video Prompt", Video],
                 ] as const
-              ).map(([value, label]) => (
+              ).map(([value, label, Icon]) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => changePromptTab(value)}
                   aria-pressed={promptTab === value}
-                  className={`cursor-pointer rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap ${
-                    promptTab === value ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-[5px] px-3 py-1 text-[12px] font-medium whitespace-nowrap ${
+                    promptTab === value ? "bg-raised text-fg shadow-sm" : "text-fg-3 hover:text-fg"
                   }`}
                 >
+                  <Icon size={12} />
                   {label}
                 </button>
               ))}
             </div>
             <div className={toolbarSep} />
-            <span>{sceneCount} scenes</span>
-            <div className={toolbarSep} />
-            <span>{shotCount} shots</span>
-            <div className={toolbarSep} />
-            <span>~{totalDurationLabel} total</span>
+            {/* One comma-joined line, not three rules-separated cells: these are
+                one reading of the chapter, and a divider between each made them
+                look like three separate controls next to the actual ones. */}
+            <span className="whitespace-nowrap">
+              {sceneCount} scenes, {shotCount} shots, ~{totalDurationLabel} total
+            </span>
           </>
         )}
       </Toolbar>
@@ -839,14 +994,32 @@ export default function StoryboardPage() {
                       </MiniButton>
                     )}
                   </MenuTrigger>
-                  <MenuItem
-                    disabled={generating || regeneratingSceneId !== null}
-                    onClick={() => confirmRegenerateScene(scene)}
-                  >
-                    <span className="flex items-center gap-2 text-[13px]">
-                      <RefreshCw size={14} /> Regenerate scene
-                    </span>
-                  </MenuItem>
+                  {/* One entry per coverage size. A regeneration never sees the
+                      shots it replaces, so without a target the new take drifts
+                      longer every time — see lib/constants/coverage-modes.ts. */}
+                  <div className="px-3 pt-1 pb-1.5 text-[10.5px] font-medium uppercase tracking-wide text-fg-3">
+                    Regenerate scene
+                  </div>
+                  {COVERAGE_MODES.map((mode) => (
+                    <MenuItem
+                      key={mode}
+                      disabled={generating || regeneratingSceneId !== null}
+                      onClick={() => confirmRegenerateScene(scene, mode)}
+                    >
+                      <span className="flex items-center gap-2 text-[13px]">
+                        {mode === "tighter" ? (
+                          <Minus size={14} />
+                        ) : mode === "more" ? (
+                          <Plus size={14} />
+                        ) : mode === "free" ? (
+                          <Sparkles size={14} />
+                        ) : (
+                          <RefreshCw size={14} />
+                        )}
+                        {COVERAGE_MODE_LABELS[mode]}
+                      </span>
+                    </MenuItem>
+                  ))}
                 </Menu>
               </div>
               {!isCollapsed && (
@@ -864,7 +1037,11 @@ export default function StoryboardPage() {
                   const shotNumber = `${scene.index}.${shot.index}`;
 
                   return (
-                  <div key={shot.id} className="rounded-[10px] border border-line bg-panel-3 p-3.5 shadow-sm">
+                  <div
+                    key={shot.id}
+                    id={`shot-${shot.id}`}
+                    className="scroll-mt-4 rounded-[10px] border border-line bg-panel-3 p-3.5 shadow-sm transition-shadow"
+                  >
                     <div>
                       <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
                         <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${SCENE_PILL_CLASS}`}>
@@ -967,6 +1144,7 @@ export default function StoryboardPage() {
                         motionStyleId={story.motionStyleId}
                         lighting={scene.lighting}
                         tab={promptTab}
+                        onCopied={() => markCopied(shot.id)}
                       />
                     </div>
                   </div>
@@ -980,7 +1158,19 @@ export default function StoryboardPage() {
         </Wrap>
       </Body>
 
-      <Foot />
+      {/* The marker takes the footer's slot rather than stacking above it — two
+          bottom strips read as a wall, and a wordmark is the one thing here with
+          nothing to say while the user is mid-walk. Clearing the marker restores it. */}
+      {markerCurrent ? (
+        <ShotPlaceMarker
+          current={markerCurrent}
+          next={markerNext}
+          onJump={() => markerNext && jumpToShot(markerNext)}
+          onClear={clearCopiedMark}
+        />
+      ) : (
+        <Foot />
+      )}
     </Frame>
   );
 }

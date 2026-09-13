@@ -26,8 +26,10 @@ export async function copyText(text: string, label = "Prompt") {
       document.body.removeChild(ta);
       if (!ok) throw new Error("execCommand copy failed");
     }
-    toast.info(`${label} copied`);
+    toast.success(`${label} copied`);
+    return true;
   } catch {
     toast.error(`Couldn't copy ${label.toLowerCase()} — copy it manually from the card.`);
+    return false;
   }
 }

@@ -8,7 +8,12 @@ export function ToolbarButton({ className = "", ...props }: React.ComponentProps
   return (
     <Button
       variant="ghost"
-      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-hover ${className}`}
+      size="sm"
+      // GeckoUI's size="sm" sets its own padding, but Tailwind utilities sit in a
+      // later layer than GeckoUI's component CSS, so the class below is what
+      // actually decides it — it has to shrink with the size prop or the button
+      // stays md-sized.
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold text-fg hover:bg-hover ${className}`}
       {...props}
     />
   );
@@ -18,7 +23,12 @@ export function ToolbarLoadingButton({ className = "", ...props }: React.Compone
   return (
     <LoadingButton
       variant="ghost"
-      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-semibold text-fg hover:bg-hover ${className}`}
+      size="sm"
+      // GeckoUI's size="sm" sets its own padding, but Tailwind utilities sit in a
+      // later layer than GeckoUI's component CSS, so the class below is what
+      // actually decides it — it has to shrink with the size prop or the button
+      // stays md-sized.
+      className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold text-fg hover:bg-hover ${className}`}
       {...props}
     />
   );
