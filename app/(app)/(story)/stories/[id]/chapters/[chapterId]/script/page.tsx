@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { ScriptEditor, type SaveStatus } from "@/components/ScriptEditor";
-import { Foot } from "@/components/ui/Layout";
+import {  } from "@/components/ui/Layout";
 import { SkeletonScript } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -39,17 +38,16 @@ export default function ScriptPage() {
 
     if (loading) {
       return (
-        <Frame>
+        <>
           <div className="flex-1 overflow-hidden">
             <SkeletonScript label="Loading script" />
           </div>
-          <Foot />
-        </Frame>
+        </>
       );
     }
 
     return (
-      <Frame>
+      <>
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-[520px] rounded-xl border border-line-2 bg-panel-2 px-5 py-4 text-center">
             <p className="text-sm font-medium text-fg">Could not load script editor</p>
@@ -58,13 +56,12 @@ export default function ScriptPage() {
             </p>
           </div>
         </div>
-        <Foot />
-      </Frame>
+      </>
     );
   }
 
   return (
-    <Frame>
+    <>
       <ChapterHeader
         storyId={id}
         storyTitle={story.title}
@@ -79,7 +76,6 @@ export default function ScriptPage() {
 
       <ScriptEditor content={chapter.script} onChange={handleChange} />
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

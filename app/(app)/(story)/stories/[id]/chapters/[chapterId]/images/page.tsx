@@ -4,13 +4,12 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { Images, Trash2, Upload, FolderUp, Loader2, Pencil } from "lucide-react";
 import { ConfirmDialog, Dialog, Input, Select, SelectOption, toast } from "@geckoui/geckoui";
-import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Tag, AccentTag } from "@/components/ui/Tag";
 import { Toolbar, ToolbarButton, toolbarSep } from "@/components/ui/Toolbar";
-import { Body, Wrap, Foot } from "@/components/ui/Layout";
+import { Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { useChapterImageUpload, useImagePickers } from "@/components/ChapterImageUpload";
@@ -137,7 +136,7 @@ export default function ChapterImagesPage() {
 
   if (!story || !chapter) {
     return (
-      <Frame>
+      <>
         <Body>
           <Wrap wide>
             <div className="pt-6">
@@ -145,12 +144,12 @@ export default function ChapterImagesPage() {
             </div>
           </Wrap>
         </Body>
-      </Frame>
+      </>
     );
   }
 
   return (
-    <Frame>
+    <>
       <ChapterHeader
         storyId={id}
         storyTitle={story.title}
@@ -316,7 +315,6 @@ export default function ChapterImagesPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

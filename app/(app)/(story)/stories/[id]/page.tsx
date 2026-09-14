@@ -5,12 +5,9 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronRight, ArrowRight, MoreVertical, Copy, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
 import { Menu, MenuItem, MenuTrigger, ConfirmDialog, Input, Textarea } from "@geckoui/geckoui";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { StoryControlsMenu } from "@/components/StoryControlsMenu";
 import { LoadingButton, MiniButton } from "@/components/ui/Button";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonRows } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -85,27 +82,23 @@ export default function StoryDetailPage() {
 
   if (loading && !story) {
     return (
-      <Frame>
+      <>
         <Body>
           <Wrap wide>
             <SkeletonRows label="Loading episodes" />
           </Wrap>
         </Body>
-      </Frame>
+      </>
     );
   }
   if (!story) return null;
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <span className="text-fg">{story.title}</span>
         </Crumb>
-        <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggleButton />
-          <AccountMenu />
-        </div>
       </TopBar>
 
       <Body>
@@ -248,7 +241,6 @@ export default function StoryDetailPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

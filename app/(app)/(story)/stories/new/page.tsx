@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Frame } from "@/components/Frame";
 import { LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input, Textarea, Select, SelectOption } from "@geckoui/geckoui";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { useWrite } from "@/lib/spoosh";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 
@@ -31,7 +30,7 @@ export default function CreateStoryPage() {
   }
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <span className="text-fg">Create Story</span>
@@ -75,7 +74,6 @@ export default function CreateStoryPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

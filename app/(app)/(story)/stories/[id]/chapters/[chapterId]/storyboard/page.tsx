@@ -4,13 +4,12 @@ import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
-import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { Tag, AccentTag } from "@/components/ui/Tag";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/components/ui/Toolbar";
-import { Body, Wrap, Foot } from "@/components/ui/Layout";
+import { Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { AttachedImages } from "@/components/AttachedImages";
@@ -735,7 +734,7 @@ export default function StoryboardPage() {
 
   if (!story || !chapter) {
     return (
-      <Frame>
+      <>
         <Body>
           <Wrap wide>
             <div className="pt-6">
@@ -743,14 +742,14 @@ export default function StoryboardPage() {
             </div>
           </Wrap>
         </Body>
-      </Frame>
+      </>
     );
   }
 
   const styleContext = resolveStyleContext(story.region, story.visualStyleId);
 
   return (
-    <Frame>
+    <>
       <ChapterHeader
         storyId={id}
         storyTitle={story.title}
@@ -896,7 +895,7 @@ export default function StoryboardPage() {
               // --scene-hue is set here so the header, the badge and every shot
               // pill inside this card all read the same scene color.
               style={sceneVars}
-              className={`mb-4.5 overflow-hidden rounded-xl border bg-panel-2 shadow-sm ${
+              className={`mb-4.5 overflow-hidden rounded-xl border bg-panel-2 shadow-sm last:mb-0 ${
                 isCollapsed ? "border-line" : SCENE_BORDER_CLASS
               }`}
             >
@@ -1169,8 +1168,6 @@ export default function StoryboardPage() {
           })}
         </Wrap>
       </Body>
-
-      <Foot />
-    </Frame>
+    </>
   );
 }

@@ -35,7 +35,7 @@ defaults at story level and can be overridden by a chapter.
 app/
   api/                         Next Route Handlers; browser data boundary
     auth/                      Email/password session operations
-    stories/                   Story list, detail, trash, bible, chapters
+    (story)/stories/           Story list, detail, trash, bible, chapters (URL: /api/stories)
     chapters/                  Script persistence, extraction, sync, storyboard
     chapters/:id/images/       List + record uploaded renders; /presign mints R2 PUT URLs
     chapter-images/:id         Delete one uploaded render (row + R2 object)
@@ -44,12 +44,19 @@ app/
     bible-entries/             Edit shared story-bible entries and images
     shots/                     Store/clear user prompt overrides
     voice-overs/               Edit narration text overrides and shot ranges
-  stories/                     Story list/detail and three-step chapter UI
-  account/                     Email display and password change
-  settings/                    Read-only styles and system prompts
-  sign-in/, sign-up/           Supabase Auth UI
+  (app)/                       Shared layout.tsx: renders Sidebar + rounded panel once,
+                               so it survives client-side navigation between these routes
+    (story)/
+      stories/                 Story list/detail and three-step chapter UI (URL: /stories)
+    (movie-recap)/
+      movie-recap/             Stub page only, feature not built yet (URL: /movie-recap)
+    account/                   Email display and password change
+    settings/                  Read-only styles and system prompts
+  sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
 
 components/
+  Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap; collapsible
   ScriptEditor.tsx             Tiptap screenplay editor and import UI
   ChapterHeader.tsx            Chapter navigation and workflow tabs
   StoryControlsMenu.tsx        Story style, motion style, region, aspect, delete, bible

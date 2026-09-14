@@ -5,8 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, CircleCheck, CircleAlert, Pencil } from "lucide-react";
 import { Select, SelectOption, Dialog, Input } from "@geckoui/geckoui";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
 import { ChapterControlsMenu } from "@/components/ChapterControlsMenu";
 import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
@@ -163,8 +161,6 @@ export function ChapterHeader({
           storyAspectRatio={storyAspectRatio}
           chapterAspectRatio={chapterAspectRatio}
         />
-        <ThemeToggleButton />
-          <AccountMenu />
       </div>
     </header>
   );

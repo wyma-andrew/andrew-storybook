@@ -2,12 +2,9 @@
 
 import Link from "next/link";
 import { Plus, Settings } from "lucide-react";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { LinkButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
-import { TopBar, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonStoryGrid } from "@/components/ui/Skeleton";
 import { useRead } from "@/lib/spoosh";
 
@@ -15,7 +12,7 @@ export default function StoriesPage() {
   const { data: stories, loading, error } = useRead((api) => api("stories").GET());
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <div className="text-[19px] font-medium">AI Storybook</div>
         <div className="ml-auto flex items-center gap-2.5">
@@ -25,8 +22,6 @@ export default function StoriesPage() {
           <LinkButton variant="secondary" href="/settings" className="!h-9 !w-9 !p-0 flex items-center justify-center" title="Settings">
             <Settings size={16} />
           </LinkButton>
-          <ThemeToggleButton />
-          <AccountMenu />
         </div>
       </TopBar>
 
@@ -78,7 +73,6 @@ export default function StoriesPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

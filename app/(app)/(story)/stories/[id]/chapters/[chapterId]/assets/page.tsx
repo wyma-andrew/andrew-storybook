@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, ListPlus as AddToBible } from "lucide-react";
-import { Frame } from "@/components/Frame";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
 import { useChapterImageUpload, useImagePickers } from "@/components/ChapterImageUpload";
@@ -14,7 +13,7 @@ import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/componen
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
 import { Toolbar, ToolbarLoadingButton } from "@/components/ui/Toolbar";
-import { Body, Wrap, Foot } from "@/components/ui/Layout";
+import { Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
 import { ConfirmDialog, Dialog, Input, Textarea, Menu, MenuItem, MenuTrigger, toast } from "@geckoui/geckoui";
 import { useRead, useWrite, useQueue } from "@/lib/spoosh";
@@ -708,7 +707,7 @@ export default function AssetsPage() {
   // this tab; the grids below have a known shape, so show it.
   if (!story || !chapter) {
     return (
-      <Frame>
+      <>
         <Body>
           <Wrap wide>
             <div className="pt-6">
@@ -716,7 +715,7 @@ export default function AssetsPage() {
             </div>
           </Wrap>
         </Body>
-      </Frame>
+      </>
     );
   }
 
@@ -730,7 +729,7 @@ export default function AssetsPage() {
   });
 
   return (
-    <Frame>
+    <>
       <ChapterHeader
         storyId={id}
         storyTitle={story.title}
@@ -836,7 +835,6 @@ export default function AssetsPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

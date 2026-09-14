@@ -4,12 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@geckoui/geckoui";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { LinkButton, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonStoryGrid } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -38,15 +35,11 @@ export default function StoriesTrashPage() {
   }
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <span className="text-fg">Trash</span>
         </Crumb>
-        <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggleButton />
-          <AccountMenu />
-        </div>
       </TopBar>
 
       <Body>
@@ -106,7 +99,6 @@ export default function StoriesTrashPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

@@ -24,7 +24,7 @@ type ApiSchema = {
   "auth/password": {
     PATCH: { data: null; body: { password: string } };
   };
-  stories: {
+  "stories": {
     GET: { data: StoryListItem[] };
     POST: { data: Story; body: { title: string; description?: string; visualStyleId?: string | null } };
   };

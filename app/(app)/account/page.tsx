@@ -2,14 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { AdminBlock } from "@/components/ui/AdminBlock";
 import { LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@geckoui/geckoui";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -41,7 +38,7 @@ export default function AccountPage() {
 
   if (!me) {
     return (
-      <Frame>
+      <>
         <Body>
           <Wrap>
             <div role="status" aria-label="Loading account" className="pt-6">
@@ -52,20 +49,16 @@ export default function AccountPage() {
             </div>
           </Wrap>
         </Body>
-      </Frame>
+      </>
     );
   }
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <span className="text-fg">Account</span>
         </Crumb>
-        <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggleButton />
-          <AccountMenu />
-        </div>
       </TopBar>
 
       <Body>
@@ -97,7 +90,6 @@ export default function AccountPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

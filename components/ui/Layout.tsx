@@ -14,10 +14,6 @@ export function Wrap({
   return <div className={`mx-auto px-6 ${wide ? "max-w-[1180px]" : "max-w-[820px]"} ${className}`}>{children}</div>;
 }
 
-export function Foot() {
-  return <div className="px-0 pb-1.5 text-center text-[11px] text-line-3">AI Storybook</div>;
-}
-
 export function TopBar({ children }: { children: React.ReactNode }) {
   return <header className="flex items-center gap-3.5 border-b border-line px-6 py-4">{children}</header>;
 }

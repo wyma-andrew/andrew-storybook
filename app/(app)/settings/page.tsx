@@ -2,12 +2,9 @@
 
 import Link from "next/link";
 import { Lock } from "lucide-react";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { AdminBlock } from "@/components/ui/AdminBlock";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { SYSTEM_PROMPTS } from "@/lib/constants/system-prompts";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 import { REGIONS } from "@/lib/constants/regions";
@@ -19,15 +16,11 @@ export default function SettingsPage() {
   const locationExterior = SYSTEM_PROMPTS.locationExterior;
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <span className="text-fg">Settings</span>
         </Crumb>
-        <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggleButton />
-          <AccountMenu />
-        </div>
       </TopBar>
 
       <Body>
@@ -130,7 +123,6 @@ export default function SettingsPage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

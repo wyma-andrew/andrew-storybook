@@ -4,15 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
-import { Frame } from "@/components/Frame";
-import { AccountMenu } from "@/components/AccountMenu";
-import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { PromptHint } from "@/components/ui/PromptHint";
-import { TopBar, Crumb, Body, Wrap, Foot } from "@/components/ui/Layout";
+import { TopBar, Crumb, Body, Wrap } from "@/components/ui/Layout";
 import { Textarea, Switch } from "@geckoui/geckoui";
 import { useRead, useWrite } from "@/lib/spoosh";
 import type { BibleEntry } from "@/lib/api/types";
@@ -197,16 +194,12 @@ export default function BiblePage() {
   const props = bible?.filter((b) => b.kind === "prop") ?? [];
 
   return (
-    <Frame>
+    <>
       <TopBar>
         <Crumb>
           <Link href="/stories">Stories</Link> / <Link href={`/stories/${id}`}>{story?.title ?? "…"}</Link> /{" "}
           <span className="text-fg">Asset Bible</span>
         </Crumb>
-        <div className="ml-auto flex items-center gap-2.5">
-          <ThemeToggleButton />
-          <AccountMenu />
-        </div>
       </TopBar>
 
       <Body>
@@ -251,7 +244,6 @@ export default function BiblePage() {
         </Wrap>
       </Body>
 
-      <Foot />
-    </Frame>
+    </>
   );
 }

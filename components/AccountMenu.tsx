@@ -18,7 +18,9 @@ export function AccountMenu() {
   }
 
   return (
-    <Menu menuClassName="min-w-[220px] p-0">
+    // Docked in the sidebar footer near the bottom of the screen — open
+    // upward, or a bottom-heavy viewport clips the panel.
+    <Menu menuClassName="min-w-[220px] p-0" placement="top-start">
       <MenuTrigger>
         {({ toggleMenu }) => (
           <div
