@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Gauge, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -187,6 +187,20 @@ function ShotPrompts({
 
   const showVideo = resolveShotView(tab, shot) === "video";
 
+  function handleMotionModeChange(value: string) {
+    const option = motionModes.find((o) => o.value === value);
+    ConfirmDialog.show({
+      title: `Switch motion to "${option?.label}"?`,
+      content: `${option?.hint} — appended to this shot's copied video prompt.`,
+      confirmButtonLabel: "Switch",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        await write({ motionMode: value });
+        dismiss();
+      },
+    });
+  }
+
   return (
     <>
       {showVideo ? (
@@ -245,27 +259,21 @@ function ShotPrompts({
           </p>
         </div>
       </div>
-      {/* Temporarily hidden from the UI - motionMode is still written and appended. */}
-      {shot.videoPrompt && (
-        <div hidden className="mt-2 rounded-lg border border-line-2 bg-sunken p-3">
-          <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
-            <Gauge size={12} /> Motion · {motionStyle.name}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Select
-              value={activeMode}
-              onChange={(value) => void write({ motionMode: value })}
-              disabled={saving}
-              wrapperClassName="sm:w-[190px]"
-            >
-              {motionModes.map((option) => (
-                <SelectOption key={option.value} value={option.value} label={option.label} />
-              ))}
-            </Select>
-            <p className="flex-1 text-[11.5px] text-fg-3">
-              {motionModes.find((option) => option.value === activeMode)?.hint} · appended to the copied video prompt
-            </p>
-          </div>
+      {tab === "video" && shot.videoPrompt && (
+        <div
+          className="mt-3.5 flex items-center"
+          title={`${motionModes.find((option) => option.value === activeMode)?.hint} · appended to the copied video prompt`}
+        >
+          <Select
+            value={activeMode}
+            onChange={handleMotionModeChange}
+            disabled={saving}
+            wrapperClassName="w-[150px]"
+          >
+            {motionModes.map((option) => (
+              <SelectOption key={option.value} value={option.value} label={option.label} />
+            ))}
+          </Select>
         </div>
       )}
     </>
