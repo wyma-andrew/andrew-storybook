@@ -4,15 +4,20 @@ import { useRef } from "react";
 import Image from "next/image";
 import { Grip } from "lucide-react";
 import type { MovieRecapProject } from "@/lib/api/types";
+import { MOVIE_RECAP_LOGO_BOX, MOVIE_RECAP_SUBTITLE_SAMPLE } from "@/lib/constants/movie-recap";
 import { clampBlurRect } from "@/lib/movie-recap";
+import { MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
 
 type BlurRect = { x: number; y: number; width: number; height: number };
 
-const logoPosition: Record<MovieRecapProject["logoPlacement"], string> = {
-  top_left: "left-[4%] top-[4%]",
-  top_right: "right-[4%] top-[4%]",
-  bottom_left: "bottom-[4%] left-[4%]",
-  bottom_right: "bottom-[4%] right-[4%]",
+// Corner anchors use the shared margin so the CSS preview and the ffmpeg
+// overlay place the logo identically (MOVIE_RECAP_LOGO_BOX).
+const m = `${MOVIE_RECAP_LOGO_BOX.marginPct}%`;
+const logoPosition: Record<MovieRecapProject["logoPlacement"], React.CSSProperties> = {
+  top_left: { left: m, top: m, justifyContent: "flex-start", alignItems: "flex-start" },
+  top_right: { right: m, top: m, justifyContent: "flex-end", alignItems: "flex-start" },
+  bottom_left: { left: m, bottom: m, justifyContent: "flex-start", alignItems: "flex-end" },
+  bottom_right: { right: m, bottom: m, justifyContent: "flex-end", alignItems: "flex-end" },
 };
 
 export function MovieRecapPreview({
@@ -58,20 +63,35 @@ export function MovieRecapPreview({
       <div className="flex min-h-[520px] items-center justify-center rounded-xl border border-line bg-sunken p-5">
         <div
           ref={frameRef}
-          className="relative max-h-[480px] w-full max-w-[620px] overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl"
+          className={`relative overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl ${
+            project.aspectRatio === "9:16" ? "h-[480px] w-auto" : "w-full max-w-[620px] h-auto"
+          }`}
           style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
         >
-          {videoUrl ? <video src={videoUrl} className="h-full w-full object-cover" controls preload="metadata" /> : <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>}
-
-          {project.subtitleMode === "styled" && (
-            <div className="pointer-events-none absolute inset-x-[8%] bottom-[8%] text-center">
-              <span className="inline-block rounded-md bg-bg/80 px-3 py-1.5 text-sm font-semibold text-fg shadow-lg">The subtitle will show here</span>
-            </div>
+          {videoUrl ? (
+            <video
+              src={videoUrl}
+              className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
+              controls
+              preload="metadata"
+            />
+          ) : (
+            <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
           )}
 
+          <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />
+
           {project.logoEnabled && (
-            <div className={`pointer-events-none absolute w-[18%] ${logoPosition[project.logoPlacement]}`} style={{ opacity: project.logoOpacity / 100 }}>
-              {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={160} height={80} unoptimized className="max-h-16 max-w-full object-contain" /> : <div className="rounded border border-dashed border-line-2 bg-panel/80 px-2 py-1 text-center text-[10px] font-semibold text-fg-2">LOGO</div>}
+            <div
+              className="pointer-events-none absolute flex"
+              style={{
+                ...logoPosition[project.logoPlacement],
+                width: `${MOVIE_RECAP_LOGO_BOX.widthPct}%`,
+                height: `${MOVIE_RECAP_LOGO_BOX.heightPct}%`,
+                opacity: project.logoOpacity / 100,
+              }}
+            >
+              {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
             </div>
           )}
 
@@ -80,7 +100,7 @@ export function MovieRecapPreview({
               role="button"
               tabIndex={0}
               aria-label="Move blur area. Use arrow keys for one percent steps and Shift for five percent steps."
-              className="absolute grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent bg-panel/35 text-on-accent shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-accent"
+              className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent bg-panel/35 text-on-accent shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-accent"
               style={{ left: `${blur.x}%`, top: `${blur.y}%`, width: `${blur.width}%`, height: `${blur.height}%` }}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import {
+  isHexColor,
   isMovieRecapAspectRatio,
+  isMovieRecapFitMode,
   isMovieRecapLogoPlacement,
-  isMovieRecapSubtitleMode,
+  isMovieRecapSubtitlePosition,
 } from "@/lib/constants/movie-recap";
 import { abortMultipartUpload, deleteObject } from "@/lib/r2";
 import { supabaseRoute } from "@/lib/supabase/route";
@@ -46,9 +48,40 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.aspect_ratio = body.aspectRatio;
     changesConfiguration = true;
   }
-  if (body?.subtitleMode !== undefined) {
-    if (!isMovieRecapSubtitleMode(body.subtitleMode)) return NextResponse.json({ error: "Invalid subtitle mode." }, { status: 400 });
-    patch.subtitle_mode = body.subtitleMode;
+  if (body?.fitMode !== undefined) {
+    if (!isMovieRecapFitMode(body.fitMode)) return NextResponse.json({ error: "Invalid fit mode." }, { status: 400 });
+    patch.fit_mode = body.fitMode;
+    changesConfiguration = true;
+  }
+  if (body?.subtitlePosition !== undefined) {
+    if (!isMovieRecapSubtitlePosition(body.subtitlePosition)) return NextResponse.json({ error: "Invalid subtitle position." }, { status: 400 });
+    patch.subtitle_position = body.subtitlePosition;
+    changesConfiguration = true;
+  }
+  for (const [client, column] of [["subtitleColor", "subtitle_color"], ["subtitleBgColor", "subtitle_bg_color"]] as const) {
+    if (body?.[client] !== undefined) {
+      if (!isHexColor(body[client])) return NextResponse.json({ error: `${client} must be a #RRGGBB color.` }, { status: 400 });
+      patch[column] = body[client];
+      changesConfiguration = true;
+    }
+  }
+  for (const [client, column, min, max] of [
+    ["subtitleFontSize", "subtitle_font_size", 2, 16],
+    ["subtitleBgOpacity", "subtitle_bg_opacity", 0, 100],
+    ["subtitleOffset", "subtitle_offset", 0, 45],
+  ] as const) {
+    if (body?.[client] !== undefined) {
+      const value = Number(body[client]);
+      if (!Number.isFinite(value) || value < min || value > max) {
+        return NextResponse.json({ error: `${client} must be ${min}–${max}.` }, { status: 400 });
+      }
+      patch[column] = value;
+      changesConfiguration = true;
+    }
+  }
+  if (body?.subtitleBold !== undefined) {
+    if (typeof body.subtitleBold !== "boolean") return NextResponse.json({ error: "subtitleBold must be boolean." }, { status: 400 });
+    patch.subtitle_bold = body.subtitleBold;
     changesConfiguration = true;
   }
   if (body?.logoPlacement !== undefined) {
@@ -56,7 +89,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.logo_placement = body.logoPlacement;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"], ["copyrightFree", "copyright_free"]] as const) {
+  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"]] as const) {
     if (body?.[client] !== undefined) {
       if (typeof body[client] !== "boolean") return NextResponse.json({ error: `${client} must be boolean.` }, { status: 400 });
       patch[column] = body[client];

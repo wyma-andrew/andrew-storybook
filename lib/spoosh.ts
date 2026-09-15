@@ -82,6 +82,14 @@ export type ApiSchema = {
     };
     DELETE: { data: MovieRecapProject };
   };
+  "movie-recaps/:id/render": {
+    // mock: skip the paid AI steps (Whisper + narration) and render canned
+    // narration instead — for iterating on overlay/subtitle design.
+    POST: { data: MovieRecapProject; body: { mock?: boolean } };
+  };
+  "movie-recaps/:id/render/cancel": {
+    POST: { data: { cancelled: boolean } };
+  };
   "auth/me": {
     GET: { data: Me };
   };

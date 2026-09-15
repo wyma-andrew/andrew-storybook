@@ -92,7 +92,7 @@ function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
 }
 
-export function movieRecapObjectKey(projectId: string, kind: "source" | "logo", fileName: string) {
+export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle", fileName: string) {
   return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
@@ -145,6 +145,13 @@ export function presignPut(objectKey: string, contentType: string) {
 
 export async function deleteObject(objectKey: string) {
   await r2().send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+}
+
+// Server-generated files (render output, subtitles) never come from a browser
+// upload, so the server writes them directly — no presigned URL involved.
+export async function putObject(objectKey: string, body: Buffer, contentType: string) {
+  await r2().send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, Body: body, ContentType: contentType }));
+  return publicUrlFor(objectKey);
 }
 
 export async function createMultipartUpload(objectKey: string, contentType: string) {

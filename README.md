@@ -36,6 +36,30 @@ Place the approved Narrator preview at:
 public/movie-recap/voices/narrator.mp3
 ```
 
+## Movie Recap rendering (ffmpeg with libass)
+
+The render pipeline shells out to ffmpeg, and burning styled Burmese subtitles
+into the output needs libass + harfbuzz. Homebrew's plain `ffmpeg` formula no
+longer includes them:
+
+```bash
+brew install ffmpeg-full   # keg-only, so it is not on PATH
+```
+
+Then point the app at it in `.env` (the font must be installed locally;
+`Noto Sans Myanmar` ships with macOS):
+
+```bash
+FFMPEG_PATH=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+MOVIE_RECAP_SUBTITLE_FONT=Noto Sans Myanmar
+```
+
+Check a build before using it — all three filters must be listed:
+
+```bash
+"$FFMPEG_PATH" -filters | grep -E ' (subtitles|ass|drawtext) '
+```
+
 ## Burmese Voice Lab
 
 The authenticated `/labs/voice` page generates short Burmese WAV samples

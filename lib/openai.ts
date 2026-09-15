@@ -9,6 +9,8 @@ import {
   type SceneRegenerationTarget,
 } from "./prompts/storyboard";
 import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
+import { MOVIE_RECAP_NARRATION_SCHEMA, movieRecapNarrationSystemPrompt } from "./prompts/movie-recap-narration";
+import type { MovieRecapNarrationSegment } from "./api/types";
 import type { Region } from "./constants/regions";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
@@ -199,4 +201,30 @@ export async function regenerateSceneShots(
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
   return (JSON.parse(raw) as { shots: GeneratedShot[] }).shots ?? [];
+}
+
+// Movie Recap render pipeline, step 3 — turns a Whisper transcript of the
+// source video into a Burmese recap narration script. See lib/movie-recap-render.ts.
+export type TranscriptSegment = { start: number; end: number; text: string };
+
+export async function generateMovieRecapNarration(
+  transcript: TranscriptSegment[],
+  signal?: AbortSignal
+): Promise<MovieRecapNarrationSegment[]> {
+  const res = await openai().chat.completions.create(
+    {
+      model: "gpt-5.6-luna",
+      messages: [
+        { role: "system", content: movieRecapNarrationSystemPrompt },
+        { role: "user", content: JSON.stringify({ transcript }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "movie_recap_narration", schema: MOVIE_RECAP_NARRATION_SCHEMA, strict: true },
+      },
+    },
+    { signal }
+  );
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { segments: MovieRecapNarrationSegment[] }).segments ?? [];
 }

@@ -3,9 +3,10 @@ import type { ShotScale } from "@/lib/constants/shot-scales";
 import type { MotionMode } from "@/lib/constants/motion-styles";
 import type {
   MovieRecapAspectRatio,
+  MovieRecapFitMode,
   MovieRecapLanguage,
   MovieRecapLogoPlacement,
-  MovieRecapSubtitleMode,
+  MovieRecapSubtitlePosition,
   MovieRecapVoiceId,
 } from "@/lib/constants/movie-recap";
 
@@ -23,7 +24,14 @@ export type MovieRecapProject = {
   sourceLastModified: number;
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
-  subtitleMode: MovieRecapSubtitleMode;
+  fitMode: MovieRecapFitMode;
+  subtitleFontSize: number;
+  subtitleColor: string;
+  subtitleBgColor: string;
+  subtitleBgOpacity: number;
+  subtitlePosition: MovieRecapSubtitlePosition;
+  subtitleOffset: number;
+  subtitleBold: boolean;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;
@@ -37,11 +45,40 @@ export type MovieRecapProject = {
   blurY: number;
   blurWidth: number;
   blurHeight: number;
-  copyrightFree: boolean;
   currentStep: 1 | 2 | 3 | 4;
   status: "draft" | "ready_for_generation";
+  renderStatus: "idle" | "running" | "done" | "failed";
+  renderIsMock: boolean;
+  renderError: string | null;
+  renderStage: MovieRecapRenderStage | null;
+  renderProgressCurrent: number | null;
+  renderProgressTotal: number | null;
+  renderScript: MovieRecapNarrationSegment[] | null;
+  renderOutputUrl: string | null;
+  renderStartedAt: string | null;
+  renderCompletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+// Mirrors the stage names lib/movie-recap-render.ts writes as it runs, for
+// progress display — see history/movie-recap.md, "real render progress".
+export type MovieRecapRenderStage =
+  | "extracting_audio"
+  | "transcribing"
+  | "writing_script"
+  | "rendering_segments"
+  | "concatenating"
+  | "applying_overlays"
+  | "uploading";
+
+// One narration line from the render pipeline's script-generation step, timed
+// against the ORIGINAL source video (sourceStartS/sourceEndS), not against the
+// (not-yet-generated) narration audio — see lib/movie-recap-render.ts.
+export type MovieRecapNarrationSegment = {
+  sourceStartS: number;
+  sourceEndS: number;
+  text: string;
 };
 
 export type MovieRecapProjectPatch = Partial<{
@@ -49,7 +86,14 @@ export type MovieRecapProjectPatch = Partial<{
   outputLanguage: MovieRecapProject["outputLanguage"];
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
-  subtitleMode: MovieRecapProject["subtitleMode"];
+  fitMode: MovieRecapProject["fitMode"];
+  subtitleFontSize: number;
+  subtitleColor: string;
+  subtitleBgColor: string;
+  subtitleBgOpacity: number;
+  subtitlePosition: MovieRecapProject["subtitlePosition"];
+  subtitleOffset: number;
+  subtitleBold: boolean;
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;
@@ -58,7 +102,6 @@ export type MovieRecapProjectPatch = Partial<{
   blurY: number;
   blurWidth: number;
   blurHeight: number;
-  copyrightFree: boolean;
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];
 }>;
