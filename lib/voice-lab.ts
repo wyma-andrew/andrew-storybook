@@ -3,10 +3,17 @@ export const VOICE_LAB_MAX_TEXT_LENGTH = 600;
 export const VOICE_LAB_PROFILES = [
   {
     id: "narrator",
-    name: "Narrator",
+    name: "Wai Yan",
     description: "A clear, calm Burmese recap voice with steady cinematic pacing.",
     stylePrompt: "A calm cinematic narrator with a clear mature voice and steady storytelling pace",
     seed: 20260915,
+  },
+  {
+    id: "narrator-female",
+    name: "Yu Yu",
+    description: "A clear, calm Burmese recap voice with a female timbre and steady cinematic pacing.",
+    stylePrompt: "A calm cinematic female narrator with a clear mature voice and steady storytelling pace",
+    seed: 20260916,
   },
 ] as const;
 

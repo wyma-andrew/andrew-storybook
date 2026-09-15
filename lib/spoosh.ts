@@ -33,7 +33,7 @@ export type ApiSchema = {
       };
       body: {
         text: string;
-        voiceId: "narrator";
+        voiceId: "narrator" | "narrator-female";
       };
     };
   };

@@ -21,7 +21,7 @@ function audioUrlFromBase64(audioBase64: string, contentType: string) {
 
 export default function VoiceLabPage() {
   const [text, setText] = useState(DEFAULT_TEXT);
-  const [voiceId] = useState<VoiceLabProfileId>("narrator");
+  const [voiceId, setVoiceId] = useState<VoiceLabProfileId>("narrator");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioMeta, setAudioMeta] = useState<{ durationSeconds: number; generationMs: number; sampleRate: number } | null>(null);
   const { data: health, loading: healthLoading, trigger: checkHealth } = useRead(
@@ -117,21 +117,42 @@ export default function VoiceLabPage() {
 
                 <div className="mt-5">
                   <Label>Voice profile</Label>
-                  <div className="mt-2 rounded-xl border border-accent bg-accent-dim p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-on-accent">
-                        <Volume2 size={16} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold">{profile.name}</span>
-                          <span className="flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-on-accent">
-                            <Check size={10} /> Selected
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-fg-2">{profile.description}</p>
-                      </div>
-                    </div>
+                  <div className="mt-2 space-y-2">
+                    {VOICE_LAB_PROFILES.map((item) => {
+                      const selected = item.id === voiceId;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          disabled={generating}
+                          onClick={() => setVoiceId(item.id)}
+                          className={`w-full rounded-xl border p-4 text-left transition-colors ${
+                            selected ? "border-accent bg-accent-dim" : "border-line-2 bg-sunken hover:border-accent"
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`grid size-9 shrink-0 place-items-center rounded-full ${
+                                selected ? "bg-accent text-on-accent" : "border border-line-2 text-fg-3"
+                              }`}
+                            >
+                              <Volume2 size={16} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold">{item.name}</span>
+                                {selected && (
+                                  <span className="flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium text-on-accent">
+                                    <Check size={10} /> Selected
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-xs leading-relaxed text-fg-2">{item.description}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
