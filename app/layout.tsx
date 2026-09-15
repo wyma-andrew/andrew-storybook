@@ -46,7 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             top-centre is the centre option that works here, because the
             storyboard's place marker now occupies the bottom edge and a
             bottom-centre toast would land on top of it. */}
-        <GeckoUIPortal toastOptions={{ position: "top-center", duration: 1000, ...TOAST_STYLE }} />
+        <GeckoUIPortal toastOptions={{ position: "top-center", duration: 3000, ...TOAST_STYLE }} />
       </body>
     </html>
   );

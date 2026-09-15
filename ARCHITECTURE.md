@@ -44,13 +44,16 @@ app/
     bible-entries/             Edit shared story-bible entries and images
     shots/                     Store/clear user prompt overrides
     voice-overs/               Edit narration text overrides and shot ranges
+    (movie-recap)/movie-recaps/ Recap CRUD, multipart source upload, logo upload
+    labs/voice/                Authenticated proxy to the self-hosted TTS lab worker
   (app)/                       Shared layout.tsx: renders Sidebar + rounded panel once,
                                so it survives client-side navigation between these routes
     (story)/
       stories/                 Story list/detail and three-step chapter UI (URL: /stories)
     (movie-recap)/
-      movie-recap/             Stub page only, feature not built yet (URL: /movie-recap)
+      movie-recap/             Recap project list + four-step editor (URL: /movie-recap)
     account/                   Email display and password change
+    labs/voice/                Burmese narration generation test bench
     settings/                  Read-only styles and system prompts
   sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
 
@@ -75,6 +78,7 @@ lib/
   supabase/                    Session-bound route/server/middleware clients
 
 supabase/migrations/           Ordered, authoritative database schema history
+workers/voice-lab/             Optional Python VoxCPM2 inference service for lab tests
 history/                       Feature decisions and rejected alternatives
 demo/                          Static visual references; not part of the app
 proxy.ts                       Session refresh and page-route auth redirects
@@ -126,6 +130,34 @@ religious character may carry a separate English `KNOWN IDENTITY` line inside
 its visual prompt to improve image-model recognition without changing that key.
 
 ## Main feature flows
+
+### Movie Recap (phase one)
+
+- UI: `app/(app)/(movie-recap)/movie-recap/` and `components/movie-recap/`
+- API: `app/api/(movie-recap)/movie-recaps/`
+- Storage: Cloudflare R2 multipart source upload and presigned logo PUT
+
+Users create resumable recap projects, upload one browser-playable source,
+choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
+movable blur configuration. Source bytes upload directly to R2 in parts; the
+database retains the multipart id so completed parts survive a reload after the
+same local file is reselected. Generate currently records
+`ready_for_generation` only. Video analysis, transformation, and output belong
+to phase two.
+
+### Burmese Voice Lab
+
+- UI: `app/(app)/labs/voice/`
+- API proxy: `app/api/labs/voice/`
+- Worker: `workers/voice-lab/`
+
+The authenticated lab sends bounded Burmese test text through Spoosh to a
+Next.js route, which forwards it to a separately running self-hosted VoxCPM2
+worker. The worker lazily loads the model, applies the code-defined Narrator
+voice-design prompt and seed, and returns an in-memory WAV for playback and
+download. Lab text and audio are deliberately not stored in Supabase or R2.
+`VOICE_LAB_WORKER_URL` stays server-only; an optional shared bearer token
+protects the worker connection.
 
 ### Script
 
@@ -239,6 +271,9 @@ auth.users
        -> bible_entries.story_id
             -> bible_entry_images.bible_entry_id
 
+auth.users
+  -> movie_recap_projects.owner_id
+
 chapter_assets.bible_entry_id -> bible_entries.id (nullable)
 voice_over_segments.start_shot_id / end_shot_id -> shots.id
 ```
@@ -255,6 +290,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `scenes` | Ordered storyboard scenes and their lighting line |
 | `shots` | Ordered prompts, overrides, references, beat, framing scale, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
+| `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;
 normal story deletion is soft deletion through `stories.deleted_at`, while the
@@ -280,6 +316,10 @@ storyboard shot ranges as a separate narration overlay. The UI ships a dark and 
 light theme, chosen by the user in the account menu (dark by default, OS
 preference deliberately ignored).
 
+Movie Recap phase one is implemented as owner-scoped projects with resumable
+R2 source upload, playable preview, persisted settings/customization, and a
+ready-for-generation handoff. Recap processing and output are not implemented.
+
 Current intentional limits: no OAuth, magic link, password-reset flow,
 database style editor, or character/prop reference images. Uploaded chapter
 images go to Cloudflare R2 (presigned PUT straight from the browser); the
@@ -300,6 +340,8 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |
 | Shot prompts holding the location reference | `history/shot-location-consistency.md` |
 | Chapter image gallery and R2 uploads | `history/chapter-images.md` |
+| Movie Recap phase-one projects and uploads | `history/movie-recap.md` |
+| Burmese self-hosted narration experiments | `history/voice-lab.md` |
 | Light/dark theming and color tokens | `history/theming.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
 

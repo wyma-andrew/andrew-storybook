@@ -1,14 +1,87 @@
 "use client";
 
-import { Spoosh } from "@spoosh/core";
+import { createClient, Spoosh } from "@spoosh/core";
 import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 
-type ApiSchema = {
+export type ApiSchema = {
+  "labs/voice/health": {
+    GET: {
+      data: {
+        configured: boolean;
+        reachable: boolean;
+        model?: string;
+        device?: string;
+        loaded?: boolean;
+        message: string;
+      };
+    };
+  };
+  "labs/voice/generate": {
+    POST: {
+      data: {
+        audioBase64: string;
+        contentType: "audio/wav";
+        durationSeconds: number;
+        sampleRate: number;
+        generationMs: number;
+        seed: number;
+      };
+      body: {
+        text: string;
+        voiceId: "narrator";
+      };
+    };
+  };
+  "movie-recaps": {
+    GET: { data: MovieRecapProject[] };
+    POST: {
+      data: MovieRecapProject;
+      body: {
+        fileName: string;
+        contentType: string;
+        sizeBytes: number;
+        durationSeconds: number;
+        lastModified: number;
+      };
+    };
+  };
+  "movie-recaps/:id": {
+    GET: { data: MovieRecapProject };
+    PATCH: {
+      data: MovieRecapProject;
+      body: MovieRecapProjectPatch;
+    };
+    DELETE: { data: null };
+  };
+  "movie-recaps/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: MovieRecapProject };
+    DELETE: { data: null };
+  };
+  "movie-recaps/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "movie-recaps/:id/source/multipart/complete": {
+    POST: { data: MovieRecapProject; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "movie-recaps/:id/logo/presign": {
+    POST: {
+      data: { fileName: string; objectKey: string; contentType: string; url: string; uploadUrl: string };
+      body: { fileName: string; contentType: string; sizeBytes: number };
+    };
+  };
+  "movie-recaps/:id/logo": {
+    POST: {
+      data: MovieRecapProject;
+      body: { fileName: string; objectKey: string; url: string; contentType: string; sizeBytes: number };
+    };
+    DELETE: { data: MovieRecapProject };
+  };
   "auth/me": {
     GET: { data: Me };
   };
@@ -177,3 +250,4 @@ const spoosh = new Spoosh<ApiSchema, { error: string }>("/api").use([
 ]);
 
 export const { useRead, useWrite, usePages, useQueue, useSubscription } = create(spoosh);
+export const apiClient = createClient<ApiSchema, { error: string }>("/api");

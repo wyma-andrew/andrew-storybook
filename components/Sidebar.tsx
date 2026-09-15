@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Clapperboard, Menu } from "lucide-react";
+import { Beaker, BookOpen, Clapperboard, Menu } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { AccountMenu } from "@/components/AccountMenu";
@@ -11,6 +11,7 @@ import { AccountMenu } from "@/components/AccountMenu";
 const NAV_ITEMS = [
   { href: "/stories", label: "Stories", icon: BookOpen },
   { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard },
+  { href: "/labs/voice", label: "Voice Lab", icon: Beaker },
 ] as const;
 
 const STORAGE_KEY = "sidebar-collapsed";
@@ -20,11 +21,16 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
+    let frame: number | undefined;
     try {
-      setCollapsed(localStorage.getItem(STORAGE_KEY) === "1");
+      const storedCollapsed = localStorage.getItem(STORAGE_KEY) === "1";
+      frame = requestAnimationFrame(() => setCollapsed(storedCollapsed));
     } catch {
       // ignore — falls back to expanded
     }
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
   }, []);
 
   function toggle() {

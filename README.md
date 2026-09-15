@@ -22,6 +22,33 @@ Run unit tests with:
 npm test
 ```
 
+## Movie Recap assets and R2 CORS
+
+Movie Recap reuses the existing `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `R2_PUBLIC_BASE_URL` configuration.
+The bucket CORS policy must allow `PUT` from the app origin, allow the
+`Content-Type` header, and expose `ETag`; multipart video uploads cannot be
+completed unless browser JavaScript can read each part's ETag.
+
+Place the approved Narrator preview at:
+
+```text
+public/movie-recap/voices/narrator.mp3
+```
+
+## Burmese Voice Lab
+
+The authenticated `/labs/voice` page generates short Burmese WAV samples
+through a separately running, self-hosted VoxCPM2 worker. It does not persist
+text or audio. Configure the Next.js server with:
+
+```dotenv
+VOICE_LAB_WORKER_URL=http://127.0.0.1:8808
+VOICE_LAB_WORKER_TOKEN=replace-with-a-random-secret
+```
+
+Worker setup and GPU notes are in [`workers/voice-lab/README.md`](workers/voice-lab/README.md).
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

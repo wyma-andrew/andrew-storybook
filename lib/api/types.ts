@@ -1,6 +1,67 @@
 import type { Region } from "@/lib/constants/regions";
 import type { ShotScale } from "@/lib/constants/shot-scales";
 import type { MotionMode } from "@/lib/constants/motion-styles";
+import type {
+  MovieRecapAspectRatio,
+  MovieRecapLanguage,
+  MovieRecapLogoPlacement,
+  MovieRecapSubtitleMode,
+  MovieRecapVoiceId,
+} from "@/lib/constants/movie-recap";
+
+export type MovieRecapProject = {
+  id: string;
+  name: string;
+  outputLanguage: MovieRecapLanguage;
+  voiceProfileId: MovieRecapVoiceId;
+  sourceFileName: string;
+  sourceObjectKey: string;
+  sourceUrl: string | null;
+  sourceContentType: string;
+  sourceSizeBytes: number;
+  sourceDurationSeconds: number;
+  sourceLastModified: number;
+  sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
+  aspectRatio: MovieRecapAspectRatio;
+  subtitleMode: MovieRecapSubtitleMode;
+  logoEnabled: boolean;
+  logoFileName: string | null;
+  logoObjectKey: string | null;
+  logoUrl: string | null;
+  logoContentType: string | null;
+  logoSizeBytes: number | null;
+  logoPlacement: MovieRecapLogoPlacement;
+  logoOpacity: number;
+  blurEnabled: boolean;
+  blurX: number;
+  blurY: number;
+  blurWidth: number;
+  blurHeight: number;
+  copyrightFree: boolean;
+  currentStep: 1 | 2 | 3 | 4;
+  status: "draft" | "ready_for_generation";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MovieRecapProjectPatch = Partial<{
+  name: string;
+  outputLanguage: MovieRecapProject["outputLanguage"];
+  voiceProfileId: MovieRecapProject["voiceProfileId"];
+  aspectRatio: MovieRecapProject["aspectRatio"];
+  subtitleMode: MovieRecapProject["subtitleMode"];
+  logoEnabled: boolean;
+  logoPlacement: MovieRecapProject["logoPlacement"];
+  logoOpacity: number;
+  blurEnabled: boolean;
+  blurX: number;
+  blurY: number;
+  blurWidth: number;
+  blurHeight: number;
+  copyrightFree: boolean;
+  currentStep: MovieRecapProject["currentStep"];
+  status: MovieRecapProject["status"];
+}>;
 
 export type Story = {
   id: string;

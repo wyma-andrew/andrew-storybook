@@ -9,6 +9,7 @@ import type {
   Scene,
   Shot,
   VoiceOverSegment,
+  MovieRecapProject,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
@@ -17,6 +18,43 @@ import { DEFAULT_MOTION_STYLE_ID, isMotionMode } from "@/lib/constants/motion-st
 import { isShotScale } from "@/lib/constants/shot-scales";
 
 type Row = Record<string, unknown>;
+
+export function mapMovieRecapProject(r: Row): MovieRecapProject {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    outputLanguage: r.output_language as MovieRecapProject["outputLanguage"],
+    voiceProfileId: r.voice_profile_id as MovieRecapProject["voiceProfileId"],
+    sourceFileName: r.source_file_name as string,
+    sourceObjectKey: r.source_object_key as string,
+    sourceUrl: (r.source_url as string) ?? null,
+    sourceContentType: r.source_content_type as string,
+    sourceSizeBytes: Number(r.source_size_bytes),
+    sourceDurationSeconds: Number(r.source_duration_seconds),
+    sourceLastModified: Number(r.source_last_modified),
+    sourceUploadStatus: r.source_upload_status as MovieRecapProject["sourceUploadStatus"],
+    aspectRatio: r.aspect_ratio as MovieRecapProject["aspectRatio"],
+    subtitleMode: r.subtitle_mode as MovieRecapProject["subtitleMode"],
+    logoEnabled: r.logo_enabled as boolean,
+    logoFileName: (r.logo_file_name as string) ?? null,
+    logoObjectKey: (r.logo_object_key as string) ?? null,
+    logoUrl: (r.logo_url as string) ?? null,
+    logoContentType: (r.logo_content_type as string) ?? null,
+    logoSizeBytes: r.logo_size_bytes == null ? null : Number(r.logo_size_bytes),
+    logoPlacement: r.logo_placement as MovieRecapProject["logoPlacement"],
+    logoOpacity: Number(r.logo_opacity),
+    blurEnabled: r.blur_enabled as boolean,
+    blurX: Number(r.blur_x),
+    blurY: Number(r.blur_y),
+    blurWidth: Number(r.blur_width),
+    blurHeight: Number(r.blur_height),
+    copyrightFree: r.copyright_free as boolean,
+    currentStep: Number(r.current_step) as MovieRecapProject["currentStep"],
+    status: r.status as MovieRecapProject["status"],
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  };
+}
 
 export function mapStory(r: Row, style?: ResolvedVisualStyle | null): Story {
   return {

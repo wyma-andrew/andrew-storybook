@@ -1,4 +1,13 @@
-import { S3Client, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  ListPartsCommand,
+  PutObjectCommand,
+  S3Client,
+  UploadPartCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Cloudflare R2 is S3-compatible, so the AWS SDK talks to it unchanged — the
@@ -58,6 +67,16 @@ export function isImageContentType(contentType: unknown): contentType is string 
   return typeof contentType === "string" && IMAGE_TYPES.has(contentType.toLowerCase());
 }
 
+const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+export function isLogoContentType(contentType: unknown): contentType is string {
+  return typeof contentType === "string" && LOGO_TYPES.has(contentType.toLowerCase());
+}
+
+export function isVideoContentType(contentType: unknown): contentType is string {
+  return typeof contentType === "string" && contentType.toLowerCase().startsWith("video/");
+}
+
 // Keys are the file's own name, so the bucket stays browsable: a chapter prefix
 // holding 1.1.png, 1.2.png, … rather than uuid-prefixed noise. A folder upload
 // sends paths ("scene1/1.2.png"), and two folders can hold the same basename, so
@@ -71,6 +90,10 @@ export function chapterPrefix(chapterId: string) {
 // and is stored separately — this is only the key.
 function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
+}
+
+export function movieRecapObjectKey(projectId: string, kind: "source" | "logo", fileName: string) {
+  return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
 function splitName(basename: string) {
@@ -122,6 +145,70 @@ export function presignPut(objectKey: string, contentType: string) {
 
 export async function deleteObject(objectKey: string) {
   await r2().send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+}
+
+export async function createMultipartUpload(objectKey: string, contentType: string) {
+  const result = await r2().send(
+    new CreateMultipartUploadCommand({ Bucket: R2_BUCKET, Key: objectKey, ContentType: contentType })
+  );
+  if (!result.UploadId) throw new Error("R2 did not return a multipart upload id.");
+  return result.UploadId;
+}
+
+export function presignUploadPart(objectKey: string, uploadId: string, partNumber: number) {
+  return getSignedUrl(
+    r2(),
+    new UploadPartCommand({ Bucket: R2_BUCKET, Key: objectKey, UploadId: uploadId, PartNumber: partNumber }),
+    { expiresIn: 3600 }
+  );
+}
+
+export async function listMultipartParts(objectKey: string, uploadId: string) {
+  const parts: { partNumber: number; etag: string; size: number }[] = [];
+  let marker: string | undefined;
+  do {
+    const result = await r2().send(
+      new ListPartsCommand({
+        Bucket: R2_BUCKET,
+        Key: objectKey,
+        UploadId: uploadId,
+        PartNumberMarker: marker,
+      })
+    );
+    for (const part of result.Parts ?? []) {
+      if (part.PartNumber && part.ETag) {
+        parts.push({ partNumber: part.PartNumber, etag: part.ETag, size: part.Size ?? 0 });
+      }
+    }
+    marker = result.IsTruncated ? result.NextPartNumberMarker : undefined;
+  } while (marker);
+  return parts;
+}
+
+export async function completeMultipartUpload(
+  objectKey: string,
+  uploadId: string,
+  parts: { partNumber: number; etag: string }[]
+) {
+  await r2().send(
+    new CompleteMultipartUploadCommand({
+      Bucket: R2_BUCKET,
+      Key: objectKey,
+      UploadId: uploadId,
+      MultipartUpload: {
+        Parts: parts
+          .slice()
+          .sort((a, b) => a.partNumber - b.partNumber)
+          .map((part) => ({ PartNumber: part.partNumber, ETag: part.etag })),
+      },
+    })
+  );
+}
+
+export async function abortMultipartUpload(objectKey: string, uploadId: string) {
+  await r2().send(
+    new AbortMultipartUploadCommand({ Bucket: R2_BUCKET, Key: objectKey, UploadId: uploadId })
+  );
 }
 
 // "1.2.png" must sort before "1.10.png". A plain string sort puts 1.10 first,

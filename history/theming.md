@@ -74,3 +74,12 @@ The hue identifies the scene and must not change with the theme. The weight must
 `42% / 72%` reads on a near-black panel and washes out on a light one, so light
 mode uses `55% / 38%` with white text instead of near-black. Keeping both in the
 component would have meant duplicating the badge classes per theme.
+
+## 2026-09-15 — Global toasts remain visible for three seconds
+
+**Decision:** the single `GeckoUIPortal` in `app/layout.tsx` sets a 3,000 ms
+duration for every toast variant.
+
+The previous one-second duration hid upload and validation errors before users
+could reliably read them. Keeping the duration in the root portal preserves one
+consistent setting for the whole app instead of adding per-call overrides.
