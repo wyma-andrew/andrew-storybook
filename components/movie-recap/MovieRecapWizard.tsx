@@ -128,6 +128,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       Object.assign(body, {
         aspectRatio: project.aspectRatio,
         fitMode: project.fitMode,
+        copyrightFree: project.copyrightFree,
         subtitlePreset: project.subtitlePreset,
         subtitlePosition: project.subtitlePosition,
         subtitleOffset: project.subtitleOffset,
@@ -371,6 +372,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                     <div className="mt-5"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Fit mode</div>
                       <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => merge({ fitMode: item.id })}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
                     </div>
+                    <label className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-line bg-panel-2 p-3">
+                      <span>
+                        <span className="block text-sm font-medium">Copyright-free transform</span>
+                        <span className="mt-1 block text-xs text-fg-3">Re-cut and alter the source so the export is not a continuous copy of it. Turn off to keep the footage as it is.</span>
+                      </span>
+                      <Switch checked={project.copyrightFree} onChange={(checked) => merge({ copyrightFree: checked })} />
+                    </label>
                   </div>}
                   {tab === "subtitle" && <div>
                     <p className="mb-5 text-xs text-fg-2">Subtitles are burned into the exported video. Pick a look; its size is set by the aspect ratio.</p>
@@ -461,6 +469,7 @@ function Review({
     ["Project name", project.name], ["Output language", "Burmese"], ["Voice profile", MOVIE_RECAP_VOICES.find((voice) => voice.id === project.voiceProfileId)?.name ?? project.voiceProfileId], ["Aspect ratio", project.aspectRatio],
     ["Subtitles", `Burned in · ${MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)?.name ?? project.subtitlePreset} · ${MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}% · ${MOVIE_RECAP_SUBTITLE_POSITIONS.find((item) => item.id === project.subtitlePosition)?.name ?? project.subtitlePosition}`],
     ["Logo", project.logoEnabled ? `${project.logoFileName ?? "Missing"} · ${MOVIE_RECAP_LOGO_PLACEMENTS.find((item) => item.id === project.logoPlacement)?.name} · ${project.logoOpacity}%` : "Off"],
+    ["Copyright-free", project.copyrightFree ? "On" : "Off"],
     ["Blur", project.blurEnabled ? `${Math.round(project.blurWidth)}% × ${Math.round(project.blurHeight)}% at ${Math.round(project.blurX)}%, ${Math.round(project.blurY)}%` : "Off"],
   ];
   const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";

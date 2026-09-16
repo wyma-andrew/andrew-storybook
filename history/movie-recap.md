@@ -101,7 +101,7 @@ rendering counterpart later (crop vs. letterbox in the actual output), but
 that implementation is out of scope here — same as aspect ratio, subtitle
 mode, logo, and blur already are.
 
-## 2026-09-15 — Copyright-free transformation is mandatory, not optional (supersedes)
+## 2026-09-15 — Copyright-free transformation is mandatory, not optional (supersedes) (superseded 2026-09-16)
 
 **Decision:** removed the `copyrightFree` toggle and its `copyright_free`
 column entirely. Every project is now always treated as copyright-free;
@@ -1536,3 +1536,100 @@ Every control added to step 3 has to be added to it by hand, and forgetting cost
 a setting that appears to work in the UI and silently reverts. Check it whenever
 a control is added, and be suspicious of "the UI shows my choice but the output
 ignores it" — that is this shape of bug.
+
+## 2026-09-16 — 16:9 caption size down again: 6.5% -> 3.4%
+
+Landscape captions read large at 6.5% (47px), 4.8% (35px) and 4% (29px). Settled
+at 3.4% — 24px, or 2% of the frame's width.
+
+**This is below the comfortable floor for Burmese at 720p** and is a deliberate
+call, not an oversight: at 24px the marks stacked above and below a letter start
+closing into it, and the 0.14em outline (~3px here) does most of the work
+separating the caption from the picture. The fix for wanting it smaller again is
+not a smaller number — it is raising `TARGET_DIMENSIONS` to 1920x1080 so the same
+relative size has more pixels to draw with (deferred; see "Output stays 1280x720
+for now"). Portrait was checked at the same time and left at 2.5% — it
+reads correctly in a real render.
+
+The two ratios are now far apart as a fraction of width (2% landscape, 4.4%
+portrait), which is right rather than sloppy: a portrait video is watched at arm's
+length on a phone and a landscape one is not. The width rule stays as the starting
+point for a NEW aspect ratio; for these two, the burned frame decided.
+
+**Two process failures happened here, both worth avoiding.** The first attempt at
+this change used a string replace whose anchor did not match, with no assertion,
+so it reported success and changed nothing — twice in a row. Any scripted edit to
+a constant needs an assert on the anchor and a read-back of the result.
+
+The second: the no-op was "confirmed applied" by measuring a screenshot and
+comparing against an ink-height estimate of 1.68x the font size. That ratio came
+from a different sample string; this one runs about 1.46x, because how far Burmese
+ink exceeds the font size depends entirely on which marks stack in that particular
+line. Ink height is not a reliable way to infer font size across strings — read
+the constant, or measure the same string both times.
+
+## 2026-09-16 — Copyright-free is a per-project toggle again (supersedes)
+
+Supersedes "Copyright-free transformation is mandatory, not optional", which
+removed this toggle and dropped its column. Reinstating it was flagged as
+contradicting that entry and approved before any code was written.
+
+**Decision:** `copyright_free` is back as a boolean on the project row, editable
+from a switch in the Customize Video tab's aspect section, defaulting to TRUE —
+unlike the original column's `false`, because every existing project was created
+under the "always transform" rule and true is what they were promised.
+
+**What it does NOT do yet:** nothing branches on it. The render logs the value and
+carries on. There is no distinct copyright-free step to skip, because the transform
+was never built as its own stage — what the export does today is trim each scene to
+a slot much shorter than itself, which breaks source continuity as a side effect of
+pacing rather than as a rule. A separate finding, recorded here for whoever builds
+it: **nothing tracks contiguous source footage**, so consecutive adjacent scenes
+played near their own length would reproduce the original continuously, and a
+`MAX_CONTINUOUS_SOURCE_S` guard does not exist.
+
+**The old entry's objection still stands and is now a live risk:** a column that
+nothing reads is dead weight, and that is exactly what this is until the transform
+is defined. It is intentional and short-lived — the behaviour is being specified
+next — but if that specification does not arrive, this should come back out rather
+than sit as a switch that changes nothing.
+
+## 2026-09-16 — The copyright-free transform, and where it lives
+
+**Decision:** the transform is a filter chain built per shot in
+`lib/movie-recap-transform.ts`, gated entirely on `project.copyrightFree`. With
+the toggle off, the output is byte-for-byte what it was before this existed.
+
+Four steps, all mild on purpose — the aim is that the export is not a
+frame-for-frame copy, not that it looks processed:
+
+| Step | What | Scope |
+| --- | --- | --- |
+| zoom | centre crop 1.08x before scaling | both ratios |
+| framing | blurred copy of the clip behind the letterbox bars | `contain` only |
+| mirror | `hflip` | 16:9 only |
+| colour | `eq` contrast 1.06, saturation 1.08, gamma 0.98 | both ratios |
+
+**Why a separate module rather than growing `scaleFilter`:** the render decides
+WHICH source plays and for HOW LONG; the transform decides what it looks like.
+Splitting them means a new visual step is one entry in one file, and the builder
+is a pure string function, so it is tested without ffmpeg.
+
+**The boundary that matters:** `ShotFilterContext` deliberately excludes the
+shot's timing. Any transform that changes a shot's DURATION — a forced speed
+change, a freeze cadence, a source-continuity limit — cannot live here, because
+the planner has to know about it to keep the picture aligned with the narration.
+That is the line to check before adding the next one.
+
+**Blurred backfill is gated on the toggle too,** at the user's instruction. The
+argument for leaving it always-on for `contain` (black bars just look worse) was
+raised and set aside: with the toggle off, `contain` letterboxes in black exactly
+as it did before.
+
+**Two consequences worth stating:** mirroring reverses any text in frame — signs,
+phone screens, burned-in captions from a source that already had them. And the
+backfill encodes two scaled copies per shot, so `contain` renders cost roughly
+1.3-1.6x the ffmpeg time of `cover` ones.
+
+Verified by running both chains — cover and contain, with `setpts` appended as
+the render appends it — through ffmpeg against a real file.

@@ -26,6 +26,9 @@ export type MovieRecapProject = {
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
+  // Whether the render applies the copyright-free transform to the source. A
+  // per-project choice again — see history/movie-recap.md.
+  copyrightFree: boolean;
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
@@ -90,6 +93,7 @@ export type MovieRecapProjectPatch = Partial<{
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
+  copyrightFree: boolean;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;

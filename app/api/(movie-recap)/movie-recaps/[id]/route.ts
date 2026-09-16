@@ -83,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.logo_placement = body.logoPlacement;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"]] as const) {
+  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"], ["copyrightFree", "copyright_free"]] as const) {
     if (body?.[client] !== undefined) {
       if (typeof body[client] !== "boolean") return NextResponse.json({ error: `${client} must be boolean.` }, { status: 400 });
       patch[column] = body[client];

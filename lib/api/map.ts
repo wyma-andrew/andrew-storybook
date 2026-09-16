@@ -35,6 +35,7 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     sourceUploadStatus: r.source_upload_status as MovieRecapProject["sourceUploadStatus"],
     aspectRatio: r.aspect_ratio as MovieRecapProject["aspectRatio"],
     fitMode: r.fit_mode as MovieRecapProject["fitMode"],
+    copyrightFree: r.copyright_free as boolean,
     subtitlePreset: r.subtitle_preset as MovieRecapProject["subtitlePreset"],
     subtitlePosition: r.subtitle_position as MovieRecapProject["subtitlePosition"],
     subtitleOffset: Number(r.subtitle_offset),

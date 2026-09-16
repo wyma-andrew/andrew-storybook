@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
 import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { movieRecapObjectKey, putObject } from "./r2";
+import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
 import { synthesize } from "./tts/synthesize";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
@@ -243,13 +244,6 @@ async function trimToSpeech(inputPath: string, outputPath: string, durationSecon
   return { path: outputPath, durationSeconds: Number((to - from).toFixed(3)) };
 }
 
-function scaleFilter(project: MovieRecapProject) {
-  const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
-  return project.fitMode === "contain"
-    ? `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`
-    : `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
-}
-
 // Blur/logo apply once, on the whole concatenated video, not per-segment —
 // both are fixed positions/regions for the entire recap, so a single final
 // pass is equivalent to per-segment and far simpler.
@@ -474,6 +468,14 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       .update({ render_status: "running", render_is_mock: mock, render_error: null, render_started_at: new Date().toISOString() })
       .eq("id", project.id);
 
+    // What the transform currently covers: zoom, colour, mirror (16:9) and the
+    // blurred letterbox fill. What it does NOT: source-continuity limits, forced
+    // speed changes, and freeze/zoom cadence — each of those changes a shot's
+    // duration or its placement, so they belong to the planner, not the filter.
+    console.log(
+      `[MovieRecapRender] project=${project.id} copyrightFree=${project.copyrightFree} — shot filter: ${buildShotFilter(shotFilterContext(project))}`
+    );
+
     let transcript: TranscriptSegment[] = [];
     let narration: MovieRecapNarrationSegment[];
     let spareScenes: { sourceStartS: number; sourceEndS: number }[] = [];
@@ -595,7 +597,9 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     // A real render already downloaded the source; a mock one never does, so it
     // clips straight from the URL.
     const sourceForClips = mock ? project.sourceUrl! : path.join(workDir, "source.mp4");
-    const vf = scaleFilter(project);
+    // Framing and the copyright-free transform both live in
+    // lib/movie-recap-transform.ts; the same chain is used for every shot.
+    const vf = buildShotFilter(shotFilterContext(project));
     const segmentPaths: string[] = [];
     // The length each BEAT was rendered to, reused below to pad that beat's
     // narration clip onto the same timeline. One entry per beat, not per shot:

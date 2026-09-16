@@ -71,11 +71,21 @@ export const MOVIE_RECAP_SUBTITLE_PRESETS = [
 // Both values come from one reference caption: measured on a portrait frame, its
 // ink height was 51px on 1434, which is ~30px of font size (this font's ink runs
 // about 1.68x the font size once Burmese marks stack above and below) — 3.6% of
-// that frame's WIDTH. Held to that same fraction of width, a 1280-wide frame
-// wants ~47px (6.5% of 720) and a 720-wide one ~26px (2% of 1280) — portrait is
-// then nudged up from there, see below.
+// that frame's WIDTH. That rule is the starting point for a new aspect ratio,
+// not the final answer: both values below were then judged against burned frames
+// and moved, portrait up and landscape down. Burn a frame and look.
 export const MOVIE_RECAP_SUBTITLE_SIZE_PCT = {
-  "16:9": 6.5,
+  // Landscape is watched further from the eye than a phone, so it reads smaller
+  // than the width rule suggests. Stepped down against burned frames: 6.5%
+  // (47px), 4.8% (35px) and 4% (29px) all read large. 3.4% is 24px, or 2% of
+  // width.
+  //
+  // This is below the comfortable floor for Burmese at 720p: at this size the
+  // marks stacked above and below a letter start closing into it, and the
+  // outline (0.14em, ~3px here) does most of the separating. If it needs to go
+  // smaller again, raise TARGET_DIMENSIONS to 1920x1080 instead — the same
+  // relative size then has more pixels to draw with.
+  "16:9": 3.4,
   // Portrait runs a little larger than the width rule alone gives (2.5 rather
   // than 2.0, i.e. 4.4% of width against 3.6%): a phone-sized frame is watched
   // at phone size, and the strict match read undersized on it.
@@ -108,6 +118,30 @@ export const MOVIE_RECAP_SUBTITLE_POSITIONS = [
   { id: "middle", name: "Middle" },
   { id: "top", name: "Top" },
 ] as const;
+
+// The copyright-free transform, applied per shot when a project has it on. Every
+// value is deliberately mild: the point is that the export is not a frame-for-
+// frame copy of the source, not that it looks processed.
+//
+// These live here rather than in the render so the numbers are readable in one
+// place and can be shown in the UI later without importing the render.
+export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
+  // Centre crop before scaling. 1.08 discards ~7% of each edge; past ~1.15 the
+  // softening is visible at 720p.
+  zoom: 1.08,
+  // eq: a nudge, not a look.
+  contrast: 1.06,
+  saturation: 1.08,
+  gamma: 0.98,
+  // Landscape only. A mirrored portrait clip is just as transformed, but 16:9 is
+  // where the framing survives it — and any text in frame reads backwards either
+  // way, which is the cost of this one.
+  mirrorAspectRatios: ["16:9"] as readonly string[],
+  // Letterbox fill: the same clip scaled to cover, blurred, and sat behind the
+  // contained one, so the bars carry moving picture instead of black.
+  backfillBlurRadius: 20,
+  backfillBlurPasses: 2,
+} as const;
 
 // Output frame size, shared by the ffmpeg render and anything in the UI that
 // has to express a size in OUTPUT pixels (the blur radius below).
