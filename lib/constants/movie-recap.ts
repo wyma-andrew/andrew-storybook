@@ -1,16 +1,13 @@
+import { listVoices } from "../tts/voices";
+
 export const MOVIE_RECAP_LANGUAGES = [{ id: "my", name: "Burmese" }] as const;
-export const MOVIE_RECAP_VOICES = [
-  {
-    id: "narrator",
-    name: "Narrator",
-    previewUrl: "/movie-recap/voices/narrator.mp3",
-    sampleText: "ဒီဇာတ်လမ်းရဲ့ နောက်ကွယ်က အကြောင်းအရာတွေကို အတူတူ လေ့လာကြရအောင်။",
-  },
-] as const;
+// The voices the Settings tab offers, taken from the TTS catalog so the picker
+// and the synthesizer can never disagree about which voices exist.
+export const MOVIE_RECAP_VOICES = listVoices("movie-recap");
 
 export const MOVIE_RECAP_ASPECT_RATIOS = [
-  { id: "9:16", name: "Vertical 9:16" },
-  { id: "16:9", name: "Landscape 16:9" },
+  { id: "9:16", name: "9:16" },
+  { id: "16:9", name: "16:9" },
 ] as const;
 
 export const MOVIE_RECAP_FIT_MODES = [
@@ -18,26 +15,121 @@ export const MOVIE_RECAP_FIT_MODES = [
   { id: "contain", name: "Contain", description: "Shows the full video, letterboxed." },
 ] as const;
 
-// Subtitle look. These are DATA colors chosen per project (they end up in the
-// rendered video), not theme tokens — the "no raw colors in JSX" rule is about
-// the app's own chrome, which still uses tokens everywhere around this.
-export const MOVIE_RECAP_SUBTITLE_COLORS = [
-  { id: "#FFFFFF", name: "White" },
-  { id: "#FFE066", name: "Yellow" },
-  { id: "#111111", name: "Black" },
+// Subtitle look is a PRESET, not a set of knobs. A caption has one job — stay
+// readable over moving footage — and the combinations that do that are few and
+// known, so the wizard offers those instead of a colour list, a size slider and
+// a shadow switch that can be arranged into unreadable output. These are DATA
+// colors (they end up in the rendered video), not theme tokens.
+//
+// Both presets are a fill with a contrasting hard outline and NO background box.
+// The outline is what carries them over a busy frame, so it is part of the
+// preset rather than one colour shared by all of them — the two references this
+// design matches invert each other.
+export const MOVIE_RECAP_SUBTITLE_PRESETS = [
+  {
+    id: "yellow",
+    name: "Yellow",
+    // Sampled from the reference caption the product is matching — a lime-ish
+    // yellow, not a softer gold.
+    color: "#D9E824",
+    outlineColor: "#000000",
+    weight: 700,
+    // Thick: measured off a TikTok recap caption, whose outline is 0.8x the
+    // width of the glyph stems it surrounds (ours was 0.25-0.5x at 0.08). The
+    // family and weight already matched — outline thickness was the whole
+    // difference between the two looks.
+    outlineEm: 0.14,
+    description: "Lime yellow, black outline.",
+  },
+  {
+    // Colour-neutral id on purpose: this look has been inverted three times
+    // while its reference was being pinned down, and an id that names the fill
+    // costs a migration every time. `mono` stays true whichever way round it is.
+    id: "mono",
+    name: "Black & white",
+    color: "#000000",
+    outlineColor: "#FFFFFF",
+    // SemiBold (600). The weight was measured against a reference frame of this
+    // look inverted (black on white); the still crop matched 500, and 600 ships
+    // because the caption plays over moving footage rather than a frozen frame.
+    // This is deliberately one step lighter than `yellow`, which is bold.
+    weight: 600,
+    // Same thick outline as `yellow` (0.8x the stem width): the two presets are
+    // one look in two colours, so the outline weight that made yellow read right
+    // applies here too.
+    outlineEm: 0.14,
+    description: "Black, thick white outline.",
+  },
 ] as const;
 
-export const MOVIE_RECAP_SUBTITLE_BG_COLORS = [
-  { id: "#000000", name: "Black" },
-  { id: "#1D4ED8", name: "Blue" },
-  { id: "#FFFFFF", name: "White" },
-] as const;
+// Caption size, as a percentage of FRAME HEIGHT, chosen per aspect ratio rather
+// than by the user. The same percentage cannot serve both: the percentage is of
+// HEIGHT, so 10% of a 720-tall landscape frame is 72px on a 1280-wide picture,
+// while 10% of a 1280-tall portrait frame is 128px on one only 720 wide — more
+// than twice the relative size.
+//
+// Both values come from one reference caption: measured on a portrait frame, its
+// ink height was 51px on 1434, which is ~30px of font size (this font's ink runs
+// about 1.68x the font size once Burmese marks stack above and below) — 3.6% of
+// that frame's WIDTH. Held to that same fraction of width, a 1280-wide frame
+// wants ~47px (6.5% of 720) and a 720-wide one ~26px (2% of 1280) — portrait is
+// then nudged up from there, see below.
+export const MOVIE_RECAP_SUBTITLE_SIZE_PCT = {
+  "16:9": 6.5,
+  // Portrait runs a little larger than the width rule alone gives (2.5 rather
+  // than 2.0, i.e. 4.4% of width against 3.6%): a phone-sized frame is watched
+  // at phone size, and the strict match read undersized on it.
+  "9:16": 2.5,
+} as const satisfies Record<string, number>;
+
+// What keeps a caption legible over moving footage is the OUTLINE around each
+// glyph: it works on a pale frame, a dark one, and on the boundary between them.
+// An offset drop shadow does not — it darkens one side only, so the caption
+// still dissolves into the frame on the other three.
+//
+// There is deliberately NO shadow alongside it. Burning both was tried against
+// the reference caption this design matches: the offset copy reads as a grey
+// ghost trailing every glyph and makes the outline look doubled. Outline alone
+// is what the reference does.
+//
+// Outline thickness is per preset (`outlineEm` above), as a fraction of the
+// subtitle font size: the two looks this design copies do not wear the same
+// weight of outline. ASS `Outline` expands the glyph contour on every side; the
+// CSS preview matches it with a stroke painted behind the fill.
+
+// Font line box as a multiple of the CSS font size — Noto Sans Myanmar reserves
+// 2.184em for stacked Burmese marks. It is also the ratio the ASS font size is
+// inflated by (libass sizes by ascent+descent, CSS by em), which is why the
+// preview sets line-height explicitly instead of leaving it to Tailwind.
+export const MOVIE_RECAP_SUBTITLE_LINE_EM = 2.184;
 
 export const MOVIE_RECAP_SUBTITLE_POSITIONS = [
   { id: "bottom", name: "Bottom" },
   { id: "middle", name: "Middle" },
   { id: "top", name: "Top" },
 ] as const;
+
+// Output frame size, shared by the ffmpeg render and anything in the UI that
+// has to express a size in OUTPUT pixels (the blur radius below).
+export const MOVIE_RECAP_TARGET_DIMENSIONS = {
+  "16:9": [1280, 720],
+  "9:16": [720, 1280],
+} as const satisfies Record<string, readonly [number, number]>;
+
+// Region blur, in OUTPUT pixels: ffmpeg `boxblur=<radius>:<passes>`. The CSS
+// preview cannot use these numbers directly — it draws a frame a few hundred
+// pixels wide, so the same radius there would blur several times harder — and
+// `backdrop-filter: blur()` is a gaussian, not a box blur. `movieRecapBlurCssPx`
+// converts: N passes of a box blur of radius r approximate a gaussian of
+// sigma = sqrt(N * ((2r+1)^2 - 1) / 12), which is then scaled by how small the
+// preview frame is drawn.
+export const MOVIE_RECAP_BLUR = { radius: 12, passes: 2 } as const;
+
+export function movieRecapBlurCssPx(frameWidthPx: number, outputWidthPx: number) {
+  const { radius, passes } = MOVIE_RECAP_BLUR;
+  const sigma = Math.sqrt((passes * ((2 * radius + 1) ** 2 - 1)) / 12);
+  return outputWidthPx > 0 ? (sigma * frameWidthPx) / outputWidthPx : sigma;
+}
 
 // Logo geometry is shared by the CSS preview and the ffmpeg overlay so the two
 // can't drift — the render used to scale to 18% width with no height cap while
@@ -77,13 +169,35 @@ export type MovieRecapAspectRatio = (typeof MOVIE_RECAP_ASPECT_RATIOS)[number]["
 export type MovieRecapFitMode = (typeof MOVIE_RECAP_FIT_MODES)[number]["id"];
 export type MovieRecapLogoPlacement = (typeof MOVIE_RECAP_LOGO_PLACEMENTS)[number]["id"];
 export type MovieRecapSubtitlePosition = (typeof MOVIE_RECAP_SUBTITLE_POSITIONS)[number]["id"];
+export type MovieRecapSubtitlePreset = (typeof MOVIE_RECAP_SUBTITLE_PRESETS)[number]["id"];
+
+// The one place the preview and the render agree on what a caption looks like.
+// Everything that used to be a per-project column — colour, size, weight,
+// shadow — is resolved from the preset and the aspect ratio here, so the two
+// renderers cannot drift apart.
+export function movieRecapSubtitleStyle(project: {
+  subtitlePreset: MovieRecapSubtitlePreset;
+  aspectRatio: MovieRecapAspectRatio;
+}) {
+  const preset = MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)
+    ?? MOVIE_RECAP_SUBTITLE_PRESETS[0];
+  return {
+    color: preset.color,
+    outlineColor: preset.outlineColor,
+    outlineEm: preset.outlineEm,
+    weight: preset.weight,
+    // Percentage of frame height, the same number libass gets as `Fontsize`
+    // against `PlayResY`.
+    fontSizePct: MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio],
+  };
+}
+
+export function isMovieRecapSubtitlePreset(value: unknown): value is MovieRecapSubtitlePreset {
+  return MOVIE_RECAP_SUBTITLE_PRESETS.some((item) => item.id === value);
+}
 
 export function isMovieRecapSubtitlePosition(value: unknown): value is MovieRecapSubtitlePosition {
   return MOVIE_RECAP_SUBTITLE_POSITIONS.some((item) => item.id === value);
-}
-
-export function isHexColor(value: unknown): value is string {
-  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 export function isMovieRecapAspectRatio(value: unknown): value is MovieRecapAspectRatio {

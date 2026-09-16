@@ -3,8 +3,13 @@ import { getVoiceLabProfile, validateVoiceLabText, VOICE_LAB_MAX_TEXT_LENGTH } f
 
 describe("voice lab", () => {
   it("only accepts known voice profiles", () => {
-    expect(getVoiceLabProfile("narrator")?.name).toBe("Narrator");
+    expect(getVoiceLabProfile("narrator")?.id).toBe("narrator");
     expect(getVoiceLabProfile("unknown")).toBeNull();
+  });
+
+  it("offers both the self-hosted and the paid voices, so they can be compared", () => {
+    expect(getVoiceLabProfile("narrator")?.providerId).toBe("voxcpm");
+    expect(getVoiceLabProfile("azure-thiha")?.providerId).toBe("azure");
   });
 
   it("requires bounded non-empty text", () => {

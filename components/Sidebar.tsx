@@ -15,8 +15,8 @@ import { useMobileNav } from "@/components/MobileNav";
 // shared by URL. Flip the flag to put it back.
 const NAV_ITEMS = [
   { href: "/stories", label: "Stories", icon: BookOpen, hidden: false },
-  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: true },
-  { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: true },
+  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false },
+  { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: false },
 ] as const;
 
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);

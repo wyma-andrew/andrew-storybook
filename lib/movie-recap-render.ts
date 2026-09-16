@@ -4,12 +4,18 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { generateMovieRecapNarration, openai, type TranscriptSegment } from "./openai";
+import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
+import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { movieRecapObjectKey, putObject } from "./r2";
+import { synthesize } from "./tts/synthesize";
+import { resolveMovieRecapVoice } from "./tts/voices";
 import {
+  movieRecapSubtitleStyle,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
+  MOVIE_RECAP_BLUR,
+  MOVIE_RECAP_TARGET_DIMENSIONS,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
@@ -22,6 +28,21 @@ const execFileAsync = promisify(execFile);
 // without it everything still runs except styled subtitle burn-in.
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const SUBTITLE_FONT = process.env.MOVIE_RECAP_SUBTITLE_FONT || "Noto Sans Myanmar";
+// ASS has one weight control — a Bold flag — so anything between regular and
+// bold has to be selected by naming the family fontconfig maps to that cut.
+// These are the abbreviated names fontconfig actually answers to: `fc-match
+// "Noto Sans Myanmar SemiBold"` returns VERDANA, while `... SemBd` returns the
+// right face. Confirm any change with fc-match on the render host — a wrong name
+// still renders Burmese (libass falls back per glyph), so it fails quietly.
+const SUBTITLE_FONT_MEDIUM = process.env.MOVIE_RECAP_SUBTITLE_FONT_MEDIUM || "Noto Sans Myanmar Med";
+const SUBTITLE_FONT_SEMIBOLD = process.env.MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD || "Noto Sans Myanmar SemBd";
+
+function subtitleFace(weight: number) {
+  if (weight >= 700) return { name: SUBTITLE_FONT, bold: -1 };
+  if (weight >= 600) return { name: SUBTITLE_FONT_SEMIBOLD, bold: 0 };
+  if (weight >= 500) return { name: SUBTITLE_FONT_MEDIUM, bold: 0 };
+  return { name: SUBTITLE_FONT, bold: 0 };
+}
 // CSS sizes text by em; libass sizes it so the font's ascent+descent fit
 // `Fontsize`. Noto Sans Myanmar reserves 2.184em of vertical space for stacked
 // Burmese marks, so an ASS Fontsize of N draws glyphs a browser would draw at
@@ -31,12 +52,35 @@ const SUBTITLE_FONT = process.env.MOVIE_RECAP_SUBTITLE_FONT || "Noto Sans Myanma
 // For another font: (hhea ascender - descender) / unitsPerEm.
 const ASS_FONT_SIZE_RATIO = Number(process.env.MOVIE_RECAP_SUBTITLE_FONT_RATIO) || 2.184;
 
-// Rough Burmese spoken pace, used only to ESTIMATE narration length while the
-// real TTS step is skipped (console.log stand-in — see history/movie-recap.md,
-// "Phase-two pipeline order and audio/video duration matching"). Swap this
-// estimate for the real synthesized-audio duration once TTS is wired up.
-const WORDS_PER_SECOND_BURMESE = 2.3;
-const MIN_SEGMENT_S = 1;
+// Rough Burmese spoken pace. A real render now measures its synthesized audio
+// and uses that instead; this estimate is the fallback for a MOCK render, which
+// never calls TTS (that is the point of mock — no API spend), and for a segment
+// whose synthesis returned nothing usable.
+// Burmese is not space-delimited — spaces mark phrase breaks, not words — so a
+// word count is meaningless here: every narration line came out as ~4 "words"
+// and got the same 1.7s no matter its length, which is what made shots flash by
+// and subtitles unreadable. Characters are the usable proxy, but the rate is
+// not flat: getting into a caption costs the most, and the rest is read faster
+// once it has started. A flat rate therefore overpays long lines — the first
+// LEAD_IN_CHARS run at the careful rate, everything after at the continuation
+// rate.
+const LEAD_IN_CHARS = 20;
+const CHARS_PER_SECOND_BURMESE = 12.5;
+const CONTINUATION_CHARS_PER_SECOND = 36;
+// Nothing holds a single shot longer than this, however long its line — beyond
+// it the beat drags whatever the text says. Cues are compressed to fit, but
+// never past ABS_MAX_CUE_CHARS_PER_SECOND, so an over-long line runs over the
+// cap rather than becoming unreadable. That is the signal the narration prompt
+// is being ignored, not something to solve with timing.
+const MAX_SEGMENT_S = 3.5;
+const ABS_MAX_CUE_CHARS_PER_SECOND = 26;
+// Floors, applied after the estimate. A recap beat shorter than this reads as a
+// flash cut however well the narration fits it.
+const MIN_SEGMENT_S = 2;
+// A caption has to survive being read, not just being displayed: never shorter
+// than this, and never faster than MAX_CUE_CHARS_PER_SECOND.
+const MIN_CUE_S = 1;
+const MAX_CUE_CHARS_PER_SECOND = 22;
 // Hybrid duration match: within this ratio band, speed-ramp the video segment
 // to fit the narration exactly. Outside it, freeze-pad (narration longer) or
 // trim (narration shorter) instead of distorting playback speed further.
@@ -47,10 +91,12 @@ const SPEED_RAMP_MAX = 1.15;
 const EXTREME_RATIO_MIN = 0.33;
 const EXTREME_RATIO_MAX = 3;
 
-const TARGET_DIMENSIONS: Record<MovieRecapProject["aspectRatio"], [number, number]> = {
-  "16:9": [1280, 720],
-  "9:16": [720, 1280],
-};
+const TARGET_DIMENSIONS = MOVIE_RECAP_TARGET_DIMENSIONS;
+
+// Every narration clip is resampled to this before the parts are concatenated —
+// the concat demuxer needs one identical format across all of them, and a
+// provider is free to return whatever rate it likes.
+const NARRATION_SAMPLE_RATE = 24000;
 
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 
@@ -84,8 +130,34 @@ function setProgress(db: Db, projectId: string, stage: MovieRecapRenderStage, cu
 }
 
 function estimateSpokenSeconds(text: string) {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(MIN_SEGMENT_S, words / WORDS_PER_SECOND_BURMESE);
+  const characters = text.replace(/\s+/g, "").length;
+  const leadIn = Math.min(characters, LEAD_IN_CHARS) / CHARS_PER_SECOND_BURMESE;
+  const rest = Math.max(0, characters - LEAD_IN_CHARS) / CONTINUATION_CHARS_PER_SECOND;
+  return Math.max(MIN_SEGMENT_S, leadIn + rest);
+}
+
+// Give every cue enough time to be read: at least MIN_CUE_S, and never above
+// MAX_CUE_CHARS_PER_SECOND. Chunks start out sharing the segment's duration in
+// proportion to their length; raising a short chunk to the floor would overrun
+// the segment, so the whole run is scaled back down to fit afterwards.
+function timeCaptionChunks(chunks: string[], segmentS: number) {
+  const totalChars = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const wanted = chunks.map((chunk) => {
+    const share = totalChars > 0 ? (chunk.length / totalChars) * segmentS : segmentS / chunks.length;
+    return Math.max(MIN_CUE_S, chunk.length / MAX_CUE_CHARS_PER_SECOND, share);
+  });
+  const needed = wanted.reduce((sum, value) => sum + value, 0);
+  // The segment grows when its cues cannot be read in the time the narration
+  // estimate allows — the clip is stretched to match further down, so the video
+  // follows the subtitles rather than cutting away from them.
+  const grown = Math.max(segmentS, needed);
+  if (grown <= MAX_SEGMENT_S) return { durations: wanted, segmentS: grown };
+
+  // Over the cap: squeeze every cue by the same factor, but stop at the
+  // absolute reading limit rather than compressing into an unreadable flash.
+  const floors = chunks.map((chunk) => chunk.length / ABS_MAX_CUE_CHARS_PER_SECOND);
+  const squeezed = wanted.map((value, i) => Math.max(floors[i], value * (MAX_SEGMENT_S / grown)));
+  return { durations: squeezed, segmentS: squeezed.reduce((sum, value) => sum + value, 0) };
 }
 
 function scaleFilter(project: MovieRecapProject) {
@@ -109,7 +181,7 @@ function buildOverlayFilter(project: MovieRecapProject, assPath: string | null) 
     const bw = Math.min(w - bx, Math.max(2, Math.round((project.blurWidth / 100) * w)));
     const bh = Math.min(h - by, Math.max(2, Math.round((project.blurHeight / 100) * h)));
     parts.push(`[${label}]split=2[base][toBlur]`);
-    parts.push(`[toBlur]crop=${bw}:${bh}:${bx}:${by},boxblur=12:2[blurred]`);
+    parts.push(`[toBlur]crop=${bw}:${bh}:${bx}:${by},boxblur=${MOVIE_RECAP_BLUR.radius}:${MOVIE_RECAP_BLUR.passes}[blurred]`);
     parts.push(`[base][blurred]overlay=${bx}:${by}[blurred_full]`);
     label = "blurred_full";
   }
@@ -201,32 +273,32 @@ function toAssTimestamp(seconds: number) {
 // resolution and match the CSS preview (MovieRecapSubtitleOverlay).
 function buildAss(project: MovieRecapProject, cues: { start: number; end: number; text: string }[]) {
   const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
-  // The size the CSS preview uses, in output pixels — the shared meaning of
-  // `subtitleFontSize`. Everything else here is derived from it.
-  const cssPx = (project.subtitleFontSize / 100) * h;
+  const style = movieRecapSubtitleStyle(project);
+  // The size the CSS preview uses, in output pixels — the shared meaning of the
+  // preset's `fontSizePct`. Everything else here is derived from it.
+  const cssPx = (style.fontSizePct / 100) * h;
   const fontSize = Math.round(cssPx * ASS_FONT_SIZE_RATIO);
   const alignment = project.subtitlePosition === "top" ? 8 : project.subtitlePosition === "middle" ? 5 : 2;
   const marginV = project.subtitlePosition === "middle" ? 0 : Math.round((project.subtitleOffset / 100) * h);
   const marginH = Math.round((w * 6) / 100);
-  // Matches the CSS pill's 0.35em vertical padding (ASS pads both axes by
-  // Outline), against the CSS-equivalent size, not the inflated ASS one.
-  const padding = Math.max(2, Math.round(cssPx * 0.35));
   const transparent = "&HFF000000";
-  const boxColor = toAssColor(project.subtitleBgColor, project.subtitleBgOpacity);
-  const bold = project.subtitleBold ? -1 : 0;
-  const common = `${bold},0,0,0,100,100,0,0`;
+  // Outline is a fixed fraction of the subtitle font size, resolved against the
+  // CSS-equivalent size (not the inflated ASS one). It expands the glyph contour
+  // on every side — that is what keeps the caption readable against a frame of
+  // any brightness. `Shadow` stays 0: see the constants for why.
+  const outline = Math.max(1, Math.round(cssPx * style.outlineEm));
+  const color = toAssColor(style.color);
+  // Weight is part of the preset, not a per-project switch.
+  const face = subtitleFace(style.weight);
+  const common = `${face.bold},0,0,0,100,100,0,0`;
   const geometry = `${alignment},${marginH},${marginH},${marginV},1`;
 
-  // Two styles, drawn as two layers per cue: layer 0 paints the background box
-  // with invisible text (BorderStyle 3, box colour in OutlineColour), layer 1
-  // paints the real glyphs on top (BorderStyle 1, no border). Splitting them
-  // keeps the box independent of the glyph rendering — and the box layer is
-  // skipped entirely at 0% opacity, so nothing is drawn behind the text.
-  // (BorderStyle 4 was rejected: it boxes each run separately, so a line
-  // renders as overlapping blobs.)
+  // One style, one layer per cue. The two-layer box/glyph split this used to
+  // carry existed only to draw the background pill (BorderStyle 3 with the box
+  // colour in OutlineColour); with the pill gone there is nothing behind the
+  // text to keep independent.
   const styles = [
-    `Style: Box,${SUBTITLE_FONT},${fontSize},${transparent},${transparent},${boxColor},${transparent},${common},3,${padding},0,${geometry}`,
-    `Style: Text,${SUBTITLE_FONT},${fontSize},${toAssColor(project.subtitleColor)},${toAssColor(project.subtitleColor)},${transparent},${transparent},${common},1,0,0,${geometry}`,
+    `Style: Text,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},${transparent},${common},1,${outline},0,${geometry}`,
   ];
 
   const header = [
@@ -246,25 +318,23 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
   ].join("\n");
 
   const events = cues
-    .flatMap((cue) => {
+    .map((cue) => {
       const text = cue.text.replace(/\r?\n/g, "\\N");
       const timing = `${toAssTimestamp(cue.start)},${toAssTimestamp(cue.end)}`;
-      const line = (layer: number, style: string) => `Dialogue: ${layer},${timing},${style},,0,0,0,,${text}`;
-      // Skip the box layer entirely at 0% opacity — nothing to paint.
-      return project.subtitleBgOpacity > 0 ? [line(0, "Box"), line(1, "Text")] : [line(1, "Text")];
+      return `Dialogue: 0,${timing},Text,,0,0,0,,${text}`;
     })
     .join("\n");
 
   return `${header}\n${events}\n`;
 }
 
-// Runs the full phase-two-a pipeline synchronously: read -> copyright-free
-// transform -> narration script -> (TTS skipped, logged) -> duration-matched
-// render. Writes its own status/result onto the project row rather than
+// Runs the full pipeline synchronously: read -> copyright-free transform ->
+// narration script -> TTS -> duration-matched render. Writes its own status/result onto the project row rather than
 // throwing, so the caller just re-reads the row after this resolves.
 // Mock narration: evenly slice the first MOVIE_RECAP_MOCK_SOURCE_SECONDS of
 // the source between the canned lines, so a mock render exercises the exact
-// same segment/overlay/subtitle code path as a real one.
+// same segment/overlay/subtitle code path as a real one — without scene
+// detection, the vision pass, Whisper, or the narration model.
 function mockNarration(project: MovieRecapProject): MovieRecapNarrationSegment[] {
   const span = Math.max(
     MIN_SEGMENT_S * MOVIE_RECAP_MOCK_NARRATION.length,
@@ -276,6 +346,17 @@ function mockNarration(project: MovieRecapProject): MovieRecapNarrationSegment[]
     sourceEndS: Number(((i + 1) * each).toFixed(3)),
     text,
   }));
+}
+
+// Dialogue spoken inside a scene's own time range, joined into one string for
+// the narration model. A scene with none is an action beat — its visual
+// description is the only thing describing it.
+function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS: number) {
+  return transcript
+    .filter((line) => line.end > startS && line.start < endS)
+    .map((line) => line.text.trim())
+    .join(" ")
+    .trim();
 }
 
 export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { mock = false } = {}) {
@@ -306,16 +387,34 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     let narration: MovieRecapNarrationSegment[];
 
     if (mock) {
-      // Mock render: no Whisper, no GPT, no API spend. Everything after this
-      // point is the real pipeline, so framing/logo/subtitle design can be
-      // checked for free (see history/movie-recap.md).
+      // Mock render: no download, no scene detection, no Whisper, no GPT, no
+      // API spend. Everything after this point is the real pipeline, so
+      // framing/logo/subtitle design can be checked for free (see history).
       narration = mockNarration(project);
-      console.log(`[MovieRecapRender] project=${project.id} MOCK render — AI transcription and narration skipped.`);
+      console.log(`[MovieRecapRender] project=${project.id} MOCK render — scene detection, vision, transcription and narration skipped.`);
     } else {
-      // 1. AI reads the video: pull the audio track and transcribe it.
+      // 0. Pull the source down once. Scene detection decodes the whole file,
+      // and every later ffmpeg seek would otherwise re-fetch over the network.
+      await setProgress(db, project.id, "downloading_source");
+      const localSource = path.join(workDir, "source.mp4");
+      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", localSource], signal);
+
+      // 1a. The video's own structure: where the cuts are.
+      await setProgress(db, project.id, "detecting_scenes");
+      const rows = await detectScenes(localSource, workDir, signal);
+
+      // 1b. What each scene LOOKS like — a transcript cannot see an action
+      // beat, and those are most of a recap. One keyframe per scene.
+      await setProgress(db, project.id, "describing_scenes", 0, rows.length);
+      const frames = await extractKeyframes(FFMPEG, localSource, rows, workDir, signal);
+      const visuals = await describeScenes(frames, signal, (done, total) =>
+        setProgress(db, project.id, "describing_scenes", done, total)
+      );
+
+      // 1c. What each scene SOUNDS like.
       await setProgress(db, project.id, "extracting_audio");
       const audioPath = path.join(workDir, "audio.wav");
-      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audioPath], signal);
+      await run(FFMPEG, ["-y", "-i", localSource, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audioPath], signal);
       await setProgress(db, project.id, "transcribing");
       const transcription = await openai().audio.transcriptions.create(
         {
@@ -327,32 +426,91 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       );
       const rawSegments = (transcription as unknown as { segments?: { start: number; end: number; text: string }[] }).segments ?? [];
       transcript = rawSegments.map((s) => ({ start: s.start, end: s.end, text: s.text }));
-      if (!transcript.length) throw new Error("The source video has no detectable speech to recap.");
 
-      // 3. Narration script from the transcript (2. copyright-free video
-      // transform is applied per-segment below, alongside the render).
+      const scenes: RecapScene[] = rows.map((row, index) => ({
+        index,
+        startS: Number(row.start.toFixed(2)),
+        endS: Number(row.end.toFixed(2)),
+        visual: visuals.get(index) ?? "",
+        dialogue: dialogueForScene(transcript, row.start, row.end),
+      }));
+
+      // 3. Narration script over the scenes (2. copyright-free video transform
+      // is applied per-segment below, alongside the render).
       await setProgress(db, project.id, "writing_script");
-      narration = await generateMovieRecapNarration(transcript, signal);
+      const selected = await generateMovieRecapNarration(scenes, signal);
+      // The model returns scene indexes, not timestamps, so every clip lands on
+      // a real cut. Out-of-range indexes are dropped rather than clamped — a
+      // wrong index means the model lost track, not that it meant the last scene.
+      narration = selected
+        .filter((line) => scenes[line.sceneIndex] && line.text.trim())
+        .sort((a, b) => a.sceneIndex - b.sceneIndex)
+        .map((line) => ({
+          sourceStartS: scenes[line.sceneIndex].startS,
+          sourceEndS: scenes[line.sceneIndex].endS,
+          text: line.text.trim(),
+        }));
       if (!narration.length) throw new Error("The AI returned no narration segments.");
+      console.log(
+        `[MovieRecapRender] project=${project.id} ${rows.length} scenes detected, ${transcript.length} transcript lines, ${narration.length} narration beats.`
+      );
     }
 
-    // 4. TTS is skipped this phase — log what would have been synthesized.
-    narration.forEach((segment, i) => {
-      console.log(
-        `[MovieRecapRender] project=${project.id} segment=${i + 1}/${narration.length} TTS skipped, would synthesize: "${segment.text}"`
-      );
-    });
+    // 4. Narration audio. One synthesis call per beat rather than one for the
+    // whole script, because each beat needs its own measured duration to size
+    // its video segment — a single track would have to be split again on
+    // silence, which is guesswork.
+    //
+    // Mock renders never synthesize: staying free of API spend is the whole
+    // reason mock exists, so a mock render still runs on the character-count
+    // estimate and comes out silent.
+    const voice = resolveMovieRecapVoice(project.voiceProfileId);
+    const spokenAudio: ({ path: string; durationSeconds: number } | null)[] = narration.map(() => null);
 
-    // 5. Hybrid duration matching against the estimated narration length.
+    if (!mock) {
+      await setProgress(db, project.id, "synthesizing_narration", 0, narration.length);
+      for (const [i, segment] of narration.entries()) {
+        const result = await synthesize({ text: segment.text, voice, signal });
+        const wavPath = path.join(workDir, `narration-${i}.wav`);
+        await writeFile(wavPath, result.audio);
+        spokenAudio[i] = { path: wavPath, durationSeconds: result.durationSeconds };
+        await setProgress(db, project.id, "synthesizing_narration", i + 1, narration.length);
+      }
+      console.log(
+        `[MovieRecapRender] project=${project.id} synthesized ${narration.length} narration beats with ${voice.providerId}:${voice.id}.`
+      );
+    }
+
+    // 5. Hybrid duration matching against the MEASURED narration length (the
+    // estimate only stands in for a mock render, which has no audio).
+    // A real render already downloaded the source; a mock one never does, so it
+    // clips straight from the URL.
+    const sourceForClips = mock ? project.sourceUrl! : path.join(workDir, "source.mp4");
     const vf = scaleFilter(project);
     const segmentPaths: string[] = [];
+    // The length each video segment was rendered to, reused below to pad each
+    // narration clip onto the same timeline.
+    const segmentDurations: number[] = [];
     const cues: { start: number; end: number; text: string }[] = [];
     let cursor = 0;
 
     for (const [i, segment] of narration.entries()) {
       const sourceDurationS = Math.max(MIN_SEGMENT_S, segment.sourceEndS - segment.sourceStartS);
-      const estimatedS = estimateSpokenSeconds(segment.text);
-      const ratio = estimatedS / sourceDurationS;
+      // Subtitles decide the beat's length, not the other way round: split the
+      // line into cues, give each one enough time to be read, and take the
+      // total as this segment's target. It is never below MIN_SEGMENT_S.
+      const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
+      const spokenS = spokenAudio[i]?.durationSeconds ?? estimateSpokenSeconds(segment.text);
+      const timed = timeCaptionChunks(chunks, spokenS);
+      // timeCaptionChunks caps a beat at MAX_SEGMENT_S, which was the right
+      // call against an estimate but would now cut real speech off mid-word.
+      // Measured audio wins (history/movie-recap.md: "narration audio duration
+      // is authoritative"); the cues stretch with it so captions stay on the
+      // words being spoken instead of finishing early.
+      const stretch = spokenAudio[i] && spokenS > timed.segmentS ? spokenS / timed.segmentS : 1;
+      const cueDurations = stretch === 1 ? timed.durations : timed.durations.map((value) => value * stretch);
+      const targetS = timed.segmentS * stretch;
+      const ratio = targetS / sourceDurationS;
 
       if (ratio < EXTREME_RATIO_MIN || ratio > EXTREME_RATIO_MAX) {
         console.warn(
@@ -361,33 +519,32 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       }
 
       const segPath = path.join(workDir, `seg-${i}.mp4`);
-      const args = ["-y", "-i", project.sourceUrl!, "-ss", String(segment.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
+      const args = ["-y", "-i", sourceForClips, "-ss", String(segment.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
 
       if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {
         // Speed-ramp: stretch/compress playback so the clip's own length becomes the estimate.
         args.push("-to", String(segment.sourceEndS), "-vf", `${vf},setpts=PTS*${ratio.toFixed(4)}`);
-      } else if (estimatedS < sourceDurationS) {
-        // Trim: narration is shorter than the source beat, cut the clip down to fit.
-        args.push("-to", String(segment.sourceStartS + estimatedS), "-vf", vf);
+      } else if (targetS < sourceDurationS) {
+        // Trim: the scene runs longer than the narration needs, so cut it down —
+        // but targetS already carries the MIN_SEGMENT_S floor and the cues'
+        // reading time, so a trim can never produce a flash cut.
+        args.push("-to", String(segment.sourceStartS + targetS), "-vf", vf);
       } else {
-        // Freeze-pad: narration is longer, hold the last frame for the difference.
-        const padS = estimatedS - sourceDurationS;
+        // Freeze-pad: the beat needs longer than the scene runs, hold the last frame.
+        const padS = targetS - sourceDurationS;
         args.push("-to", String(segment.sourceEndS), "-vf", `${vf},tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`);
       }
       args.push(segPath);
       await setProgress(db, project.id, "rendering_segments", i + 1, narration.length);
       await run(FFMPEG, args, signal);
       segmentPaths.push(segPath);
+      segmentDurations.push(targetS);
 
-      // Split into short caption-sized cues, sharing this segment's duration
-      // proportionally so short-line and long-line chunks aren't equal length.
-      // A mock line is already exactly one caption — splitting it would put
-      // different words on screen than the step-3 preview shows, which is the
-      // one thing a mock render exists to let you compare.
-      const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
-      const totalChars = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      for (const chunk of chunks) {
-        const chunkS = totalChars > 0 ? (chunk.length / totalChars) * estimatedS : estimatedS / chunks.length;
+      // Cues were sliced and timed above, before the clip length was chosen —
+      // a mock line is deliberately left whole, so the burned caption is the
+      // same words the step-3 preview shows.
+      for (const [chunkIndex, chunk] of chunks.entries()) {
+        const chunkS = cueDurations[chunkIndex];
         cues.push({ start: cursor, end: cursor + chunkS, text: chunk });
         cursor += chunkS;
       }
@@ -400,6 +557,32 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     const concatPath = path.join(workDir, "concat.mp4");
     await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatPath], signal);
 
+    // The narration track, built on the same timeline as the video: each clip
+    // padded with silence out to the length its own segment was rendered to, so
+    // beat N's speech starts exactly when beat N's picture does. Segments were
+    // already sized to fit their audio, so padding never truncates.
+    let narrationPath: string | null = null;
+    if (spokenAudio.some(Boolean)) {
+      const trackParts: string[] = [];
+      for (const [i, clip] of spokenAudio.entries()) {
+        const slotS = segmentDurations[i];
+        const partPath = path.join(workDir, `track-${i}.wav`);
+        const args = clip
+          ? ["-y", "-i", clip.path, "-af", "apad"]
+          : ["-y", "-f", "lavfi", "-i", `anullsrc=r=${NARRATION_SAMPLE_RATE}:cl=mono`];
+        await run(
+          FFMPEG,
+          [...args, "-t", slotS.toFixed(3), "-ar", String(NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", partPath],
+          signal
+        );
+        trackParts.push(partPath);
+      }
+      const trackListPath = path.join(workDir, "narration.txt");
+      await writeFile(trackListPath, trackParts.map((p) => `file '${p}'`).join("\n"));
+      narrationPath = path.join(workDir, "narration.wav");
+      await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", trackListPath, "-c", "copy", narrationPath], signal);
+    }
+
     // 6. Burn in blur, subtitles, and logo — one final pass on the whole video.
     // Subtitles always burn in: styled-and-burned is the only mode (see
     // history/movie-recap.md), so there is nothing to branch on.
@@ -410,8 +593,16 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       await setProgress(db, project.id, "applying_overlays");
       outputPath = path.join(workDir, "output.mp4");
       const inputs = ["-i", concatPath];
+      // buildOverlayFilter only ever names inputs 0 and 1, so the narration
+      // track goes last and its index depends on whether a logo was added.
       if (project.logoEnabled && project.logoUrl) inputs.push("-i", project.logoUrl);
-      await run(FFMPEG, ["-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath), "-map", "[vout]", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath], signal);
+      const narrationIndex = narrationPath ? inputs.length / 2 : null;
+      if (narrationPath) inputs.push("-i", narrationPath);
+      const audioArgs =
+        narrationIndex === null
+          ? ["-an"]
+          : ["-map", `${narrationIndex}:a`, "-c:a", "aac", "-b:a", "128k", "-shortest"];
+      await run(FFMPEG, ["-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath), "-map", "[vout]", ...audioArgs, "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath], signal);
     }
 
     await setProgress(db, project.id, "uploading");

@@ -97,7 +97,7 @@ actions only — don't re-add theme/account controls there. Any future control
 that belongs on every page (not just `(app)` pages) goes in `Sidebar`'s
 footer, not back into `TopBar`.
 
-## 2026-09-16 — Movie Recap and Voice Lab hidden from the sidebar
+## 2026-09-16 — Movie Recap and Voice Lab hidden from the sidebar (superseded)
 
 `NAV_ITEMS` entries carry a `hidden` flag and `Sidebar` renders
 `VISIBLE_NAV_ITEMS`. Movie Recap and Voice Lab are both flagged hidden, leaving
@@ -115,6 +115,23 @@ sensitive, only unfinished, and an auth gate would have to be unpicked later.
 
 **Consequence:** nothing links to `/movie-recap` or `/labs/voice` from inside
 the app. A signed-in user reaches them only by typing the URL.
+
+**Superseded by the entry below (same day).**
+
+## 2026-09-16 — Movie Recap and Voice Lab shown in the sidebar again
+
+Both entries are back to `hidden: false`, so all three nav destinations render.
+Owner's call, made with the "unfinished feature in the nav" reasoning above on
+the table: they want the two features reachable from the nav while they are
+being built, not URL-only.
+
+The `hidden` flag and `VISIBLE_NAV_ITEMS` filter stay in `Sidebar` — the
+mechanism is still the right way to take a nav item out, and re-hiding either
+feature is one boolean.
+
+**Consequence:** a signed-in user can click into both unfinished features.
+Movie Recap's wizard is mid-build and untested below `md`; Voice Lab is a test
+harness. Rough edges there are known, not bugs to chase.
 
 ## 2026-09-16 — Sidebar becomes an off-canvas drawer below `md`
 
@@ -293,3 +310,39 @@ regeneration changed the shot count without scrolling the whole chapter.
 **Consequence:** desktop changed too. The stats no longer sit to the right of
 the Hints toggle; they are above the first scene. This was deliberate rather
 than a mobile-only branch — one place for the reading, one place for controls.
+
+## 2026-09-16 — URL state uses nuqs; the Movie Recap wizard step lives in the query string
+
+**Decision:** `nuqs` is the app's way of putting component state in the URL.
+`NuqsAdapter` wraps the whole tree in `app/layout.tsx`, and the Movie Recap
+wizard is the first user: `?step=source|settings|customize|review` and, inside
+the customize step, `?tab=aspect|subtitle|logo|blur`.
+
+**Why the query string and not path segments:** the wizard's four steps are one
+resource being edited, not four resources. Path routes
+(`/movie-recap/:id/settings`) would need four page files, and a reload would
+remount the editor and lose the unsaved edits the wizard deliberately holds in
+memory until Save & Continue. Chapter tabs stay path-based because those are
+genuinely different views of different data.
+
+**Why slugs, not `?step=2`:** a number in the URL means nothing to a reader and
+breaks silently if the steps are ever reordered.
+
+**Step reads the URL but is still clamped.** `maxStep` (seeded from the
+project's saved `currentStep`, raised as steps are completed) bounds what the
+URL can select, so a hand-typed `?step=review` on a project that never got past
+its source upload lands on the furthest step actually reached rather than
+rendering a step with no data behind it. An absent `?step` is deliberately
+distinguishable from an explicit one — `parseAsStringLiteral` without
+`withDefault` — because with nothing in the URL the wizard opens where the
+project was left, not at step one.
+
+**History mode is `push` for the step** so Back walks back through the wizard,
+and the default `replace` for the customize sub-tab, which is a view toggle and
+not a place.
+
+**Consequence:** anything that reads the query string through `useQueryState` is
+a `useSearchParams` consumer, so it needs a Suspense boundary above it or a
+statically prerendered route fails the build — `/movie-recap/new` did exactly
+that. `MovieRecapWizard` wraps its editor in `Suspense`; any future nuqs user on a
+static route needs the same.

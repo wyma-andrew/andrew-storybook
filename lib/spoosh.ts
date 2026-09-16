@@ -29,12 +29,20 @@ export type ApiSchema = {
         durationSeconds: number;
         sampleRate: number;
         generationMs: number;
-        seed: number;
+        // Which service spoke this clip — the lab offers voices from more than
+        // one provider so they can be compared.
+        providerId: string;
       };
       body: {
         text: string;
-        voiceId: "narrator" | "narrator-female";
+        voiceId: string;
       };
+    };
+  };
+  "voices/preview": {
+    POST: {
+      data: { audioBase64: string; contentType: "audio/wav"; cached: boolean };
+      body: { voiceId: string };
     };
   };
   "movie-recaps": {

@@ -1,7 +1,8 @@
 # Burmese Voice Lab
 
 Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
-`workers/voice-lab/**`, `lib/voice-lab.ts`, and `lib/voice-worker.ts`.
+`workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
+`lib/tts/**`.
 
 ## 2026-09-15 — Validate self-hosted narration outside Movie Recap
 
@@ -59,3 +60,39 @@ already serializes generation, and the Next route's `maxDuration=300` /
 10-minute fetch timeout bounds a stuck request without affecting the rest of
 the app. Do not read CPU-path timing numbers as representative of eventual
 Movie Recap production latency if that later moves to GPU.
+
+## 2026-09-16 — One TTS contract, providers behind it
+
+**Decision:** speech synthesis goes through `lib/tts/`: a `TtsProvider`
+interface (`isConfigured()` + `synthesize()`), one voice catalog
+(`lib/tts/voices.ts`), a registry, and `synthesize()` as the only entry point
+callers use. Providers are `azure` (Azure Speech REST + SSML) and `voxcpm`
+(the existing self-hosted worker, now a provider rather than a route's private
+transport). The lab route and the Movie Recap render pipeline both call
+`synthesize()` and never name a service.
+
+**Why the per-provider params live inside the voice:** a voice-design prompt
+and a seed mean nothing to Azure; an SSML rate means nothing to VoxCPM2. `Voice`
+is a union discriminated on `providerId`, so a provider's settings are typed
+where they belong and adding a third service makes the compiler point at every
+place that has to handle it. A voice's `id` — the value in
+`movie_recap_projects.voice_profile_id` — stays provider-independent, so moving
+a voice to our own service later is an edit in the catalog, not a migration.
+This follows the existing rule that presets are code constants, not rows.
+
+**Why `surfaces` instead of two catalogs:** the lab and Movie Recap used to keep
+separate voice lists (`VOICE_LAB_PROFILES` and `MOVIE_RECAP_VOICES`) that could
+disagree about which voices exist. One catalog with a per-voice `surfaces` list
+keeps the picker and the synthesizer in step, and lets the lab offer both Azure
+and the self-hosted voices so they can be compared on the same line of text —
+which is what the lab is for.
+
+**Rejected:** a provider chosen by env (`TTS_PROVIDER=azure`). The choice is
+per-voice, not per-deployment — a user picking "Thiha" is picking Azure — and a
+global switch would make a stored voice id ambiguous.
+
+**Consequence:** `lib/voice-lab.ts` is now a thin wrapper over the catalog, and
+`app/api/labs/voice/generate` returns `providerId` instead of the worker's
+`seed`. `app/api/labs/voice/health` still speaks to the VoxCPM2 worker directly
+— it is a worker health check, not a synthesis path, and Azure has no
+equivalent.

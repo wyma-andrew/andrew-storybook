@@ -1,26 +1,16 @@
+import { getVoice, listVoices } from "./tts/voices";
+
 export const VOICE_LAB_MAX_TEXT_LENGTH = 600;
 
-export const VOICE_LAB_PROFILES = [
-  {
-    id: "narrator",
-    name: "Wai Yan",
-    description: "A clear, calm Burmese recap voice with steady cinematic pacing.",
-    stylePrompt: "A calm cinematic narrator with a clear mature voice and steady storytelling pace",
-    seed: 20260915,
-  },
-  {
-    id: "narrator-female",
-    name: "Yu Yu",
-    description: "A clear, calm Burmese recap voice with a female timbre and steady cinematic pacing.",
-    stylePrompt: "A calm cinematic female narrator with a clear mature voice and steady storytelling pace",
-    seed: 20260916,
-  },
-] as const;
+// The lab picker is every voice flagged for the lab surface — both the paid
+// Azure voices and the self-hosted ones, so the two can be compared on the same
+// line of text. The catalog in lib/tts/voices.ts owns the entries themselves.
+export const VOICE_LAB_PROFILES = listVoices("voice-lab");
 
 export type VoiceLabProfileId = (typeof VOICE_LAB_PROFILES)[number]["id"];
 
 export function getVoiceLabProfile(id: unknown) {
-  return VOICE_LAB_PROFILES.find((profile) => profile.id === id) ?? null;
+  return getVoice(id, "voice-lab");
 }
 
 export function validateVoiceLabText(value: unknown) {

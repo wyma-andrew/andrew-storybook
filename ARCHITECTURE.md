@@ -59,8 +59,7 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories (Movie Recap and Voice Lab
-                               entries exist but are `hidden`; routes still work by URL).
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -143,11 +142,21 @@ its visual prompt to improve image-model recognition without changing that key.
 
 Users create resumable recap projects, upload one browser-playable source,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
-movable blur configuration. Source bytes upload directly to R2 in parts; the
+movable blur configuration. Subtitle appearance is a two-option preset (yellow or
+white text, black shadow, no background box) whose size follows the aspect ratio;
+only position and edge distance stay adjustable. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
 same local file is reselected. Generate currently records
-`ready_for_generation` only. Video analysis, transformation, and output belong
-to phase two.
+`ready_for_generation` only. The wizard's step and its customize sub-tab are
+query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
+survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
+
+The render preview (`lib/movie-recap-render.ts`) runs the real pipeline:
+download, scene detection, a vision pass, Whisper transcription, narration
+script, then narration audio through `lib/tts/` (Azure Speech). Each beat's
+measured audio duration sizes its video segment; the padded narration track is
+muxed into the export. A mock render skips every paid step, including TTS, and
+comes out silent.
 
 ### Burmese Voice Lab
 
@@ -156,12 +165,30 @@ to phase two.
 - Worker: `workers/voice-lab/`
 
 The authenticated lab sends bounded Burmese test text through Spoosh to a
-Next.js route, which forwards it to a separately running self-hosted VoxCPM2
-worker. The worker lazily loads the model, applies the code-defined Narrator
-voice-design prompt and seed, and returns an in-memory WAV for playback and
-download. Lab text and audio are deliberately not stored in Supabase or R2.
-`VOICE_LAB_WORKER_URL` stays server-only; an optional shared bearer token
+Next.js route, which hands it to the TTS layer (`lib/tts/`). The lab lists every
+voice flagged for its surface — the Azure Burmese neural voices and the
+self-hosted VoxCPM2 profiles — so the two services can be compared on the same
+line of text, and returns an in-memory WAV for playback and download. Lab text
+and audio are deliberately not stored in Supabase or R2. `TTS_AZURE_KEY` and
+`VOICE_LAB_WORKER_URL` stay server-only; an optional shared bearer token
 protects the worker connection.
+
+### Text to speech
+
+- Contract and voice catalog: `lib/tts/types.ts`, `lib/tts/voices.ts`
+- Voice previews: committed MP3s in `public/movie-recap/voices/`, generated from
+  the catalog by `scripts/generate-voice-previews.ts`. `app/api/voices/preview/`
+  is the fallback for a voice with no file
+- Providers: `lib/tts/providers/azure.ts`, `lib/tts/providers/voxcpm.ts`
+- Entry point: `lib/tts/synthesize.ts`
+
+One catalog holds every voice; each entry names its provider and carries that
+provider's own parameters (Azure voice name and SSML prosody, or VoxCPM2 style
+prompt and seed). `synthesize()` picks the provider off the voice, so callers —
+the lab route and the render pipeline — never name a service. A voice's `id` is
+what the database stores, so moving a voice between providers is a code edit.
+`surfaces` decides where a voice is offered: Movie Recap lists the Azure voices,
+the lab lists all of them.
 
 ### Script
 

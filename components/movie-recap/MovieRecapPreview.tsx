@@ -1,10 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Grip } from "lucide-react";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { MOVIE_RECAP_LOGO_BOX, MOVIE_RECAP_SUBTITLE_SAMPLE } from "@/lib/constants/movie-recap";
+import {
+  MOVIE_RECAP_LOGO_BOX,
+  MOVIE_RECAP_SUBTITLE_SAMPLE,
+  MOVIE_RECAP_TARGET_DIMENSIONS,
+  movieRecapBlurCssPx,
+} from "@/lib/constants/movie-recap";
 import { clampBlurRect } from "@/lib/movie-recap";
 import { MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
 
@@ -20,6 +25,21 @@ const logoPosition: Record<MovieRecapProject["logoPlacement"], React.CSSProperti
   bottom_right: { right: m, bottom: m, justifyContent: "flex-end", alignItems: "flex-end" },
 };
 
+// The blur radius has to be resolved against the frame's real drawn width, so
+// it is measured rather than assumed from the max-width class.
+function useFrameWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    setWidth(frame.clientWidth);
+    const observer = new ResizeObserver(() => setWidth(frame.clientWidth));
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
 export function MovieRecapPreview({
   project,
   videoUrl,
@@ -32,6 +52,10 @@ export function MovieRecapPreview({
   onBlurChange: (rect: BlurRect) => void;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const frameWidth = useFrameWidth(frameRef);
+  // The export blurs in output pixels; the preview frame is drawn a few hundred
+  // pixels wide, so the same radius here would blur far harder than the render.
+  const blurPx = movieRecapBlurCssPx(frameWidth, MOVIE_RECAP_TARGET_DIMENSIONS[project.aspectRatio][0]);
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   function move(event: React.PointerEvent<HTMLDivElement>) {
@@ -95,13 +119,25 @@ export function MovieRecapPreview({
             </div>
           )}
 
+          {/* No tint and no drop shadow on the blur region: the export only
+              blurs it, so the old `bg-panel/35` wash made the preview darker
+              than the render — which is what made the subtitle colour look
+              different between the two (history/movie-recap.md). The accent
+              border and the grip are editor chrome, preview-only by design. */}
           {project.blurEnabled && (
             <div
               role="button"
               tabIndex={0}
               aria-label="Move blur area. Use arrow keys for one percent steps and Shift for five percent steps."
-              className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent bg-panel/35 text-on-accent shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-accent"
-              style={{ left: `${blur.x}%`, top: `${blur.y}%`, width: `${blur.width}%`, height: `${blur.height}%` }}
+              className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent text-fg focus:outline-none focus:ring-2 focus:ring-accent"
+              style={{
+                left: `${blur.x}%`,
+                top: `${blur.y}%`,
+                width: `${blur.width}%`,
+                height: `${blur.height}%`,
+                backdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+                WebkitBackdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+              }}
               onPointerDown={(event) => {
                 event.currentTarget.setPointerCapture(event.pointerId);
                 dragRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: blur.x, y: blur.y };

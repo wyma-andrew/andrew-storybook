@@ -9,8 +9,12 @@ import {
   type SceneRegenerationTarget,
 } from "./prompts/storyboard";
 import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
-import { MOVIE_RECAP_NARRATION_SCHEMA, movieRecapNarrationSystemPrompt } from "./prompts/movie-recap-narration";
-import type { MovieRecapNarrationSegment } from "./api/types";
+import {
+  MOVIE_RECAP_NARRATION_SCHEMA,
+  MOVIE_RECAP_SCENE_VISION_SCHEMA,
+  movieRecapNarrationSystemPrompt,
+  movieRecapSceneVisionSystemPrompt,
+} from "./prompts/movie-recap-narration";
 import type { Region } from "./constants/regions";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
@@ -203,20 +207,62 @@ export async function regenerateSceneShots(
   return (JSON.parse(raw) as { shots: GeneratedShot[] }).shots ?? [];
 }
 
-// Movie Recap render pipeline, step 3 — turns a Whisper transcript of the
-// source video into a Burmese recap narration script. See lib/movie-recap-render.ts.
+// Movie Recap render pipeline — see lib/movie-recap-render.ts. The source is
+// read twice: once through its audio (Whisper) and once through its pictures
+// (one keyframe per detected scene), because an action beat with no dialogue is
+// invisible to a transcript.
 export type TranscriptSegment = { start: number; end: number; text: string };
 
-export async function generateMovieRecapNarration(
-  transcript: TranscriptSegment[],
+export type RecapScene = {
+  index: number;
+  startS: number;
+  endS: number;
+  visual: string;
+  dialogue: string;
+};
+
+// Keyframes are sent at `detail: "low"` — roughly 19 prompt tokens per image,
+// so describing a few hundred scenes costs about as much as one page of text.
+export async function describeMovieRecapScenes(
+  images: { index: number; base64: string }[],
   signal?: AbortSignal
-): Promise<MovieRecapNarrationSegment[]> {
+): Promise<{ sceneIndex: number; visual: string }[]> {
+  const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
+  for (const image of images) {
+    content.push({ type: "text", text: `Scene ${image.index}:` });
+    content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${image.base64}`, detail: "low" } });
+  }
+  const res = await openai().chat.completions.create(
+    {
+      model: "gpt-5.6-luna",
+      messages: [
+        { role: "system", content: movieRecapSceneVisionSystemPrompt },
+        { role: "user", content },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "movie_recap_scene_vision", schema: MOVIE_RECAP_SCENE_VISION_SCHEMA, strict: true },
+      },
+    },
+    { signal }
+  );
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string }[] }).scenes ?? [];
+}
+
+// Returns one narration line per SELECTED scene index — the model picks which
+// scenes carry the plot rather than inventing timestamps, so every recap clip
+// lands on a real cut.
+export async function generateMovieRecapNarration(
+  scenes: RecapScene[],
+  signal?: AbortSignal
+): Promise<{ sceneIndex: number; text: string }[]> {
   const res = await openai().chat.completions.create(
     {
       model: "gpt-5.6-luna",
       messages: [
         { role: "system", content: movieRecapNarrationSystemPrompt },
-        { role: "user", content: JSON.stringify({ transcript }) },
+        { role: "user", content: JSON.stringify({ scenes }) },
       ],
       response_format: {
         type: "json_schema",
@@ -226,5 +272,5 @@ export async function generateMovieRecapNarration(
     { signal }
   );
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { segments: MovieRecapNarrationSegment[] }).segments ?? [];
+  return (JSON.parse(raw) as { segments: { sceneIndex: number; text: string }[] }).segments ?? [];
 }

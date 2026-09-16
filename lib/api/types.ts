@@ -7,6 +7,7 @@ import type {
   MovieRecapLanguage,
   MovieRecapLogoPlacement,
   MovieRecapSubtitlePosition,
+  MovieRecapSubtitlePreset,
   MovieRecapVoiceId,
 } from "@/lib/constants/movie-recap";
 
@@ -25,13 +26,9 @@ export type MovieRecapProject = {
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
-  subtitleFontSize: number;
-  subtitleColor: string;
-  subtitleBgColor: string;
-  subtitleBgOpacity: number;
+  subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
-  subtitleBold: boolean;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;
@@ -64,17 +61,22 @@ export type MovieRecapProject = {
 // Mirrors the stage names lib/movie-recap-render.ts writes as it runs, for
 // progress display — see history/movie-recap.md, "real render progress".
 export type MovieRecapRenderStage =
+  | "downloading_source"
+  | "detecting_scenes"
+  | "describing_scenes"
   | "extracting_audio"
   | "transcribing"
   | "writing_script"
+  | "synthesizing_narration"
   | "rendering_segments"
   | "concatenating"
   | "applying_overlays"
   | "uploading";
 
 // One narration line from the render pipeline's script-generation step, timed
-// against the ORIGINAL source video (sourceStartS/sourceEndS), not against the
-// (not-yet-generated) narration audio — see lib/movie-recap-render.ts.
+// against the ORIGINAL source video (sourceStartS/sourceEndS). The synthesized
+// audio's own length is measured during the render and used to size the video
+// segment; it is not stored here — see lib/movie-recap-render.ts.
 export type MovieRecapNarrationSegment = {
   sourceStartS: number;
   sourceEndS: number;
@@ -87,13 +89,9 @@ export type MovieRecapProjectPatch = Partial<{
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
-  subtitleFontSize: number;
-  subtitleColor: string;
-  subtitleBgColor: string;
-  subtitleBgOpacity: number;
+  subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;
-  subtitleBold: boolean;
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;

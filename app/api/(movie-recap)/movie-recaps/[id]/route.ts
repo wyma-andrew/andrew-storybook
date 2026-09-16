@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import {
-  isHexColor,
   isMovieRecapAspectRatio,
   isMovieRecapFitMode,
   isMovieRecapLogoPlacement,
   isMovieRecapSubtitlePosition,
+  isMovieRecapSubtitlePreset,
 } from "@/lib/constants/movie-recap";
 import { abortMultipartUpload, deleteObject } from "@/lib/r2";
+import { getVoice } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -39,7 +40,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     changesConfiguration = true;
   }
   if (body?.voiceProfileId !== undefined) {
-    if (body.voiceProfileId !== "narrator") return NextResponse.json({ error: "Invalid voice profile." }, { status: 400 });
+    if (!getVoice(body.voiceProfileId, "movie-recap")) {
+      return NextResponse.json({ error: "Invalid voice profile." }, { status: 400 });
+    }
     patch.voice_profile_id = body.voiceProfileId;
     changesConfiguration = true;
   }
@@ -58,16 +61,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.subtitle_position = body.subtitlePosition;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["subtitleColor", "subtitle_color"], ["subtitleBgColor", "subtitle_bg_color"]] as const) {
-    if (body?.[client] !== undefined) {
-      if (!isHexColor(body[client])) return NextResponse.json({ error: `${client} must be a #RRGGBB color.` }, { status: 400 });
-      patch[column] = body[client];
-      changesConfiguration = true;
-    }
+  if (body?.subtitlePreset !== undefined) {
+    if (!isMovieRecapSubtitlePreset(body.subtitlePreset)) return NextResponse.json({ error: "Invalid subtitle preset." }, { status: 400 });
+    patch.subtitle_preset = body.subtitlePreset;
+    changesConfiguration = true;
   }
   for (const [client, column, min, max] of [
-    ["subtitleFontSize", "subtitle_font_size", 2, 16],
-    ["subtitleBgOpacity", "subtitle_bg_opacity", 0, 100],
     ["subtitleOffset", "subtitle_offset", 0, 45],
   ] as const) {
     if (body?.[client] !== undefined) {
@@ -78,11 +77,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       patch[column] = value;
       changesConfiguration = true;
     }
-  }
-  if (body?.subtitleBold !== undefined) {
-    if (typeof body.subtitleBold !== "boolean") return NextResponse.json({ error: "subtitleBold must be boolean." }, { status: 400 });
-    patch.subtitle_bold = body.subtitleBold;
-    changesConfiguration = true;
   }
   if (body?.logoPlacement !== undefined) {
     if (!isMovieRecapLogoPlacement(body.logoPlacement)) return NextResponse.json({ error: "Invalid logo placement." }, { status: 400 });

@@ -4,7 +4,8 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `app/api/(movie-recap)/movie-recaps/**`, `components/movie-recap/**`,
 `lib/constants/movie-recap.ts`, `lib/movie-recap.ts`,
 `lib/movie-recap-render.ts`, `lib/prompts/movie-recap-narration.ts`,
-`lib/r2.ts`, `lib/spoosh.ts`, and the `movie_recap_projects` migrations.
+`lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
+migrations.
 
 ## 2026-09-14 — Phase one is a resumable configuration project, not a render job
 
@@ -151,7 +152,7 @@ so a future implementer doesn't re-litigate them. Rejected alternatives:
 strict audio-driven-only (dead freeze segments on big mismatches) and strict
 video-driven-only (unnatural TTS speed distortion).
 
-## 2026-09-15 — Phase-two-a: real render pipeline, TTS synthesis stubbed to console.log
+## 2026-09-15 — Phase-two-a: real render pipeline, TTS synthesis stubbed to console.log (superseded 2026-09-16)
 
 **Decision:** built the actual pipeline (`lib/movie-recap-render.ts`, `POST
 movie-recaps/:id/render`) instead of the phase-2 placeholder described above:
@@ -415,7 +416,7 @@ the same percentage-of-frame fields, so a new subtitle control must be added
 to both or the preview and the export will disagree. This supersedes the
 earlier entry's "not burned into the exported MP4" consequence.
 
-## 2026-09-15 — Subtitle preview and export now share a font; default size raised
+## 2026-09-15 — Subtitle preview and export now share a font; default size raised (superseded)
 
 **Bug:** a subtitle that looked right in the step-3 preview came out small in
 the rendered video, at the same configured percentage. Sizing was never the
@@ -572,3 +573,846 @@ draws a shadow now.
 
 **Known remaining mismatch:** the preview pill is `rounded-lg`, the burned box
 has square corners. ASS BorderStyle 3 has no corner radius.
+
+## 2026-09-16 — The render reads the picture too: scene detection + a vision pass
+
+**Decision:** before narration, the pipeline now detects scenes with
+PySceneDetect, extracts one keyframe per scene, and has the vision model
+describe each frame in one English sentence. The narration model receives
+`scenes[{index, startS, endS, visual, dialogue}]` and returns one Burmese line
+per SELECTED scene index — not timestamps it invented. Dialogue is matched to a
+scene by overlapping the Whisper transcript with the scene's own time range.
+
+**Why:** a transcript cannot see. Action beats, establishing shots and anything
+between lines of dialogue were invisible to the old prompt, which only ever saw
+text. This also fixes clip selection at the root: because the model picks scene
+indexes, every recap clip starts and ends on a real cut, which is what the
+"extreme duration mismatch" warnings were really complaining about. The
+2026-09-15 pipeline-order entry already specified "scene detection" in step 1;
+phase-two-a shipped without it, and this closes that gap rather than reversing
+anything.
+
+**Why PySceneDetect over ffmpeg `scdet`:** confirmed with the user. ffmpeg
+needs no install and the pipeline already shells out to it, but it handles slow
+dissolves and dark scenes noticeably worse and has no adaptive detector. The
+cost is a Python dependency: `.venv-scenedetect`, invoked as a CLI through
+`SCENEDETECT_BIN` (see README), not as a library binding.
+
+**Budget decisions, measured on real footage** (71s sample: 18 scenes, detect
+3.4s, keyframes 2.0s, vision 5.1s):
+- Scenes shorter than 2s merge into the previous one — a recap beat is never
+  half a second, and flash cuts would dominate the keyframe budget.
+- At most 300 scenes are carried forward, keeping the LONGEST ones (a two-hour
+  film detects ~2000 cuts; long scenes carry plot, quick cutaways rarely do).
+- Keyframes are taken a third of the way into each scene — past the cut's fade
+  and motion blur, still on that scene's subject.
+- Images go at `detail: "low"` (~19 prompt tokens each) in batches of 25, so
+  the whole vision pass costs about a page of text.
+
+**Also:** the source is now downloaded once to the work directory and every
+later ffmpeg call reads that local copy. Scene detection decodes the entire
+file, and the per-segment clip extraction was re-fetching over the network for
+every segment.
+
+**Rejected:** 3 keyframes per scene (3x cost/time for motion within a shot),
+and describing only dialogue-free scenes (cheapest, but then the scenes that
+matter most get no visual context).
+
+**Consequence:** a real render now spends minutes of local CPU on detection
+before its first API call, every time — scene results are not cached on the
+project row yet, so re-rendering the same source repeats that work. The mock
+render skips detection, vision, Whisper and narration entirely, so it stays the
+fast path for design work.
+
+## 2026-09-16 — Bug fixed: the duration estimate counted Burmese "words"
+
+**Bug:** shots flashed past and subtitles were unreadable.
+`estimateSpokenSeconds` counted whitespace-delimited words and divided by 2.3
+words/sec — but Burmese is not space-delimited; its spaces mark phrase breaks.
+Every narration line, whatever its length, counted as ~4 "words" and got the
+same **1.7s**. That single number was the clip's target duration AND the
+subtitle's on-screen time, so it made short shots and sub-second cues together.
+
+**Fixes, all three requested together:**
+- **Estimate by characters** — `CHARS_PER_SECOND_BURMESE = 8.5` (unhurried
+  narration). The same lines now come out 5.4-6.7s instead of 1.7s.
+- **Cue floors** — `MIN_CUE_S = 1.5` and `MAX_CUE_CHARS_PER_SECOND = 11`
+  (roughly broadcast practice, slower than the ~17 CPS used for Latin text).
+  `timeCaptionChunks()` applies both, then reports the total.
+- **Shot floor** — `MIN_SEGMENT_S` raised 1s -> 3s.
+
+**Order reversed on purpose:** cues are now split and timed BEFORE the clip
+length is chosen, and their total becomes the segment's target duration. The
+video follows the subtitles rather than cutting away mid-caption. Previously
+the clip length was decided first and cues were squeezed into whatever was
+left.
+
+**Consequence:** recaps get longer — every beat is at least 3s and carries its
+full reading time, where before many were 1.7s. Trimming can no longer produce
+a flash cut, since the trim target already includes both floors. The estimate
+is still an estimate; measuring real synthesized audio from the self-hosted
+VoxCPM2 worker (the voice lab's) would remove the guess entirely and is the
+obvious next step — deliberately left for its own pass.
+
+## 2026-09-16 — Tuning pass: readable, but shorter
+
+The character-based timing fixed readability and overshot into dragging. Tuned
+down without giving the floors back:
+
+- `CHARS_PER_SECOND_BURMESE` 8.5 -> 10 (brisk recap pace, not an audiobook)
+- `MIN_SEGMENT_S` 3 -> 2.5
+- `MIN_CUE_S` 1.5 -> 1.3, `MAX_CUE_CHARS_PER_SECOND` 11 -> 13
+
+**The bigger lever was the prompt, not the constants.** A narration line's
+length decides how long its clip sits on screen, so the narration prompt now
+asks for one idea per line, 30-60 Burmese characters, never over 80. Measured
+on sample lines: constants alone took three beats from 18.0s to 15.3s; with
+short lines the same three beats are 11.1s, each 3-5s with cues at ~10.5 ch/s
+(still under the 13 ceiling).
+
+**Consequence:** pacing is now shared between a prompt instruction and the
+timing constants, so a future "too fast"/"too slow" complaint can come from
+either. Check the generated `render_script` line lengths first — if lines are
+running 80+ characters the model is ignoring the instruction, and no constant
+will fix that.
+
+## 2026-09-16 — Second tuning pass, and where the floor is
+
+Shots still dwelled. Pace raised again and lines shortened further:
+
+- `CHARS_PER_SECOND_BURMESE` 10 -> 12.5
+- `MIN_SEGMENT_S` 2.5 -> 2, `MIN_CUE_S` 1.3 -> 1.2,
+  `MAX_CUE_CHARS_PER_SECOND` 13 -> 15
+- narration prompt: 25-45 Burmese characters per line, 60 max (was 30-60/80)
+
+Measured on the same three lines: 13.1s -> 11.1s -> **8.9s**, beats now
+2.6-3.8s at ~13 ch/s.
+
+**This is the floor for the constants.** ~13 ch/s of Burmese is the fast end of
+readable, and the whole reason this timing work started was captions that could
+not be read. Further shortening should come from shorter narration lines, not a
+higher rate — if beats still feel long, check `render_script`: a line over ~60
+characters means the model ignored the prompt, and lowering the constants will
+only make that line unreadable rather than shorter.
+
+## 2026-09-16 — Narration register: spoken Burmese, not literary
+
+**Problem:** the script read like a book being recited — `ပစ်ချနိုင်ခဲ့သည်`,
+`အပြင်းအထန်လိုက်သည်`. Burmese is diglossic, and the model defaults to the
+literary register (စာပေ) for anything that looks like writing, which is wrong
+for a voice-over.
+
+**Fix:** the narration prompt names the grammar instead of asking for a tone.
+"Write naturally" does not move a model off literary Burmese; naming the
+endings does. Three lines: spoken endings တယ်/ပါတယ်/မယ်/တာ and never သည်; တွေ
+not များ, ရဲ့ not ၏, ဒီ/အဲဒီ not ဤ/ထို, no သော/လျက်/ခြင်း; plain everyday
+words.
+
+**Kept deliberately short.** A first version spelled the same rules out over
+eight lines with a before/after example. It worked, but the register block was
+then a third of the prompt and crowded the instructions that decide content and
+line length. The Burmese tokens are the entire lever — the English around them
+is padding, so it was cut back to one sentence each and re-verified.
+
+**Verified** with real generations over five synthetic scenes, before and after
+the trim: 5/5 lines in spoken register both times, 48-55 characters, e.g.
+`သူက ဒုံးကျည်ပစ်ပြီး ရန်သူလေယာဉ်ကို ဖျက်ဆီးလိုက်တယ်`.
+
+**Consequence:** the register rules are a third of the narration prompt now. If
+lines ever drift back to သည် forms, the check is the prompt, not the timing
+constants — and `render_script` is the place to look, since the burned subtitle
+is that text verbatim.
+
+## 2026-09-16 — Long captions were overpaid: tiered reading rate + a hard shot cap
+
+**Problem:** long subtitle lines held their shot longer than they should. The
+estimate was linear — characters ÷ 12.5 — so a 57-character line always cost
+4.4s. Reading is not linear: starting a caption costs the most, continuing it
+is faster.
+
+**Fix:** the first `LEAD_IN_CHARS` (35) are timed at 12.5 ch/s and everything
+after at `CONTINUATION_CHARS_PER_SECOND` (20). Added `MAX_SEGMENT_S = 5` as a
+hard ceiling on any single shot: over it, cues are squeezed by a common factor,
+but never past `ABS_MAX_CUE_CHARS_PER_SECOND` (18), so an over-long line
+overruns the cap instead of becoming an unreadable flash.
+
+Measured (flat -> tiered+cap): 33 chars 2.5s -> 2.5s, 51 chars 4.1s -> 3.8s,
+57 chars 4.4s -> 3.8s, 96 chars 5.3s -> 5.3s at the 18 ch/s limit.
+
+**Consequence:** short lines are unchanged, medium lines tighten, and a shot
+that still runs past 5s means the narration model wrote a line far over the
+prompt's 60-character limit. That is a prompt problem — the timing layer
+deliberately refuses to fix it by making the caption unreadable.
+
+## 2026-09-16 — Third timing pass: long captions cost less again
+
+Long lines still held their shot too long. Only the long-line path was touched;
+short lines are unchanged by design.
+
+- `CONTINUATION_CHARS_PER_SECOND` 20 -> 28 (everything past the first 35
+  characters)
+- `MAX_SEGMENT_S` 5 -> 4, `MAX_CUE_CHARS_PER_SECOND` 15 -> 16,
+  `ABS_MAX_CUE_CHARS_PER_SECOND` 18 -> 20
+
+Measured (before -> after): 33 chars 2.5s -> 2.5s, 48 chars 3.7s -> 3.6s,
+53 chars 3.5s -> 3.3s, 91 chars 5.1s -> 4.5s.
+
+**Where this now sits:** a 91-character line runs every cue at the 20 ch/s
+absolute limit — the timing layer is out of room, and that line is 50% over the
+prompt's 60-character maximum. Further shortening has to come from the
+narration prompt (or from enforcing length at generation time), not from these
+constants; lowering them further only produces captions that cannot be read.
+
+**Not done, and the reason:** enforcing `maxLength` on the narration schema was
+started and stopped. It would cap line length at generation time rather than
+asking for it in prose, and nothing in the pipeline truncates text — worth
+testing whether strict structured outputs accepts the keyword before relying
+on it.
+
+## 2026-09-16 — About a second off every caption, and ending variety
+
+**Timing.** Asked for roughly 1s off a ~10-word (45-55 character) line:
+`LEAD_IN_CHARS` 35 -> 20, `CONTINUATION_CHARS_PER_SECOND` 28 -> 36,
+`MAX_CUE_CHARS_PER_SECOND` 16 -> 22, `ABS_MAX_CUE_CHARS_PER_SECOND` 20 -> 26,
+`MIN_CUE_S` 1.2 -> 1, `MAX_SEGMENT_S` 4 -> 3.5. Measured: 33 chars 2.5s ->
+2.0s, 48 chars 3.6s -> 2.7s, 53 chars 3.3s -> 2.4s, 91 chars 4.5s -> 3.6s.
+
+Cues now run at 21-26 ch/s, well past the ~13 ch/s this timing work started
+from and past ordinary broadcast practice. That is a deliberate, user-made call
+by a native Burmese reader on their own footage, not a derived number — do not
+"correct" it back toward a standard reading rate without asking.
+
+**Ending variety.** Every generated line ended in တယ်, which reads as a list
+rather than narration. Cause was the prompt itself: it listed တယ်/ပါတယ်/မယ်/တာ
+as the allowed spoken endings and the model took the first one every time. The
+rule now states the constraint (never သည်) and asks for variation across
+တယ်၊ ပါတယ်၊ တာ၊ တာပဲ၊ မယ်၊ လိုက်တယ်၊ နေတယ်၊ ခဲ့တယ်၊ ပြီ, with no three lines
+ending alike. Listing permitted forms without asking for variation is what
+caused the monotony — worth remembering for any future register rule.
+
+## 2026-09-16 — Register rules replaced by a role; တယ် is not prompt-induced
+
+**Replaced** the grammar checklist (spoken endings, never သည်, တွေ not များ,
+ရဲ့ not ၏, no သော/လျက်/ခြင်း) with two sentences: the model is a Burmese recap
+narrator on YouTube, writing lines the way it would say them aloud rather than
+the way they would be written in a book.
+
+**Tested, and it holds:** 5/5 lines came back in spoken register with no
+literary forms at all. The checklist was not doing the work its earlier entry
+claimed — a role framing is enough, and it leaves room for the model to vary
+its own phrasing.
+
+**Correction to the previous entry:** every line ending in တယ် was blamed on
+the prompt listing တယ် first. That was wrong, and was asserted without testing.
+With the ending list removed entirely, output is still 5/5 တယ် — it is how the
+model writes Burmese declaratives, not something the wording induced. Forcing
+alternatives (ပြီ၊ မယ်၊ တာပဲ) changes tense or mood, so it is left alone unless
+a native listener says the repetition actually grates.
+
+**Still open:** the line-length rule (25-45 characters, 60 max) is the weakest
+instruction in the prompt — generations run 48-64. Since line length sets shot
+duration, that is where pacing complaints should be aimed next, not at the
+timing constants.
+
+## 2026-09-16 — Subtitle weight is three-way, "Extra bold" is faked in both layers (superseded)
+
+**Decision:** `subtitle_bold` (boolean) is replaced by `subtitle_font_weight`
+(400 / 700 / 900, checked in SQL, backfilled bold→700). The customize step now
+shows a "Font weight" three-button picker instead of a Bold switch, because the
+reference look the user is matching (heavy yellow Burmese captions) is heavier
+than Noto Sans Myanmar's 700.
+
+**900 is not a heavier font file.** ASS/libass has a single Bold flag and no
+weight axis, so a real 900 cut cannot be selected in the burn-in at all. "Extra
+bold" is therefore bold glyphs plus an outline in the *text* colour, which
+grows the glyph body outward: ASS `Outline = round(cssPx *
+MOVIE_RECAP_SUBTITLE_FAUX_BOLD_EM)` with `OutlineColour` = the text colour on
+the `Text` style (the `Box` style is untouched, so the pill does not grow).
+
+**Rejected: a real 900 face in the CSS preview only.** It previews a weight the
+export cannot produce — the same parity failure the font-face and `cqh` entries
+above already cost a day each. The preview fakes it the same way instead:
+`-webkit-text-stroke` in the text colour at *double* the width with
+`paint-order: stroke fill`, since CSS centres the stroke on the glyph edge
+while ASS grows outward — doubling and painting the stroke under the fill
+leaves exactly the outward half visible.
+
+**Consequence:** at 900 the outline shares the `Text` style's colour, so it is
+invisible against the text by design. If a *contrasting* outline (black rim
+around yellow text) is ever wanted, that is a separate setting — do not
+repurpose the faux-bold outline for it, or weight and rim will fight over one
+ASS field.
+
+## 2026-09-16 — Text shadow is configuration (supersedes "no drop shadow")
+
+**Decision:** new `subtitle_shadow` (% of the subtitle font size, 0–20, default
+0 = off) and `subtitle_shadow_color`, exposed in the customize step as a slider
+plus a colour row that only appears above 0.
+
+**Supersedes the "No drop shadow" note** in the subtitle-overlay entry above.
+That note was never "shadows are wrong" — it was parity: the ASS style wrote
+`Shadow 0`, so a CSS shadow was decoration the export could not reproduce. Both
+layers now read the same setting, so the rule it was protecting still holds.
+
+- Render: `Shadow` on the `Text` style, with the shadow colour in `BackColour`;
+  the `Box` style keeps `Shadow 0`, so the pill does not get its own shadow.
+- Preview: `text-shadow` with the SAME offset on x and y and a **0 blur
+  radius**, because libass offsets the shadow on both axes and does not blur
+  it. A softer, blurred CSS shadow is rejected for that reason.
+- Size resolves against `cssPx` (the CSS-equivalent font size), not the
+  ASS-inflated `fontSize`, same as the pill padding.
+
+**Note for a future reader:** shadow and the 900 "extra bold" faux outline use
+different ASS fields (`Shadow`/`BackColour` vs `Outline`/`OutlineColour`), so
+they compose — an extra-bold caption can still carry a shadow.
+
+## 2026-09-16 — Shadow and heavy weight are switch + options, not magic values
+
+**Decision:** both extras follow the same shape as Add Logo and Blur — a
+`Switch` that turns the feature on, and its options revealed only when it is
+on. New columns `subtitle_shadow_enabled` and `subtitle_font_weight_enabled`
+(both default false); backfilled from what each project already rendered
+(shadow > 0, weight <> 400).
+
+**Rejected: "off" as a value inside the control** (0% on the shadow slider, a
+"Regular" entry in the weight picker). It reads as a setting when it is really
+a feature switch, and it left two encodings of the same state — a project could
+sit at `shadow_enabled`-equivalent 0% while carrying a shadow colour, and the
+weight picker showed three buttons where one of them meant "none of this". The
+value columns now only ever hold the *on* look: `subtitle_shadow` is checked
+1–20 (default 6) and `subtitle_font_weight` is 700 or 900 (400 is gone).
+
+**Consequence:** the render and the preview both gate on the boolean, never on
+the value — do not "simplify" `subtitleShadowEnabled ? … : 0` back to a
+`subtitleShadow > 0` test, or a project that is switched off but still holds
+its remembered 6% will start drawing a shadow again.
+
+## 2026-09-16 — Bold and shadow are switches with no knobs (supersedes both entries above) (superseded)
+
+**Decision:** the subtitle tab exposes exactly two booleans — `subtitle_bold`
+and `subtitle_shadow`. The size slider, shadow-colour row and the
+Bold/Extra-bold picker added earlier today are gone, along with the columns
+behind them (`subtitle_shadow`, `subtitle_shadow_color`, `subtitle_font_weight`
+were dropped; the two `*_enabled` booleans were renamed to the plain names).
+
+**Why the earlier shape was wrong:** those entries treated shadow depth and
+weight step as things a user would tune per project. They are not — every
+project wants the same one, and each extra control is another number that has
+to stay in parity between the CSS preview and the ASS style. The look is now
+fixed in code: `MOVIE_RECAP_SUBTITLE_SHADOW_EM` (0.06 of the font size) and
+`MOVIE_RECAP_SUBTITLE_SHADOW_COLOR` (black), read by both layers.
+
+**Also dropped: the 900 "extra bold" faux outline.** With no weight step to
+choose, nothing sets it, so the `Outline`/`OutlineColour` trick and
+`MOVIE_RECAP_SUBTITLE_FAUX_BOLD_EM` are removed and the `Text` style is back to
+`Outline 0`. The reasoning in the superseded entry still stands if a heavier
+weight is ever wanted again — libass has a Bold flag, not a weight axis, so it
+would have to be faked in both layers the same way.
+
+**Consequence:** `Outline` on the `Text` style is free again. A future
+contrasting rim (black edge around yellow text) can use it without fighting a
+weight setting for the same field.
+
+## 2026-09-16 — Blur region preview: no tint, and the radius is converted
+
+**Reported as "the subtitle colour changes after render."** It does not — the
+same glyph measures `#FAE17F` in the export and `#FAE179` in the preview, and
+`#FFE066` survives ass → libx264 → yuv420p → decode as `#FEE066`. What differed
+was the *backdrop*: the preview's blur region carried `bg-panel/35` (plus
+`shadow-lg`), so the area behind the caption was darkened in the preview and
+merely blurred in the export. Yellow on a dark wash reads bright; the same
+yellow on a blurred near-white scene reads olive.
+
+**Decision:** the blur region draws blur only. The tint and drop shadow are
+removed; the accent border and the grip icon stay, as editor chrome that is
+obviously not part of the picture.
+
+**Decision:** the blur radius is converted instead of copied. `boxblur` is
+specified in OUTPUT pixels (1280/720 wide) while the preview frame is drawn a
+few hundred CSS pixels wide, so `backdrop-blur-md` was blurring far harder than
+the render. `MOVIE_RECAP_BLUR` (radius 12, 2 passes) is now the single source
+for both, and `movieRecapBlurCssPx` maps it to a CSS gaussian: N box passes of
+radius r ≈ sigma `sqrt(N * ((2r+1)^2 - 1) / 12)`, scaled by the measured frame
+width over the output width. `TARGET_DIMENSIONS` moved to
+`lib/constants/movie-recap.ts` so the client can do that scaling.
+
+**Consequence:** the blur region is fainter on busy footage than the old tinted
+box. That is the point — it now shows what the export will contain. Do not
+re-add a wash to make it easier to see; use the border/grip instead.
+
+## 2026-09-16 — "Yellow" is the reference lime yellow, not gold (superseded)
+
+The Yellow swatch is `#D9E824`, sampled (median of the glyph core) from the
+reference caption the product is matching, replacing `#FFE066`. Projects on the
+old hex were moved in the same migration so their picker still shows a
+selection; a project that had deliberately picked gold has no way to get it
+back from the swatch list, which is accepted — the list is three fixed choices,
+not a colour picker.
+
+## 2026-09-16 — Subtitle pill padding is even, and defined once (superseded)
+
+**Problem:** the pill looked tight at the sides and loose above/below, and the
+two layers disagreed. The preview used `px-[1.2em] py-[0.35em] leading-snug`;
+the ASS box used `Outline = 0.35em` on *both* axes. Measured on a burn at a
+48.6px CSS size: sides 20px, top/bottom 35px — because libass sizes the box
+from the font's LINE box (Noto Sans Myanmar reserves 2.184em for stacked
+Burmese marks) while the glyph ink is much shorter, so an equal pad never looks
+equal.
+
+**Decision:** `MOVIE_RECAP_SUBTITLE_PILL` in `lib/constants/movie-recap.ts` is
+the only definition — `padEm: 0.35`, `sideSpaceEm: 0.257`, `lineEm: 2.184`.
+
+- Render: the **box layer** (not the glyph layer) carries one hard space `\h`
+  per side on every `\N` line. libass grows the background to fit it while the
+  glyphs, drawn from the untouched text, stay centred. Measured result: sides
+  31/34px vs top/bottom 34/36px — even.
+- Preview: explicit `lineHeight: 2.184` (so the CSS line box equals the ASS
+  one — half-leading becomes zero and the ink centres the same way) and
+  `padding: 0.35em 0.607em`, where 0.607 = `padEm + sideSpaceEm`. Tailwind's
+  `leading-snug` is gone precisely because it made the CSS box shorter than the
+  rendered one.
+
+**Rejected: widening the sides with a larger `Outline`.** ASS has one padding
+value for both axes, so it would have made the vertical gap grow too. Rejected:
+drawing the box with ffmpeg `drawbox` — the server does not know the shaped
+text width, only libass does.
+
+**Consequence:** `sideSpaceEm` is the width of a space in Noto Sans Myanmar. If
+`MOVIE_RECAP_SUBTITLE_FONT` is ever changed, re-measure it (and `lineEm`, which
+is the same ratio as `ASS_FONT_SIZE_RATIO`) or the preview's side padding will
+drift from the render's.
+
+## 2026-09-16 — The pill is a plain square box (feather tried, then removed) (superseded)
+
+**Reported as "the border around is not soft."** The preview drew the pill with
+`rounded-lg`; the export draws it with ASS `BorderStyle 3`, which is a hard
+rectangle — libass has no corner radius. So the render could never match, and
+the CSS radius was previewing something unreachable.
+
+**Rejected: rounding the box in the export.** A rounded rect would have to be an
+ASS drawing sized to the shaped text, and only libass knows that width — the
+render pipeline cannot measure Burmese shaping itself. Also rejected: dropping
+the softness and keeping a crisp rectangle in both (offered, not chosen).
+
+**Also rejected, after trying it: feathering the pill.** `{\blur N}` on the ASS
+box layer (with a matching `filter: blur()` on a preview layer) does soften the
+edges, and it was built and then removed — the blurred background reads as a
+smear behind the caption, and the video already has a *separate* blur feature,
+so a second, unrelated blur on the subtitle is confusing.
+
+**Decision:** the pill is a plain hard-edged rectangle in both layers. The
+preview has no `rounded-lg`, no feather layer — just `backgroundColor` on the
+same padded box libass draws.
+
+**Consequence:** do not re-add a CSS radius or blur to the pill "to make it look
+nicer". Both were tried; both only exist in the preview.
+
+## 2026-09-16 — Output stays 1280×720 for now
+
+Caption edges looking stepped was traced to playback, not the pipeline: the ASS
+box rasterizes on exact integer rows (measured: single-row transition, no
+anti-aliased band) and survives the libx264/yuv420p encode within ~3/255, so
+sub-pixel rounding, a canvas/scale mismatch and chroma subsampling are all ruled
+out as causes here. What remains is that `TARGET_DIMENSIONS` is 1280×720, so any
+player on a large screen upscales an already-rasterized box.
+
+Raising it to 1920×1080 was offered and **deliberately deferred** — longer
+renders and bigger files, for a problem that only shows on big screens. Treat
+the 720p output as a known trade-off, not an oversight.
+
+## 2026-09-16 — Real narration: Azure Speech, and audio now sizes the picture
+
+Supersedes "Phase-two-a: real render pipeline, TTS synthesis stubbed to
+console.log" — only its TTS-skipped part; everything else in that entry stands.
+
+**Decision:** the render synthesizes narration for real, one call per beat,
+through `lib/tts/` (see `history/voice-lab.md` for the provider contract). Movie
+Recap's Settings tab offers the two Azure Burmese neural voices —
+`my-MM-ThihaNeural` and `my-MM-NilarNeural` — and nothing else. The synthesized
+track is muxed into the export.
+
+**Why per-beat calls, not one call for the whole script:** every beat needs its
+own measured duration to size its video segment. Synthesizing the script as one
+clip would mean splitting it again on silence, which is guesswork, and a wrong
+split desynchronizes everything after it.
+
+**Why the Azure voices replaced `narrator`:** the self-hosted VoxCPM2 worker
+runs on CPU at tens of seconds per clip (see `history/voice-lab.md`), which a
+render with dozens of beats cannot wear. VoxCPM2 stays a provider and stays in
+the lab, so the comparison that decides whether to move back to our own service
+is still one edit away — flip `surfaces` on the voice.
+
+**Measured audio now outranks the caption cap.** `timeCaptionChunks` caps a beat
+at `MAX_SEGMENT_S` (3.5s). That was right against a character-count estimate, but
+it would now cut real speech off mid-word, so a segment whose audio is longer
+than the cap is stretched to the audio's length and its cues are stretched with
+it. This is the "narration audio duration is authoritative" rule from the
+phase-two design entry, finally with real audio behind it.
+`estimateSpokenSeconds` is not dead code: it is what a mock render still uses.
+
+**Decided against storing the audio.** Clips live in the render's temp workDir
+and go away with it. A recap script is ~2-3k characters: on Azure's free (F0)
+tier that is ~150-250 renders inside the 0.5M-characters-per-month allowance, and
+on S0 it is about four cents a render at $15 per 1M characters. Caching it would
+add columns, object keys, and cleanup for that. It is also usually the wrong thing to reuse — the narration
+script is regenerated on every render, so cached audio would be stale more often
+than it would be reused. Revisit if per-beat re-rendering is ever built.
+
+**Mock renders stay silent**, and stay on the estimate. Being free of API spend
+is the entire reason mock exists.
+
+**429 is a normal event, not a failure.** F0 allows 20 synthesis requests per
+60 seconds and the limit is not adjustable, while a render fires one request per
+narration beat back to back — any recap of real length crosses it. The Azure
+provider therefore retries a 429 up to five times, honoring `Retry-After` and
+otherwise backing off linearly toward the length of that 60-second window. S0
+raises the ceiling but does not remove the case: Azure also answers 429 while its
+backend scales.
+
+**Consequence:** a real render now fails outright when `TTS_AZURE_KEY` /
+`TTS_AZURE_REGION` are missing, where before it produced a silent video. The
+Azure voices ship with `previewUrl: null` — no sample clips have been recorded —
+so the Settings tab shows no play button next to them. The migration
+`20260916230000_movie_recap_azure_voices.sql` rewrites existing `narrator` rows
+to `azure-thiha`; `resolveMovieRecapVoice()` also falls back at runtime, so a
+row that escapes the migration renders in the default voice instead of failing.
+
+## 2026-09-16 — Voice previews are synthesized on demand, not shipped as files (superseded same day)
+
+**Decision:** every voice card in the Settings tab has a working play button.
+A voice with a recorded clip (`previewUrl`) plays that file; the Azure voices
+have none, so the first press calls `POST voices/preview`, which synthesizes
+that voice's own `sampleText` and returns the WAV inline as base64.
+
+**Why not commit two sample MP3s to `public/`:** the sample line and the voice
+parameters live in the catalog, so a checked-in clip is a copy that silently goes
+stale the moment either changes — and it would have to be regenerated by hand for
+every voice added later. Synthesizing from the catalog means the preview is
+always the voice as configured.
+
+**Cached on both sides, because the bytes cannot differ.** The preview is one
+fixed line in one fixed voice for every user, so the route holds a
+module-level `voiceId -> base64` map and the client keeps the object URL for the
+session. Without that, a user clicking play four times would spend four of the
+free tier's twenty requests per minute on identical audio. The server map has a
+fixed ceiling (one short clip per catalog voice) and lives for the process —
+the same single-process assumption the render's cancel map already makes.
+
+**Consequence:** the first press on a cold server waits on Azure — roughly a
+second, shown as a spinner in the button, with every other card's button
+disabled meanwhile so two synthesis requests can't race. A voice preview also
+fails when Azure is unconfigured, where before the button simply wasn't there.
+The client's object URLs are revoked on unmount.
+
+## 2026-09-16 — Bug fixed: SSML namespace capitalisation, diagnosed the long way
+
+**Bug:** every Azure request failed with `Azure Speech returned 400.` and no
+detail. The envelope was built with
+`xmlns="http://www.w3.org/2001/10/Synthesis"`; the namespace is lowercase
+`synthesis`. One character.
+
+**Why it cost so much to find:** Azure answers a malformed envelope with a 400,
+an empty body, and no `x-requestid` — indistinguishable from a wrong voice name,
+an unsupported output format, a bad key, or the wrong endpoint host. Ruling those
+out took a voices/list call (both Burmese voices present in `westus3`), a token
+exchange (auth was fine), three output formats (all fine), and finally bisecting
+the SSML itself.
+
+**Consequence:** `buildSsml` is exported and tested for exactly this
+(`lib/tts/providers/azure.test.ts`), because the request body is the part of the
+provider that fails without saying so. `Content-Type` also now carries
+`charset=utf-8` — the narration is multi-byte Burmese.
+
+**For the next 400:** do not start from the code. Send the smallest possible
+English request with curl, confirm it returns 200, then add back one piece of
+the real request at a time. The failure gives nothing to read, so bisection is
+the only tool.
+
+## 2026-09-16 — Voice previews are static files after all (supersedes)
+
+Supersedes "Voice previews are synthesized on demand, not shipped as files".
+
+**Decision:** each Azure voice's `previewUrl` points at a committed MP3 under
+`public/movie-recap/voices/<voice-id>.mp3`. The play button plays a file and
+never calls Azure. `scripts/generate-voice-previews.ts` writes those files from
+the catalog:
+
+```
+node --experimental-strip-types --env-file=.env scripts/generate-voice-previews.ts
+```
+
+**Why the reversal:** the on-demand version was already cached on both sides, so
+the spend was ~124 characters per server process — but `next dev` resets module
+state, the cost is not bounded by anything the code controls, and pressing play
+could fail (Azure down, quota gone, key missing) for audio that never changes.
+A file cannot fail. The earlier entry's objection — that a committed clip goes
+stale when `sampleText` or the voice params change — is answered by generating it
+from the catalog rather than by hand.
+
+**Why a script and not two curl commands in the README:** the script reads
+`VOICES`, so adding an Azure voice means running one command, not writing a new
+curl line with the right namespace in it.
+
+**Consequence:** changing a voice's `sampleText` or `params` without rerunning
+the script leaves the button playing the old reading, with nothing to flag it.
+`POST voices/preview` stays for voices with no file (the self-hosted ones), and
+the wizard still falls back to it. `buildSsml` moved to `lib/tts/ssml.ts` — a
+module with no runtime imports, because `node --experimental-strip-types` cannot
+resolve the extensionless imports the app uses; `allowImportingTsExtensions` in
+`tsconfig.json` is what lets `scripts/` be typechecked alongside the app.
+
+**MP3, not WAV:** these ship in the repo and are only played in a browser, so
+size wins — 51KB and 59KB against ~200KB each as WAV.
+
+## 2026-09-16 — The render player shows the file's own shape, and unmutes
+
+**Decision:** `MovieRecapRenderPlayer` no longer sets its box from
+`project.aspectRatio`. It sizes to the video, capped at the panel width and
+70vh. It also dropped `muted`.
+
+**Why:** this player's job is to show what came out of the render. Sizing the box
+from the *configuration* means a render whose shape disagrees with it — a stale
+output from before an aspect-ratio change, or any future pipeline bug — gets
+silently letterboxed into looking correct. The file's own shape is the thing
+worth seeing here. `muted` dated from the phase where the export had no audio
+track at all; it now carries narration, which is the part most worth checking.
+
+**Consequence:** the player's width now varies with the video rather than being
+a fixed column. The step-3 customize preview still uses the configured ratio —
+that one IS about the configuration.
+
+## 2026-09-16 — Subtitle look is a preset; size follows the aspect ratio (supersedes)
+
+Supersedes, in whole or in part, every subtitle-styling entry above: the shared
+font/default-size entry, the three-way weight, "Bold and shadow are switches with
+no knobs", the yellow/white colour list, and both pill entries. Their *findings*
+still hold — the 2.184 libass/CSS ratio, the Noto Sans Myanmar requirement, the
+`cqh` trap — only the controls are gone.
+
+**Decision:** the Subtitle tab offers two presets and nothing else about the look.
+
+- `yellow` — `#D9E824` text, black outline, bold, `outlineEm` 0.14
+- `mono` — `#000000` text, white outline, SemiBold (600), `outlineEm` 0.14
+
+Both are bold, both draw a hard black OUTLINE at `OUTLINE_EM` (0.08 of the font
+size), neither has a background box or a drop shadow. Size is not chosen at all: `MOVIE_RECAP_SUBTITLE_SIZE_PCT` gives
+10% of frame height for 16:9 and 4% for 9:16. Position and edge distance remain
+editable — they depend on the footage, not on taste.
+
+**Why:** a caption has one job, staying readable over moving video, and the
+settings that achieve it are few and known. A colour list, a size slider, an
+opacity slider and two switches can be arranged into output that fails that job,
+and every one of them had to be kept in sync between the CSS preview and the ASS
+export — which is what the superseded entries above are mostly about.
+
+**Why size is per aspect ratio and not one number:** the percentage is of frame
+HEIGHT. 10% of a 720-tall landscape frame is 72px on a 1280-wide picture; 10% of
+a 1280-tall portrait frame is 128px on one only 720 wide — more than twice the
+relative size. The two values put the caption at a comparable fraction of the
+picture's width in both.
+
+**What the code lost:** the ASS output is one style and one layer per cue. The
+two-layer box/glyph split, the hard-space side padding, and
+`MOVIE_RECAP_SUBTITLE_PILL` existed only to draw the background pill and are
+gone with it. `movieRecapSubtitleStyle()` in `lib/constants/movie-recap.ts` is now
+the single place the preview and the render agree on a caption's appearance.
+
+**Migration `20260916240000_movie_recap_subtitle_presets.sql`:** existing rows
+map to the preset matching their old `subtitle_color` (white → `white`,
+anything else → `yellow`). A hand-set size, a background pill, and the bold and
+shadow switches have no preset equivalent and are dropped with their columns —
+a project that had turned the shadow off or the pill on will render differently
+after this. That is the intended consequence, not a bug.
+
+## 2026-09-16 — Outline, not drop shadow, and no second copy behind the glyph
+
+**Decision:** the preset draws a black outline around every glyph (ASS `Outline`
+= 0.08 × the CSS-equivalent font size; `-webkit-text-stroke` with
+`paint-order: stroke fill` in the preview) and `Shadow` is 0.
+
+**Why outline:** an offset shadow darkens one side of a glyph only, so a white
+caption still dissolves where the frame behind it is pale on the other three.
+An outline is the one treatment that survives a pale frame, a dark frame, and
+the boundary between them — which is what the reference caption being matched
+uses.
+
+**Why no shadow alongside it:** both were burned together and looked at first.
+The offset copy reads as a grey ghost trailing every glyph and makes the outline
+itself look doubled. The reference has no such ghost.
+
+**Why `paint-order: stroke fill` in CSS:** `-webkit-text-stroke` alone centres
+the stroke on the glyph contour, so half of it eats into the letterform and the
+preview reads thinner than the export — libass expands the contour outwards.
+Painting the stroke behind the fill reproduces that.
+
+**How this was checked:** the ASS style was rendered to a single frame over a
+flat grey with `ffmpeg -f lavfi -i color=... -vf ass=...` and the caption area
+cropped out, at shadow 3px, 2px and 0. That is the way to judge a subtitle
+change — the CSS preview is an approximation of libass, not the other way round.
+
+## 2026-09-16 — The second preset is black-on-white-outline, and outline colour belongs to the preset (colours re-inverted; the outlineColour part stands)
+
+**Decision:** the second preset is `black` — black fill, white outline — not
+`white` with a black outline. `outlineColor` moved out of the module-level
+constants and onto each preset entry.
+
+**Why:** the reference caption for it inverts the first preset rather than
+recolouring it. A single shared outline colour could express one of the two but
+not both, so it was never a property of "captions in general" — it is a property
+of a look.
+
+**Consequence:** migration `20260916250000_movie_recap_subtitle_black_preset.sql`
+renames the stored value `white` → `black` and moves the check constraint with
+it. The preset ids are the DB values, so a look cannot be renamed in code alone.
+
+Verified the same way as the outline itself: burned over flat grey with libass
+and compared against the reference before pushing.
+
+## 2026-09-16 — Weight and outline thickness are per preset, measured off the reference (weight corrected below)
+
+**Decision:** `bold` and `outlineEm` moved onto the preset entries. `yellow`
+stays bold with a 0.08em outline; `black` is REGULAR weight with a 0.111em
+outline.
+
+**Why:** the two reference frames are not the same look at two colours. The
+black one's stems measure ~6.5% of the caption's ink height — lighter than this
+font at 700, which is what the export was drawing — and its white outline is
+proportionally much thicker. Stacked against the reference, bold read visibly
+heavier while regular+thicker-outline matched. The outline carries the weight in
+that look, not the letterform.
+
+**How it was measured, and the limit of it:** the reference is a 396px-wide,
+heavily compressed crop, so per-pixel run statistics on it are dominated by
+antialiasing — a first pass "measured" a 2px stroke that visibly is not 2px.
+What worked: render candidates through libass at 1280×720, crop each to its ink
+bounding box, scale every crop to the reference's width, and stack them with
+`vstack` for a like-for-like look. Trust the stack, not the pixel counter, and
+never trust either against an uncompressed source.
+
+**Consequence:** a preset now owns colour, outline colour, outline thickness and
+weight — everything about how a caption looks. Nothing about the look is shared
+between presets any more except the size rule and the absence of a background
+box.
+
+## 2026-09-16 — The reference face is Noto Sans Myanmar Medium, and libass needs a family name to get it
+
+**Weight since raised to 600 by request — see the note at the end of this entry.**
+
+**Finding:** the reference caption is the SAME family the app already uses.
+Rendering the identical line in Noto Sans Myanmar, Pyidaungsu, Padauk and Myanmar
+Sangam MN and zooming on `ပေါ်က` settles it — the other three differ in shape,
+Noto matches exactly. What differed was WEIGHT: at 400 / 500 / 600 / 700, the
+reference sits on 500. The `black` preset therefore carries `weight: 500`, not
+regular as the entry above concluded from a small-scale comparison.
+
+**Why this needed a code change and not just a number:** ASS has one weight
+control, a Bold flag, so any weight between regular and bold can only be selected
+by naming the family fontconfig maps to that cut. `MOVIE_RECAP_SUBTITLE_FONT_MEDIUM`
+(default `Noto Sans Myanmar Med`, which is what `fc-match` resolves on macOS)
+names it; `subtitleFace()` picks between that and the Bold flag from the preset's
+weight. The CSS preview loads 500 from `next/font` alongside 400/700.
+
+**Trap that cost a pass:** `fc-match "Noto Sans Myanmar SemiBold"` returns
+**Verdana** — fontconfig's family names for the cuts are the abbreviated
+`Noto Sans Myanmar Med` / `SemBd` forms. Naming a weight the obvious way silently
+renders a fallback face that still shows Burmese (libass falls back per glyph),
+so the render looks plausible and is not the font asked for. Always confirm a
+family name with `fc-match` before putting it in a style.
+
+**Consequence:** a render host without the named cut falls back to Regular —
+lighter than the preview, not broken. `fc-match "Noto Sans Myanmar Med"` /
+`"... SemBd"` on the render host is the check;
+`MOVIE_RECAP_SUBTITLE_FONT_MEDIUM` and `MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD` are
+the overrides.
+
+**Raised to 600 (2026-09-16, by request).** The measurement above still stands —
+the still crop measures closest to 500 — but the preset ships SemiBold: the
+caption plays over moving footage, not a frozen frame, and the extra weight holds
+up there. 700 remains too heavy against the reference. `subtitleFace()` picks the
+SemBd family for 600 the same way it picks Med for 500.
+
+## 2026-09-16 — Second preset back to white-on-black-outline
+
+**Decision:** the second preset is `white` again — white fill, black outline —
+reverting the colour inversion recorded above. Migration
+`20260916260000_movie_recap_subtitle_white_preset.sql` renames the stored value
+`black` → `white`.
+
+**What survives from the inverted pass:** everything except the two colours. The
+outline colour still belongs to the preset rather than being one shared constant,
+and the weight (SemiBold 600) and outline thickness (0.111em) were both measured
+during it and are unchanged — they were derived from the reference's proportions,
+which an inversion does not alter.
+
+**Note for whoever reads this next:** this look flipped twice while the reference
+was being pinned down (white-on-black → black-on-white → white-on-black). Each
+flip cost a migration because the preset id is the stored value and is kept honest
+about what it draws. If a third reference frame appears, compare it against a
+burned frame BEFORE changing the catalog — the comparison method is in the entry
+above, and it is cheap.
+
+## 2026-09-16 — 16:9 caption size set from a reference frame: 10% -> 6.5%
+
+**Decision:** `MOVIE_RECAP_SUBTITLE_SIZE_PCT["16:9"]` is 6.5, down from 10.
+
+**How it was derived:** the reference frame supplied for it is PORTRAIT
+(828x1434). Its Burmese caption measures 51px of ink height, and this font's ink
+runs about 1.68x the font size once marks stack above and below, so the font size
+is ~30px — 3.6% of that frame's width. Size is held to a fraction of WIDTH across
+ratios (a caption's readable length tracks the picture's width, not its height),
+so a 1280-wide frame wants ~47px, and `SIZE_PCT` is a percentage of height:
+47/720 = 6.5%.
+
+**`9:16` followed, 4% -> 2% -> 2.5%**, once a screenshot of a portrait render
+confirmed the captions were oversized there too. The strict width match put it at
+2.0% and that read undersized, so portrait ships at 2.5% (4.4% of width against
+landscape's 3.6%).
+
+**Consequence:** captions are smaller than they were in both ratios, and the two
+are deliberately NOT at the same fraction of width — a portrait frame is watched
+at phone size, where the strict match is too small. The width rule is the starting
+point for a new aspect ratio, not the final answer; burn a frame and look.
+
+## 2026-09-16 — The yellow preset's outline was half the reference's: 0.08 -> 0.14
+
+**Finding:** compared against a TikTok recap caption, the difference was neither
+the family nor the weight — both already matched (Noto Sans Myanmar, bold). It
+was outline thickness:
+
+| | outline | stem | outline/stem |
+| --- | --- | --- | --- |
+| reference | 4px | 5px | 0.80 |
+| ours at 0.08em | 1-2px | 4px | 0.25-0.50 |
+
+`outlineEm` for `yellow` is now 0.14, which puts the outline at roughly the width
+of the stems it surrounds — what the reference does.
+
+**Worth remembering:** "the font looks different" was reported, and the font was
+identical. Outline weight changes the apparent typeface enough to read as a
+different face at caption size. Measure outline-to-stem before reaching for a
+font substitution.
+
+**`white` followed to 0.14** by request, so both presets now wear the same
+outline weight and differ only in colour and one step of font weight (700 vs
+600). Its earlier 0.111 came from its own reference frame; that measurement is
+superseded by the preference for the heavier treatment on both.
+
+## 2026-09-16 — The second preset's id is colour-neutral: `mono`
+
+**Decision:** the second preset is black text with a white outline again, and its
+id is now `mono` rather than naming either colour.
+
+**Why the rename:** this look inverted three times in one session while its
+reference was being settled (white-on-black -> black-on-white -> white-on-black
+-> black-on-white). The id is the stored value, so each flip cost a migration
+purely to keep the name honest. `mono` describes the pairing rather than which
+half is which, so the next inversion is a code change and nothing else.
+
+**Migration `20260916270000_movie_recap_subtitle_mono_preset.sql`** maps both
+previous values (`white`, `black`) to `mono` and narrows the check constraint to
+`('yellow', 'mono')`.
+
+**Rule this leaves behind:** a preset id names the ROLE of a look, not its
+colours. `yellow` is a borderline case kept as-is because that colour is the
+point of it — it is the reference caption's signature — but a new preset should
+be named for what it is for.
