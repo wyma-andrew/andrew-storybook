@@ -1966,3 +1966,37 @@ index into the array would break the moment the array changed.
   guarantees an array of strings but not how many or how long. Measured output
   clusters at 44-52 Burmese characters against a stated 20-45 preference and a
   55 hard cap, so the cap is what actually holds the line.
+
+## 2026-09-17 — Azure narration speaks at +10%
+
+**Decision:** both Azure Burmese voices carry `rate: "+10%"`, shared through one
+`AZURE_NARRATION_RATE` constant in `lib/tts/voices.ts`. This closes the item the
+2026-09-16 pacing entry left open ("the delivery rate itself is Azure's
+default … `rate` is already plumbed through `AzureVoiceParams` if that needs to
+move").
+
+**Measured, not assumed:** the same two-sentence Burmese line synthesized at
+Azure's default and at `+10%` came back 6.825s and 6.204s — 9.1% shorter, which
+is exactly `1/1.1`. Azure treats the percentage as a rate multiplier, so a
+`+10%` rate is a 9.1% duration cut, not a 10% one.
+
+**Why one shared constant rather than a rate per voice:** beat durations are
+measured from the synthesized audio, so a per-voice rate would make switching
+from Thiha to Nilar silently change the export's length.
+
+**Why +10% and not more:** shot count is `ceil(beatDuration / SHOT_TARGET_S)`,
+so faster narration means fewer shots per beat, and the narration prompt already
+drops scenes from a beat whose line is too short to give each scene its time.
+Around +15% that starts biting. +10% was chosen as the step that is clearly
+quicker while leaving the scene count alone.
+
+**Consequence — the committed previews had to be regenerated.**
+`public/movie-recap/voices/*.mp3` are static files, so changing the rate without
+re-running `scripts/generate-voice-previews.ts` leaves the wizard's play button
+demonstrating a delivery the render no longer produces. Both files shrank ~9%,
+which is the same change measured above and a cheap confirmation that the new
+rate reached them. Anyone changing a voice's `params` again must re-run it.
+
+**Guarded by a test** asserting both Azure voices carry the rate and that it
+reaches the SSML, because losing it fails silently: renders simply get longer
+and slower again with nothing erroring.
