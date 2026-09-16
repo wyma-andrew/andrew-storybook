@@ -147,10 +147,10 @@ export function ScriptEditor({
 
   const toolbarState = state ?? inactiveState;
   const toolBtn = (active?: boolean) =>
-    `rounded-md px-3 py-1.5 font-semibold hover:bg-hover ${active ? "bg-hover text-fg" : "text-fg"}`;
+    `shrink-0 rounded-md px-2 py-1 text-[12.5px] font-semibold whitespace-nowrap hover:bg-hover md:px-3 md:py-1.5 md:text-[13.5px] ${active ? "bg-hover text-fg" : "text-fg"}`;
   const iconBtn = (active?: boolean) =>
-    `rounded-md px-3 py-1.5 font-normal hover:bg-hover ${active ? "bg-hover text-fg" : "text-fg-2"}`;
-  const sep = "mx-2.5 h-5.5 w-px bg-line-2";
+    `shrink-0 rounded-md !px-1.5 py-1 text-[12.5px] font-normal hover:bg-hover md:!px-2.5 md:py-1.5 md:text-[13.5px] ${active ? "bg-hover text-fg" : "text-fg-2"}`;
+  const sep = "mx-1 h-5.5 w-px shrink-0 bg-line-2 md:mx-2.5";
 
   const setNode = (name: string) => editor.chain().focus().setNode(name).run();
   const insertDialogTemplate = () =>
@@ -178,43 +178,49 @@ export function ScriptEditor({
 
   return (
     <>
+      {/* One row, never two. The node-type buttons scroll sideways when they
+          do not fit; import/undo/redo are pinned outside that scroller, because
+          they are the actions you reach for without looking and a wrapped or
+          scrolled-away undo is worse than a cramped one. */}
       <div
-        className={`flex flex-wrap items-center justify-center gap-2 border-b px-5 py-3 text-fg-2 ${
+        className={`flex items-center gap-1 border-b px-2 py-2 text-fg-2 md:gap-2 md:px-5 md:py-3 ${
           toolbarState.focused ? "border-line-2" : "border-line"
         }`}
       >
-        <Button variant="ghost" className={toolBtn(toolbarState.title)} onClick={() => setNode("title")}>
-          Title
-        </Button>
-        <Button variant="ghost" className={toolBtn(toolbarState.sceneHeading)} onClick={() => setNode("sceneHeading")}>
-          Scene
-        </Button>
-        <Button
-          variant="ghost"
-          className={toolBtn(toolbarState.action)}
-          onClick={() => editor.chain().focus().setParagraph().run()}
-        >
-          Action
-        </Button>
-        <Button variant="ghost" className={toolBtn(toolbarState.dialog)} onClick={insertDialogTemplate}>
-          Dialog
-        </Button>
-        <Button variant="ghost" className={toolBtn(toolbarState.voiceOver)} onClick={() => setNode("voiceOver")}>
-          Voice Over
-        </Button>
-        <Button variant="ghost" className={toolBtn(toolbarState.transition)} onClick={() => setNode("transition")}>
-          Transition
-        </Button>
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto md:justify-center md:gap-2">
+          <Button variant="ghost" className={toolBtn(toolbarState.title)} onClick={() => setNode("title")}>
+            Title
+          </Button>
+          <Button variant="ghost" className={toolBtn(toolbarState.sceneHeading)} onClick={() => setNode("sceneHeading")}>
+            Scene
+          </Button>
+          <Button
+            variant="ghost"
+            className={toolBtn(toolbarState.action)}
+            onClick={() => editor.chain().focus().setParagraph().run()}
+          >
+            Action
+          </Button>
+          <Button variant="ghost" className={toolBtn(toolbarState.dialog)} onClick={insertDialogTemplate}>
+            Dialog
+          </Button>
+          <Button variant="ghost" className={toolBtn(toolbarState.voiceOver)} onClick={() => setNode("voiceOver")}>
+            Voice Over
+          </Button>
+          <Button variant="ghost" className={toolBtn(toolbarState.transition)} onClick={() => setNode("transition")}>
+            Transition
+          </Button>
+        </div>
         <span className={sep}></span>
         <Button variant="ghost" className={iconBtn()} onClick={openImportDialog} title="Import script">
           <FileInput size={15} />
         </Button>
-        <span className={sep}></span>
         <Button
           variant="ghost"
           className={iconBtn()}
           disabled={!toolbarState.canUndo}
           onClick={() => editor.chain().focus().undo().run()}
+          title="Undo"
         >
           <Undo2 size={15} />
         </Button>
@@ -223,6 +229,7 @@ export function ScriptEditor({
           className={iconBtn()}
           disabled={!toolbarState.canRedo}
           onClick={() => editor.chain().focus().redo().run()}
+          title="Redo"
         >
           <Redo2 size={15} />
         </Button>

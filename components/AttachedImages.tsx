@@ -65,7 +65,7 @@ export function AttachedImages({
               else onUploaded();
             })
           }
-          className="block h-28 w-full cursor-pointer overflow-hidden rounded-md border border-line-2 bg-sunken transition-opacity hover:opacity-85"
+          className="block h-20 w-full cursor-pointer overflow-hidden rounded-md border border-line-2 bg-sunken transition-opacity hover:opacity-85 md:h-28"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={image.url} alt={image.fileName} className="size-full object-cover" loading="lazy" />
@@ -82,7 +82,7 @@ export function AttachedImages({
         // state should look like the slot the image will fill. Dashed, so it
         // reads as a placeholder rather than as a button that does something to
         // the shot.
-        className="!h-28 !w-full !min-w-0 justify-center border border-dashed border-line-2 !p-0"
+        className="!h-20 !w-full !min-w-0 justify-center border border-dashed border-line-2 !p-0 md:!h-28"
         onClick={openFiles}
         disabled={uploading}
         aria-label={`Upload images for ${label}`}

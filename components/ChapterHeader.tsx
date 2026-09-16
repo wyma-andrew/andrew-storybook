@@ -8,6 +8,7 @@ import { Select, SelectOption, Dialog, Input } from "@geckoui/geckoui";
 import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
 import { ChapterControlsMenu } from "@/components/ChapterControlsMenu";
 import { LoadingButton, MiniButton, Button } from "@/components/ui/Button";
+import { MobileNavButton } from "@/components/MobileNav";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { DEFAULT_REGION } from "@/lib/constants/regions";
 import type { SaveStatus } from "@/components/ScriptEditor";
@@ -111,8 +112,11 @@ export function ChapterHeader({
   }
 
   return (
-    <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-line px-5 py-3.5">
-      <div className="flex items-center gap-2 text-[16px] font-medium">
+    // Below `md` the three columns can't share a row — the tab pill alone is
+    // wider than a phone — so the header stacks and the tabs scroll sideways.
+    <header className="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-line px-3 py-3 md:grid-cols-[1fr_auto_1fr] md:gap-4 md:px-5 md:py-3.5">
+      <div className="flex min-w-0 items-center gap-2 text-[16px] font-medium">
+        <MobileNavButton className="-ml-1" />
         <Link
           href={`/stories/${storyId}`}
           aria-label={`Back to ${storyTitle}`}
@@ -123,7 +127,7 @@ export function ChapterHeader({
         <Select
           value={chapterId}
           onChange={handleChapterChange}
-          wrapperClassName={`w-[220px] max-w-[220px] ${TRUNCATE_SELECT_VALUE}`}
+          wrapperClassName={`w-full min-w-0 max-w-[150px] md:w-[220px] md:max-w-[220px] ${TRUNCATE_SELECT_VALUE}`}
           placeholder={chapterTitle}
         >
           {chapters.map((c) => (
@@ -138,12 +142,12 @@ export function ChapterHeader({
         {saveStatus === "error" && <CircleAlert size={15} className="shrink-0 text-danger" aria-label="Failed to save" />}
       </div>
 
-      <nav className="flex justify-self-center gap-1 rounded-full border border-line bg-panel-3 p-1">
+      <nav className="col-span-2 flex justify-self-stretch gap-1 overflow-x-auto rounded-full border border-line bg-panel-3 p-1 md:col-span-1 md:justify-self-center">
         {TABS.map((t) => (
           <Link
             key={t.key}
             href={`/stories/${storyId}/chapters/${chapterId}/${t.key}`}
-            className={`rounded-full px-4.5 py-1.5 text-sm font-medium whitespace-nowrap no-underline ${
+            className={`grow rounded-full px-2 py-1 text-center text-[11px] font-medium whitespace-nowrap no-underline md:grow-0 md:px-4.5 md:py-1.5 md:text-sm ${
               active === t.key ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"
             }`}
           >
@@ -152,7 +156,7 @@ export function ChapterHeader({
         ))}
       </nav>
 
-      <div className="flex items-center justify-end gap-3">
+      <div className="col-start-2 row-start-1 flex items-center justify-end gap-3 md:col-start-3">
         <ChapterControlsMenu
           storyId={storyId}
           chapterId={chapterId}

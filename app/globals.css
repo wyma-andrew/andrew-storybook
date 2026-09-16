@@ -319,3 +319,19 @@ body{
 .tiptap-doc p.is-editor-empty:first-child::before{
   content:"Action";float:left;color:var(--color-fg-3);pointer-events:none;height:0;
 }
+
+/* Screenplay typography on a phone. The desktop rules above are sized for a
+   ~560px measure with a 96px dialog indent — on a 344px content box that indent
+   alone is a third of the line, and dialog wrapped to two or three words a row.
+   Sizes step down a little; the INDENTS come off almost entirely, since they
+   exist to shape a page that no longer exists at this width. */
+@media (max-width: 47.99rem) {
+  .tiptap-doc{font-size:15px}
+  .tiptap-doc p{font-size:15px}
+  .tiptap-doc [data-type="title"]{font-size:16px;margin-bottom:24px}
+  .tiptap-doc [data-type="scene-heading"]{font-size:14px;letter-spacing:.1em;margin:22px 0 10px}
+  .tiptap-doc [data-type="parenthetical"]{font-size:13px}
+  .tiptap-doc [data-type="dialog"]{margin-left:20px;max-width:none}
+  .tiptap-doc [data-type="voice-over"]{margin:14px 0;padding:8px 12px}
+  .tiptap-doc [data-type="transition"]{font-size:12px;margin:16px 0}
+}

@@ -10,9 +10,9 @@ export function SectionHead({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-center gap-3">
-      <div>
-        <div className="flex items-baseline gap-3">
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-3">
           <h2 className="text-[15px] font-semibold tracking-wide">{title}</h2>
           {count && <span className="text-xs text-fg-3">{count}</span>}
         </div>

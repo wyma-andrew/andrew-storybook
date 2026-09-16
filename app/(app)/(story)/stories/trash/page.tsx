@@ -53,7 +53,7 @@ export default function StoriesTrashPage() {
           {loading && !stories && <SkeletonStoryGrid count={3} label="Loading trash" />}
           {!loading && !stories?.length && <p className="text-fg-3">Nothing in the trash.</p>}
 
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
             {stories?.map((s) => (
               <div key={s.id} className="flex flex-col overflow-hidden rounded-xl border border-line bg-panel-2">
                 <div className="flex h-[130px] items-end border-b border-line bg-gradient-to-br from-thumb-from to-thumb-to p-3">

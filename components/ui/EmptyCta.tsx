@@ -16,7 +16,7 @@ export function EmptyCta({
 }) {
   return (
     <div
-      className={`mt-6.5 rounded-xl px-6 py-11 text-center ${
+      className={`mt-6.5 rounded-xl px-4 py-9 text-center md:px-6 md:py-11 ${
         dotted ? "border border-dotted border-line-2" : ""
       }`}
     >

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, Settings } from "lucide-react";
+import { Archive, Plus, Settings } from "lucide-react";
 import { LinkButton } from "@/components/ui/Button";
 import { AccentTag } from "@/components/ui/Tag";
 import { TopBar, Body, Wrap } from "@/components/ui/Layout";
@@ -16,8 +16,14 @@ export default function StoriesPage() {
       <TopBar>
         <div className="text-[19px] font-medium">AI Storybook</div>
         <div className="ml-auto flex items-center gap-2.5">
-          <LinkButton variant="secondary" href="/stories/trash" className="flex h-9 items-center text-[13.5px]">
-            Trash Bin
+          <LinkButton
+            variant="secondary"
+            href="/stories/trash"
+            className="!h-9 !w-9 !p-0 flex items-center justify-center"
+            title="Trash Bin"
+            aria-label="Trash Bin"
+          >
+            <Archive size={16} />
           </LinkButton>
           <LinkButton variant="secondary" href="/settings" className="!h-9 !w-9 !p-0 flex items-center justify-center" title="Settings">
             <Settings size={16} />
@@ -36,7 +42,7 @@ export default function StoriesPage() {
           {loading && !stories ? (
             <SkeletonStoryGrid label="Loading stories" />
           ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
             {stories?.map((s) => (
               <Link
                 key={s.id}

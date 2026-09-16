@@ -134,8 +134,8 @@ export default function StoryDetailPage() {
               </div>
             ) : (
               <>
-                <div className="mb-1.5 flex items-center gap-2.5">
-                  <h1 className="text-2xl font-semibold">{story.title}</h1>
+                <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-xl font-semibold md:text-2xl">{story.title}</h1>
                   <span className="rounded-full border border-line-2 bg-chip px-2.5 py-1 text-[10.5px] text-fg-2">
                     {story.visualStyleName ?? "No style"}
                   </span>
@@ -173,7 +173,7 @@ export default function StoryDetailPage() {
             </>
           ) : (
             <>
-              <div className="my-7.5 mb-3.5 flex items-center gap-3">
+              <div className="my-7.5 mb-3.5 flex flex-wrap items-center gap-x-3 gap-y-2.5">
                 <h2 className="text-[15px] font-semibold">Episodes</h2>
                 <div className="ml-auto flex items-center gap-2.5">
                   <StoryControlsMenu storyId={id} storyTitle={story.title} currentStyleId={story.visualStyleId} currentAspectRatio={story.aspectRatio} currentRegion={story.region} currentMotionStyleId={story.motionStyleId} />
@@ -187,11 +187,11 @@ export default function StoryDetailPage() {
                 {chapters.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center gap-4 rounded-[10px] border border-line bg-panel-2 px-4 py-3.5 shadow-sm hover:border-line-2"
+                    className="flex items-center gap-2.5 rounded-[10px] border border-line bg-panel-2 px-3 py-3 shadow-sm hover:border-line-2 md:gap-4 md:px-4 md:py-3.5"
                   >
                     <Link
                       href={`/stories/${id}/chapters/${c.id}/${c.status === "done" ? "storyboard" : c.status}`}
-                      className="flex min-w-0 flex-1 items-center gap-4 text-fg no-underline"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 text-fg no-underline md:gap-4"
                     >
                       <div className="grid h-8.5 w-8.5 shrink-0 place-items-center rounded-[9px] border border-line-2 bg-raised font-mono text-xs font-semibold text-fg-2">
                         {String(c.index).padStart(2, "0")}

@@ -1,5 +1,7 @@
+import { MobileNavButton } from "@/components/MobileNav";
+
 export function Body({ children }: { children: React.ReactNode }) {
-  return <div className="flex-1 overflow-auto py-9">{children}</div>;
+  return <div className="flex-1 overflow-auto py-5 md:py-9">{children}</div>;
 }
 
 export function Wrap({
@@ -11,11 +13,19 @@ export function Wrap({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={`mx-auto px-6 ${wide ? "max-w-[1180px]" : "max-w-[820px]"} ${className}`}>{children}</div>;
+  return <div className={`mx-auto px-4 md:px-6 ${wide ? "max-w-[1180px]" : "max-w-[820px]"} ${className}`}>{children}</div>;
 }
 
 export function TopBar({ children }: { children: React.ReactNode }) {
-  return <header className="flex items-center gap-3.5 border-b border-line px-6 py-4">{children}</header>;
+  return (
+    // The hamburger lives here rather than in each page: TopBar is the one
+    // header every `(app)` page (except the chapter pages, which have their own)
+    // already renders, so mobile nav comes for free with it.
+    <header className="flex items-center gap-3.5 border-b border-line px-4 py-3 md:px-6 md:py-4">
+      <MobileNavButton className="-ml-1" />
+      {children}
+    </header>
+  );
 }
 
 export function Crumb({ children }: { children: React.ReactNode }) {

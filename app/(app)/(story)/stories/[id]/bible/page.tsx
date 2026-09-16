@@ -210,7 +210,7 @@ export default function BiblePage() {
               Promoted from episode Assets steps. Editing here updates every episode that references this
               entry going forward.
             </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
               {characters.map((b) => (
                 <BibleCard key={b.id} entry={b} styleContext={styleContext} />
               ))}
@@ -223,7 +223,7 @@ export default function BiblePage() {
             <div className="mb-4 text-[12.5px] text-fg-3">
               Environment plates reused as background reference wherever the scene occurs.
             </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
               {locations.map((b) => (
                 <BibleCard key={b.id} entry={b} styleContext={locationStyleContext} angleStyleContext={styleContext} />
               ))}
@@ -236,7 +236,7 @@ export default function BiblePage() {
             <div className="mb-4 text-[12.5px] text-fg-3">
               Story-relevant objects with a stable visual identity, reused wherever they appear.
             </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
               {props.map((b) => <BibleCard key={b.id} entry={b} styleContext={styleContext} />)}
               {props.length === 0 && <span className="text-[12.5px] text-fg-3">None yet.</span>}
             </div>

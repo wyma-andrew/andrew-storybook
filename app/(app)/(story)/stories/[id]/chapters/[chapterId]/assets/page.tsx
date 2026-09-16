@@ -774,7 +774,7 @@ export default function AssetsPage() {
                   count={`${characters.length} detected · ${matched} matched · ${isNew} new${staleCharacters ? ` · ${staleCharacters} stale` : ""}`}
                   action={!!characters.length && <RegenerateAllButton assets={characters} chapterId={chapterId} />}
                 />
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
                   {characters.map((a) => (
                     <AssetCard
                       key={a.id}
@@ -795,7 +795,7 @@ export default function AssetsPage() {
                   count={`${locations.length} detected${staleLocations ? ` · ${staleLocations} stale` : ""}`}
                   action={!!locations.length && <RegenerateAllButton assets={locations} chapterId={chapterId} />}
                 />
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
                   {locations.map((a) => (
                     <AssetCard
                       key={a.id}
@@ -816,7 +816,7 @@ export default function AssetsPage() {
                   count={`${props.length} detected${staleProps ? ` · ${staleProps} stale` : ""}`}
                   action={!!props.length && <RegenerateAllButton assets={props} chapterId={chapterId} />}
                 />
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5">
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
                   {props.map((a) => (
                     <AssetCard
                       key={a.id}

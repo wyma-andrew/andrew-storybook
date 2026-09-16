@@ -47,7 +47,7 @@ export function SkeletonRows({ count = 4, label }: { count?: number; label: stri
       {Array.from({ length: count }, (_, i) => (
         <div
           key={i}
-          className="flex items-center gap-4 rounded-[10px] border border-line bg-panel-2 px-4 py-3.5 shadow-sm"
+          className="flex items-center gap-2.5 rounded-[10px] border border-line bg-panel-2 px-3 py-3 shadow-sm md:gap-4 md:px-4 md:py-3.5"
         >
           <Skeleton className="h-8.5 w-8.5 shrink-0 rounded-[9px]" />
           <div className="min-w-0 flex-1">
@@ -97,7 +97,7 @@ export function SkeletonCards({
 /** Script editor: a page of ragged screenplay lines. */
 export function SkeletonScript({ label }: { label: string }) {
   return (
-    <div role="status" aria-label={label} className="mx-auto w-full max-w-[820px] px-6 py-8">
+    <div role="status" aria-label={label} className="mx-auto w-full max-w-[820px] px-4 py-8 md:px-6">
       <Skeleton className="mx-auto mb-9 h-4 w-1/3" />
       {Array.from({ length: 4 }, (_, block) => (
         <div key={block} className="mb-7">

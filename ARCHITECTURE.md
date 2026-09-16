@@ -46,8 +46,8 @@ app/
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, multipart source upload, logo upload
     labs/voice/                Authenticated proxy to the self-hosted TTS lab worker
-  (app)/                       Shared layout.tsx: renders Sidebar + rounded panel once,
-                               so it survives client-side navigation between these routes
+  (app)/                       Shared layout.tsx: renders MobileNavProvider, Sidebar and the
+                               rounded panel once, so they survive client-side navigation here
     (story)/
       stories/                 Story list/detail and three-step chapter UI (URL: /stories)
     (movie-recap)/
@@ -59,7 +59,10 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap; collapsible
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Voice Lab.
+                               Collapsible rail from md up; off-canvas Drawer below md
+  MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
+                               (rendered by TopBar and ChapterHeader)
   ScriptEditor.tsx             Tiptap screenplay editor and import UI
   ChapterHeader.tsx            Chapter navigation and workflow tabs
   StoryControlsMenu.tsx        Story style, motion style, region, aspect, delete, bible

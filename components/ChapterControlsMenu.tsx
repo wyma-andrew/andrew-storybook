@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { Select, SelectOption, toast } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { useWrite } from "@/lib/spoosh";
@@ -52,15 +52,18 @@ export function ChapterControlsMenu({
     <div className="relative shrink-0" ref={ref}>
       <Button
         variant="secondary"
-        className="flex h-9 items-center gap-2 text-[13.5px]"
+        className="flex h-9 items-center gap-2 !px-2.5 text-[13.5px] md:!px-3.5"
         onClick={() => setOpen((o) => !o)}
+        aria-label="Chapter options"
+        title="Chapter options"
       >
-        Chapter options
-        <ChevronDown size={15} className="text-fg-3" />
+        <SlidersHorizontal size={15} className="md:hidden" />
+        <span className="hidden md:inline">Chapter options</span>
+        <ChevronDown size={15} className="hidden text-fg-3 md:block" />
       </Button>
 
       {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[260px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)]">
+        <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[min(260px,calc(100vw-2rem))] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)]">
           <div className="border-b border-line px-3.5 py-3">
             <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
             <div className="flex items-center rounded-lg border border-line-2 bg-raised px-3 py-2 text-[13px] text-fg-2">

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, ChevronDown, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
+import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Button, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -71,17 +71,21 @@ function PromptBox({
           {edited && <Tag>Edited</Tag>}
         </div>
       )}
-      <div className="flex items-start gap-3 rounded-lg border border-line-2 bg-sunken p-3">
+      {/* Stacked below md: the action column is ~90px of a ~300px card, which
+          wrapped the prompt every four words and made a shot three screens
+          tall. Actions go ABOVE the text, not below — a long prompt would
+          otherwise put Copy past a full screen of scrolling. */}
+      <div className="flex flex-col gap-2 rounded-lg border border-line-2 bg-sunken p-3 md:flex-row md:items-start md:gap-3">
         {editing ? (
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            className="min-h-[120px] flex-1 text-[14px] leading-relaxed"
+            className="min-h-[120px] min-w-0 flex-1 text-[14px] leading-relaxed"
           />
         ) : (
-          <div className="flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{text}</div>
+          <div className="min-w-0 flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{text}</div>
         )}
-        <div className="flex shrink-0 flex-col gap-1.5">
+        <div className="-order-1 flex shrink-0 justify-end gap-1.5 md:order-none md:flex-col">
           {editing ? (
             <>
               <MiniLoadingButton
@@ -268,7 +272,7 @@ function ShotPrompts({
             value={activeMode}
             onChange={handleMotionModeChange}
             disabled={saving}
-            wrapperClassName="w-[150px]"
+            wrapperClassName="w-full max-w-[150px]"
           >
             {motionModes.map((option) => (
               <SelectOption key={option.value} value={option.value} label={option.label} />
@@ -345,17 +349,17 @@ function VoiceOverCard({
         {segment.textEdited && <Tag>Edited</Tag>}
       </div>
 
-      <div className="flex items-start gap-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-3">
         {editing ? (
           <Textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            className="min-h-[100px] flex-1 text-[14px] leading-relaxed"
+            className="min-h-[100px] min-w-0 flex-1 text-[14px] leading-relaxed"
           />
         ) : (
-          <div className="min-h-10 flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{segment.text}</div>
+          <div className="min-h-10 min-w-0 flex-1 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{segment.text}</div>
         )}
-        <div className="flex shrink-0 flex-col gap-1.5">
+        <div className="-order-1 flex shrink-0 justify-end gap-1.5 md:order-none md:flex-col">
           {editing ? (
             <>
               <MiniLoadingButton
@@ -393,7 +397,7 @@ function VoiceOverCard({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 border-t border-line pt-3 sm:grid-cols-2">
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <label className="text-[10.5px] font-semibold tracking-wide text-fg-3 uppercase">
           Starts at
           <Select
@@ -725,7 +729,7 @@ export default function StoryboardPage() {
     scene.shots.map((shot) => ({
       id: shot.id,
       order: 0,
-      label: `${scene.index}.${shot.index} — ${shot.label ?? scene.title ?? "Untitled shot"}`,
+      label: `${scene.index}.${shot.index}`,
     }))
   ).map((shot, order) => ({ ...shot, order }));
   const shotOrder = new Map(shotOptions.map((shot) => [shot.id, shot.order]));
@@ -824,19 +828,23 @@ export default function StoryboardPage() {
               {hintsHidden ? <EyeOff size={13} /> : <Eye size={13} />}
               Hints
             </ToolbarButton>
-            <div className={toolbarSep} />
-            {/* One comma-joined line, not three rules-separated cells: these are
-                one reading of the chapter, and a divider between each made them
-                look like three separate controls next to the actual ones. */}
-            <span className="whitespace-nowrap">
-              {sceneCount} scenes, {shotCount} shots, ~{totalDurationLabel} total
-            </span>
           </>
         )}
       </Toolbar>
 
       <Body>
         <Wrap wide>
+          {/* Read of the chapter, not a control — so it sits with the content it
+              describes rather than in the toolbar, where it was the widest item
+              and forced the row to wrap on a phone. One comma-joined line, not
+              three rules-separated cells: a divider between each made them look
+              like three separate controls. */}
+          {!!scenes?.length && (
+            <div className="mb-3.5 text-[12.5px] text-fg-3">
+              {sceneCount} scenes, {shotCount} shots, ~{totalDurationLabel} total
+            </div>
+          )}
+
           {!scenes?.length && !generating && (
             <EmptyCta
               title="No storyboard yet"
@@ -852,7 +860,7 @@ export default function StoryboardPage() {
           )}
 
           {!!voiceOvers?.length && !!shotOptions.length && (
-            <section className="mb-4.5 rounded-xl border border-style-badge-border bg-panel-2 p-4.5">
+            <section className="mb-4.5 rounded-xl border border-style-badge-border bg-panel-2 p-3 md:p-4.5">
               <button
                 type="button"
                 onClick={toggleVoiceOver}
@@ -861,11 +869,11 @@ export default function StoryboardPage() {
                 <Mic size={15} className="text-style-badge" />
                 <h2 className="text-[14px] font-semibold">Voice Over</h2>
                 <Tag>{voiceOvers.length} segments</Tag>
-                <span className="text-[11.5px] text-fg-3 sm:ml-auto">Separate narration overlay · not added to video prompts</span>
-                <ChevronDown
-                  size={16}
-                  className={`shrink-0 text-fg-3 transition-transform ${voiceOverCollapsed ? "-rotate-90" : ""}`}
-                />
+                {/* Below md the caption takes its own line; from md it is
+                    pushed to the right of the title row. */}
+                <span className="w-full text-[11.5px] text-fg-3 md:ml-auto md:w-auto">
+                  Separate narration overlay · not added to video prompts
+                </span>
               </button>
               <div className={`grid-cols-1 gap-3 xl:grid-cols-2 ${voiceOverCollapsed ? "hidden" : "grid"}`}>
                 {voiceOvers.map((segment, index) => {
@@ -911,29 +919,29 @@ export default function StoryboardPage() {
                   list; collapsed there is no list under it, and the rule read as a
                   stray second border inside the card. */}
               <div
-                className={`flex w-full items-center gap-2.5 px-4.5 py-4 ${
+                className={`flex w-full items-center gap-2.5 px-3 py-3.5 md:px-4.5 md:py-4 ${
                   isCollapsed ? "bg-sunken" : `border-b ${SCENE_BORDER_CLASS} ${SCENE_SURFACE_CLASS}`
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => toggleScene(scene.id)}
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 text-left"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left md:gap-3.5"
                 >
                   {/* Not AccentTag: its own bg-accent-dim/text-accent would collide with the
                       per-scene hue, and which class wins is decided by CSS order, not by
                       the order they are listed here. */}
                   <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 font-mono text-xs font-bold tracking-normal normal-case ${SCENE_BADGE_CLASS}`}
+                    className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] font-bold tracking-normal normal-case md:px-2.5 md:py-1 md:text-xs ${SCENE_BADGE_CLASS}`}
                   >
                     {scene.index}
                   </span>
                   <div className="min-w-0">
-                    <h3 className="truncate text-[15px] leading-normal font-semibold">{scene.slug ?? scene.title}</h3>
+                    <h3 className="truncate text-[13px] leading-normal font-semibold md:text-[15px]">{scene.slug ?? scene.title}</h3>
                   </div>
                   <div className="ml-auto flex items-center gap-2.5">
                     <span
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-medium ${
+                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium md:px-2.5 md:py-1 md:text-[10.5px] ${
                         isCollapsed ? "border-line-2 bg-chip text-fg-2" : SCENE_CHIP_CLASS
                       }`}
                     >
@@ -998,9 +1006,9 @@ export default function StoryboardPage() {
                 </Menu>
               </div>
               {!isCollapsed && (
-              <div className="flex flex-col gap-3 px-4.5 py-4">
+              <div className="flex flex-col gap-3 px-3 py-3.5 md:px-4.5 md:py-4">
                 {scene.lighting && (
-                  <div className="flex items-start gap-1.5 text-[11.5px] text-fg-3">
+                  <div className="flex items-start gap-1.5 text-[11px] text-fg-3 md:text-[11.5px]">
                     <Sun size={12} className="mt-[3px] shrink-0" />
                     <span>{scene.lighting}</span>
                   </div>
@@ -1015,13 +1023,13 @@ export default function StoryboardPage() {
                   <div
                     key={shot.id}
                     id={`shot-${shot.id}`}
-                    className={`scroll-mt-4 rounded-[10px] border bg-panel-3 p-3.5 shadow-sm transition-shadow ${
+                    className={`scroll-mt-4 rounded-[10px] border bg-panel-3 p-3 shadow-sm transition-shadow md:p-3.5 ${
                       shot.id === lastCopiedShotId ? "border-ok" : "border-line"
                     }`}
                   >
                     <div>
-                      <div className="mb-2 flex flex-wrap items-baseline gap-2.5">
-                        <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] ${SCENE_PILL_CLASS}`}>
+                      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1.5 md:gap-2.5">
+                        <span className={`rounded-full px-1.5 py-0.5 font-mono text-[10.5px] md:px-2 md:text-[11.5px] ${SCENE_PILL_CLASS}`}>
                           {shotNumber}
                         </span>
                         <MiniButton
@@ -1038,15 +1046,19 @@ export default function StoryboardPage() {
                             the one that changes under the reader, from the toolbar
                             toggle — and it reads the RESOLVED view, not the tab, since
                             a shot with no video prompt falls back to its start frame. */}
-                        <span className="flex items-center gap-1.5 text-[12px] font-medium text-fg-2">
+                        <span className="flex items-center gap-1.5 text-[11px] font-medium text-fg-2 md:text-[12px]">
                           {shot.durationS != null && (
                             <span className="inline-flex items-center gap-1" title="Recommended clip duration">
                               <Clock size={12} className="text-fg-3" />
                               {shot.durationS}s
                             </span>
                           )}
-                          {shot.durationS != null && shot.aspect && <span aria-hidden>·</span>}
-                          {shot.aspect && <span>{shot.aspect}</span>}
+                          {shot.durationS != null && shot.aspect && (
+                            <span aria-hidden className="hidden md:inline">
+                              ·
+                            </span>
+                          )}
+                          {shot.aspect && <span className="hidden md:inline">{shot.aspect}</span>}
                           <span aria-hidden>·</span>
                           {/* Icon + colour, not a third word in the list: the mode is
                               chapter-wide, so every card carries the same text and
@@ -1075,18 +1087,18 @@ export default function StoryboardPage() {
                         // One attach block, one paperclip: the reference list and the
                         // continuity note are the same instruction, and opening both with
                         // the same icon read as two unrelated warnings.
-                        <div className="mb-2 flex gap-1.5 text-[11.5px]">
+                        <div className="mb-2 flex gap-1.5 text-[11px] md:text-[11.5px]">
                           <Paperclip size={12} className="mt-[3px] shrink-0 text-fg-3" />
                           <div className="min-w-0 flex-1">
                             {!!shot.assetsUsed.length && (
                               // Badges here, plain text for duration/ratio above: these
                               // name things that have to be ATTACHED before the prompt is
                               // used, so they are targets to check off, not facts to skim.
-                              <div className="flex flex-wrap items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 overflow-x-auto md:flex-wrap">
                                 {shot.assetsUsed.map((a) => (
                                   <span
                                     key={`${a.kind}-${a.name}`}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-line-2 bg-chip px-2.5 py-0.5 text-fg-2"
+                                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line-2 bg-chip px-2 py-0.5 whitespace-nowrap text-fg-2 md:gap-1.5 md:px-2.5"
                                   >
                                     {a.kind === "character" ? (
                                       <User size={11} className="shrink-0 text-fg-3" />
