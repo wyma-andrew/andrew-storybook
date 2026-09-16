@@ -2037,3 +2037,53 @@ legible if one ever exceeds it.
 **Host requirement:** the ffmpeg build now needs libopus. Verified present in
 both Homebrew's plain `ffmpeg` and `ffmpeg-full`, so this adds no setup step;
 noted in the README beside the libass check.
+
+## 2026-09-17 — The source's own subtitle track is used instead of Whisper, when it has one
+
+**Decision:** before extracting audio, the render probes the source for a text
+subtitle stream (`lib/movie-recap-captions.ts`). If it finds a usable one, it
+converts it to SRT, parses it into the same `{start, end, text}` shape Whisper
+returns, and skips transcription entirely. Otherwise nothing changes.
+
+**Why:** when a source carries captions they beat transcription on every axis —
+exact wording, exact timings, no API call, no upload limit, no minutes of
+waiting. Nothing downstream can tell the difference, because `dialogueForScene`
+only ever saw that shape.
+
+**It is an optimisation, never a replacement.** Most sources have no subtitle
+stream — a download or a cutter export usually strips it — so every path fails
+soft and returns null rather than throwing. Verified both ways against real
+files: a source with a muxed `mov_text` track returned 15 correctly timed cues
+with markup stripped and the language detected, and the same source without one
+returned null and transcribed as before.
+
+**What is deliberately rejected, and why each would otherwise look like it
+worked:**
+- **Bitmap subtitles** (`dvd_subtitle`, `hdmv_pgs_subtitle`, `dvb_subtitle`) are
+  pictures of words. ffmpeg cannot convert them to text; asking it to would
+  produce an empty file rather than an error. Reading those needs OCR.
+- **Forced tracks** translate isolated foreign lines, so they are not the film's
+  dialogue. Used as if they were, they would hand the narration model a few
+  percent of the runtime while appearing to have succeeded.
+- **Burned-in subtitles** cannot be detected at all — they are pixels, not a
+  stream.
+- **Tracks that cover almost nothing.** A second net behind the forced check:
+  under 10 cues or under 5% of the runtime falls back to transcription.
+
+**Stream choice:** a stream marked `default` wins, then the first text stream —
+the order a player would pick in. Language is logged but not filtered on, since
+dialogue in any language is equally useful as context to the narration model.
+
+**Cue text is stripped of styling** (`{\\an8}`, `<i>`, `<font>`) before it reaches
+the model, and a cue's internal line breaks become spaces — those are
+typesetting, not sentence structure. A cue whose timing will not parse is
+dropped rather than guessed at: a wrong timestamp attaches dialogue to the wrong
+scene, silently.
+
+**Also in this change:** the Whisper path moved into `transcribeSource()` so the
+pipeline reads as the single choice it now is — use the source's captions, or
+listen to it.
+
+**Consequence:** caption timings are the distributor's, not measured from the
+audio, and some tracks run a little ahead or behind the speech. That is well
+inside the tolerance here, since cues are only matched to scene ranges.

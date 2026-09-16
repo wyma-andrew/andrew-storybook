@@ -156,8 +156,10 @@ query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
 
 The render preview (`lib/movie-recap-render.ts`) runs the real pipeline:
-download, scene detection, a vision pass, Whisper transcription, narration
-script, then narration audio through `lib/tts/` (Azure Speech). Each beat's
+download, scene detection, a vision pass, then the source's dialogue — read from
+its own subtitle track when it has a usable one (`lib/movie-recap-captions.ts`),
+otherwise transcribed with Whisper — then the narration script and narration
+audio through `lib/tts/` (Azure Speech). Each beat's
 measured audio duration sizes its video segment; the padded narration track is
 muxed into the export. A mock render skips every paid step, including TTS, and
 comes out silent. As a final stage the render writes five Burmese hook-title

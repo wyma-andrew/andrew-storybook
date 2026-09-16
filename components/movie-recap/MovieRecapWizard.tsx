@@ -567,6 +567,7 @@ function Review({
         downloading_source: "Downloading source",
         detecting_scenes: "Detecting scenes",
         describing_scenes: `Describing scene ${project.renderProgressCurrent}/${project.renderProgressTotal}`,
+        reading_captions: "Reading source captions",
         extracting_audio: "Extracting audio",
         transcribing: "Transcribing speech",
         writing_script: "Writing narration script",

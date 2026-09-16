@@ -6,6 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { generateMovieRecapHookTitles, generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
 import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
+import { readSourceCaptions } from "./movie-recap-captions";
 import { movieRecapObjectKey, putObject } from "./r2";
 import { pickShotSpeed } from "./movie-recap";
 import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
@@ -453,6 +454,40 @@ function mockNarration(project: MovieRecapProject): MovieRecapNarrationSegment[]
 // Dialogue spoken inside a scene's own time range, joined into one string for
 // the narration model. A scene with none is an action beat — its visual
 // description is the only thing describing it.
+// Whisper, with the audio compressed first. Extracted from the pipeline so the
+// caller reads as the one decision it is: use the source's captions, or listen
+// to it.
+async function transcribeSource(
+  db: Db,
+  projectId: string,
+  localSource: string,
+  workDir: string,
+  signal: AbortSignal
+): Promise<TranscriptSegment[]> {
+  await setProgress(db, projectId, "extracting_audio");
+  const audioPath = path.join(workDir, "audio.ogg");
+  await run(
+    FFMPEG,
+    ["-y", "-i", localSource, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", TRANSCRIBE_AUDIO_BITRATE, audioPath],
+    signal
+  );
+  // Checked rather than assumed: the ceiling is wide but not infinite, and the
+  // API's own error for an oversized upload does not say what to do about it.
+  const audioBytes = (await stat(audioPath)).size;
+  if (audioBytes > WHISPER_MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `The source is too long to transcribe in one pass (${(audioBytes / 1024 / 1024).toFixed(1)}MB of audio against a 25MB limit).`
+    );
+  }
+  await setProgress(db, projectId, "transcribing");
+  const transcription = await openai().audio.transcriptions.create(
+    { file: createReadStream(audioPath), model: "whisper-1", response_format: "verbose_json" },
+    { signal }
+  );
+  const rawSegments = (transcription as unknown as { segments?: { start: number; end: number; text: string }[] }).segments ?? [];
+  return rawSegments.map((segment) => ({ start: segment.start, end: segment.end, text: segment.text }));
+}
+
 function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS: number) {
   return transcript
     .filter((line) => line.end > startS && line.start < endS)
@@ -523,33 +558,22 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       );
 
       // 1c. What each scene SOUNDS like.
-      await setProgress(db, project.id, "extracting_audio");
-      const audioPath = path.join(workDir, "audio.ogg");
-      await run(
-        FFMPEG,
-        ["-y", "-i", localSource, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", TRANSCRIBE_AUDIO_BITRATE, audioPath],
-        signal
-      );
-      // Checked rather than assumed: the ceiling is wide but not infinite, and
-      // the API's own error for an oversized upload does not say what to do
-      // about it.
-      const audioBytes = (await stat(audioPath)).size;
-      if (audioBytes > WHISPER_MAX_UPLOAD_BYTES) {
-        throw new Error(
-          `The source is too long to transcribe in one pass (${(audioBytes / 1024 / 1024).toFixed(1)}MB of audio against a 25MB limit).`
+      //
+      // The source's own subtitle track first, when it has one: exact wording,
+      // exact timings, no API call, no upload limit, no wait. Most sources do
+      // not carry one — a download or a cutter export usually strips it — so
+      // this fails soft and transcription stays the normal path.
+      await setProgress(db, project.id, "reading_captions");
+      const captions = await readSourceCaptions(FFMPEG, localSource, workDir, project.sourceDurationSeconds, signal);
+      if (captions) {
+        console.info(
+          `[MovieRecapRender] project=${project.id} read ${captions.segments.length} cues from the source's ` +
+            `${captions.stream.codec} subtitle track${captions.stream.language ? ` (${captions.stream.language})` : ""} — skipping transcription`
         );
+        transcript = captions.segments;
+      } else {
+        transcript = await transcribeSource(db, project.id, localSource, workDir, signal);
       }
-      await setProgress(db, project.id, "transcribing");
-      const transcription = await openai().audio.transcriptions.create(
-        {
-          file: createReadStream(audioPath),
-          model: "whisper-1",
-          response_format: "verbose_json",
-        },
-        { signal }
-      );
-      const rawSegments = (transcription as unknown as { segments?: { start: number; end: number; text: string }[] }).segments ?? [];
-      transcript = rawSegments.map((s) => ({ start: s.start, end: s.end, text: s.text }));
 
       const scenes: RecapScene[] = rows.map((row, index) => ({
         index,

@@ -79,6 +79,7 @@ export type MovieRecapRenderStage =
   | "downloading_source"
   | "detecting_scenes"
   | "describing_scenes"
+  | "reading_captions"
   | "extracting_audio"
   | "transcribing"
   | "writing_script"
