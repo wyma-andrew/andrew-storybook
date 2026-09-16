@@ -85,3 +85,31 @@ export function pickShotSpeed(speeds: readonly number[], projectId: string, beat
   }
   return speeds[hash % speeds.length];
 }
+
+
+// Where in the source to grab the thumbnail on press number `attempt`.
+//
+// The button is a shuffle: press again, get a different frame. That needs a
+// sequence that spreads out fast — stepping linearly would hand back four
+// near-identical frames from the opening minutes before it reached anything
+// else. The golden-ratio increment is the standard low-discrepancy answer: every
+// prefix of the sequence is roughly evenly spread over the whole span, so the
+// first four presses already sample the beginning, middle and end.
+//
+// Deterministic in `attempt` alone, like pickShotSpeed, so a given press is
+// reproducible and the row can store which one produced the current image.
+//
+// The first and last 5% are skipped: that is where studio idents, fades from
+// black and credits live, and a black frame is the one result that makes the
+// button look broken.
+const THUMBNAIL_EDGE_MARGIN = 0.05;
+const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
+
+export function thumbnailTimeFor(durationSeconds: number, attempt: number) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 0;
+  const span = durationSeconds * (1 - THUMBNAIL_EDGE_MARGIN * 2);
+  // Start at 0.5 rather than 0 so the very first press lands mid-film, which is
+  // the likeliest place to find a representative frame.
+  const fraction = (0.5 + Math.max(0, attempt) * GOLDEN_RATIO_CONJUGATE) % 1;
+  return durationSeconds * THUMBNAIL_EDGE_MARGIN + span * fraction;
+}

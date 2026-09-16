@@ -138,7 +138,8 @@ its visual prompt to improve image-model recognition without changing that key.
 
 - UI: `app/(app)/(movie-recap)/movie-recap/` and `components/movie-recap/`
 - API: `app/api/(movie-recap)/movie-recaps/`
-- Storage: Cloudflare R2 multipart source upload and presigned logo PUT
+- Storage: Cloudflare R2 multipart source upload, presigned logo PUT, and
+  server-written thumbnail stills
 
 Users create resumable recap projects, upload one browser-playable source,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
@@ -154,6 +155,12 @@ same local file is reselected. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
+
+The Review step can grab cover art without rendering anything:
+`lib/movie-recap-thumbnail.ts` seeks the source in R2 by HTTP range request,
+takes one frame through the same `lib/movie-recap-transform.ts` chain the render
+uses, and stores the JPEG on the project. Pressing the button again advances a
+low-discrepancy sequence, so each press samples a different part of the film.
 
 The render preview (`lib/movie-recap-render.ts`) runs the real pipeline:
 download, scene detection, a vision pass, Whisper transcription, narration

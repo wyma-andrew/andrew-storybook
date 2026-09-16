@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampBlurRect, formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize, pickShotSpeed, suggestMovieRecapFraming } from "./movie-recap";
+import { clampBlurRect, formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize, pickShotSpeed, suggestMovieRecapFraming, thumbnailTimeFor } from "./movie-recap";
 
 describe("movie recap multipart sizing", () => {
   it("uses 16 MiB parts for ordinary videos", () => {
@@ -68,5 +68,48 @@ describe("pickShotSpeed", () => {
 
   it("falls back to original speed only when there is nothing to choose from", () => {
     expect(pickShotSpeed([], "project-a", 0, 0)).toBe(1);
+  });
+});
+
+describe("thumbnailTimeFor", () => {
+  const DURATION = 6000; // a 100-minute film
+
+  it("stays clear of the first and last 5%", () => {
+    // Studio idents, fades from black and credits live there, and a black
+    // thumbnail is the one result that makes the button look broken.
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const t = thumbnailTimeFor(DURATION, attempt);
+      expect(t).toBeGreaterThanOrEqual(DURATION * 0.05);
+      expect(t).toBeLessThanOrEqual(DURATION * 0.95);
+    }
+  });
+
+  it("is deterministic, so a stored attempt reproduces its frame", () => {
+    expect(thumbnailTimeFor(DURATION, 7)).toBe(thumbnailTimeFor(DURATION, 7));
+  });
+
+  it("spreads the first few presses across the whole film", () => {
+    // The point of the golden-ratio step: stepping linearly would hand back
+    // four near-identical frames from the opening minutes.
+    const first = [0, 1, 2, 3].map((attempt) => thumbnailTimeFor(DURATION, attempt));
+    const sorted = [...first].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(DURATION * 0.1);
+    }
+  });
+
+  it("never repeats a frame on consecutive presses", () => {
+    const seen = new Set<number>();
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const t = Math.round(thumbnailTimeFor(DURATION, attempt));
+      expect(seen.has(t)).toBe(false);
+      seen.add(t);
+    }
+  });
+
+  it("returns 0 for a source with no usable duration", () => {
+    // Guard only — the route refuses a source that is not ready.
+    expect(thumbnailTimeFor(0, 3)).toBe(0);
+    expect(thumbnailTimeFor(Number.NaN, 1)).toBe(0);
   });
 });

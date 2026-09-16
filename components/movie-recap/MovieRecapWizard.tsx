@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
-import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Stamp, Trash2, Upload } from "lucide-react";
+import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Image as ImageIcon, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Shuffle, Stamp, Trash2, Upload } from "lucide-react";
 import { Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -113,6 +113,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
+  const { trigger: grabThumbnail, loading: grabbingThumbnail } = useWrite((api) => api("movie-recaps/:id/thumbnail").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
@@ -282,6 +283,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   // One <audio> for the whole list: playing a different voice re-points it.
+  // Cover art from the source. Each press advances the shuffle server-side, so
+  // the client sends nothing and simply takes the row it gets back.
+  async function grabProjectThumbnail() {
+    if (!project) return;
+    const result = await grabThumbnail({ params: { id: project.id } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not grab a thumbnail.");
+      return;
+    }
+    setProject(result.data);
+  }
+
   // A voice with no previewUrl has no button at all, so this is never called
   // without a clip to play.
   // A voice with a recorded clip plays that; the Azure voices have none, so the
@@ -495,6 +508,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             <Review
               project={project}
               onGenerate={generate}
+              onGrabThumbnail={grabProjectThumbnail}
+              grabbingThumbnail={grabbingThumbnail}
               saving={saving}
               onRenderPreview={renderRecapPreview}
               rendering={rendering}
@@ -518,6 +533,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 function Review({
   project,
   onGenerate,
+  onGrabThumbnail,
+  grabbingThumbnail,
   saving,
   onRenderPreview,
   rendering,
@@ -526,6 +543,8 @@ function Review({
 }: {
   project: MovieRecapProject;
   onGenerate: () => void;
+  onGrabThumbnail: () => void;
+  grabbingThumbnail: boolean;
   saving: boolean;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
@@ -561,6 +580,28 @@ function Review({
   return <div><h2 className="mb-1 text-lg font-semibold">Review Configuration</h2><p className="mb-6 text-sm text-fg-2">Confirm the settings that phase 2 will use.</p>
     <div className="overflow-hidden rounded-xl border border-line bg-panel-2"><table className="w-full border-collapse"><tbody>{rows.map(([label, value]) => <tr key={label} className="border-b border-line last:border-0"><th className="w-1/3 px-4 py-3 text-left text-xs font-medium text-fg-3">{label}</th><td className="px-4 py-3 text-sm text-fg">{value}</td></tr>)}</tbody></table></div>
     <div className="mt-6 flex flex-wrap items-center gap-3"><LoadingButton variant="primary" loading={saving} onClick={onGenerate}>Generate Recap Video</LoadingButton>{project.status === "ready_for_generation" && <span className="flex items-center gap-1.5 text-sm text-ok"><Check size={16} /> Ready for phase 2</span>}</div>
+
+    <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-sm font-medium">Thumbnail</span>
+        {project.thumbnailAtSeconds !== null && <span className="text-xs text-fg-3">Frame at {formatDuration(project.thumbnailAtSeconds)}</span>}
+      </div>
+      <p className="mb-4 text-xs text-fg-2">
+        Grabbed from the uploaded source, so it needs no render. The frame is cropped to {project.aspectRatio} and carries the same zoom, mirror and colour the export uses. Press again for a different frame — each press moves to a new point in the film, not the next second of it.
+      </p>
+      <div className="flex flex-wrap items-start gap-4">
+        <div className={`${project.aspectRatio === "9:16" ? "aspect-[9/16] w-32" : "aspect-video w-56"} overflow-hidden rounded-lg border border-line bg-panel`}>
+          {project.thumbnailUrl
+            /* The key is a fresh uuid every press, so the URL changes and the
+               browser never serves the previous frame from cache. */
+            ? <img src={project.thumbnailUrl} alt="Recap thumbnail" className="size-full object-cover" />
+            : <div className="flex size-full items-center justify-center text-fg-3"><ImageIcon size={24} /></div>}
+        </div>
+        <LoadingButton loading={grabbingThumbnail} onClick={onGrabThumbnail}>
+          <Shuffle size={16} /> {project.thumbnailUrl ? "Grab Another Frame" : "Grab Thumbnail"}
+        </LoadingButton>
+      </div>
+    </div>
 
     <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
       <div className="mb-1 flex items-center justify-between">

@@ -39,6 +39,14 @@ export type MovieRecapProject = {
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
+  // Cover art grabbed from the SOURCE (not the render) — see
+  // history/movie-recap.md. `thumbnailAttempt` is the shuffle position the
+  // current image came from, so the next press moves on instead of repeating.
+  // Server-written only, which is why none of these are in the patch type.
+  thumbnailUrl: string | null;
+  thumbnailObjectKey: string | null;
+  thumbnailAtSeconds: number | null;
+  thumbnailAttempt: number;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;

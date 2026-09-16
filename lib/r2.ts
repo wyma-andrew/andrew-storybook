@@ -92,7 +92,11 @@ function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
 }
 
-export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle", fileName: string) {
+export function movieRecapObjectKey(
+  projectId: string,
+  kind: "source" | "logo" | "render" | "subtitle" | "thumbnail",
+  fileName: string
+) {
   return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 

@@ -1852,3 +1852,61 @@ four speeds: 1.400 every time.
 **Side effect worth knowing:** this partly covers the unbuilt source-continuity
 item. A run of adjacent scenes is no longer a faithful copy of the original once
 each one plays at a different speed.
+
+## 2026-09-17 — The thumbnail is grabbed from the SOURCE, and the button is a shuffle
+
+**Decision:** the Review tab has a "Grab Thumbnail" button that pulls one frame
+from the uploaded source video, runs it through the render's own filter chain,
+and stores it on the project as `thumbnail_url` / `thumbnail_object_key` /
+`thumbnail_at_seconds` / `thumbnail_attempt`. Pressing again grabs a different
+frame. `POST movie-recaps/:id/thumbnail` takes no body.
+
+**Why the source and not the render output:** cover art is wanted long before a
+render exists, and a render costs minutes of local CPU plus Whisper and GPT
+spend. The source is `ready` at the end of step one, so this button works from
+then on. Taking the frame from the finished export was considered and rejected
+for that reason alone — it would have been slightly more accurate (it would
+carry burned subtitles) at the price of making a picture as expensive as a video.
+
+**Why it still looks like the export:** the grabbed frame is passed through
+`buildShotFilter(shotFilterContext(project))` — the same chain the render uses
+per shot — so it comes out at the output aspect ratio with the copyright-free
+zoom, blurred backfill, mirror and colour grade already applied. A thumbnail
+showing the raw source would advertise a video that does not look like it. This
+is the payoff for `lib/movie-recap-transform.ts` being a pure string builder with
+no timing in it: a second consumer needed no changes to it.
+
+**Why the source is not downloaded:** `-ss` placed BEFORE `-i` on an http(s)
+input makes ffmpeg seek with HTTP range requests. Measured against a 149MB
+source in R2: 1.7s wall clock, a few MB transferred, a 44KB JPEG out. The render
+pipeline downloads the whole object because it reads all of it; this must not,
+or the button inherits the render's cost profile.
+
+**Why a shuffle rather than a fixed frame or a scrubber:** a fixed timestamp
+picks a fade or an ident often enough to look broken, and a scrubber is a
+control to build and explain before the user has seen a single frame. The button
+re-presses instead. `thumbnailTimeFor()` steps by the golden-ratio conjugate, a
+low-discrepancy sequence, so the FIRST FEW presses already sample the beginning,
+middle and end — measured on a 131s source, presses one to four land at 65.7s,
+20.5s, 93.6s and 48.4s. A linear step would have returned four near-identical
+frames from the opening minutes. The first and last 5% are excluded, which is
+where idents, fades from black and credits live.
+
+**Why `thumbnail_attempt` is a position and not a success counter:** it is the
+input to that sequence, so the stored value reproduces the frame on screen and
+the next press is guaranteed to move somewhere else. A counter of successes
+would repeat frames after any failed press.
+
+**Consequences a future reader should not mistake for bugs:**
+- The thumbnail does NOT carry subtitles or the logo. Those are applied by the
+  render in a final pass over the whole video, not per shot, and are not part of
+  `buildShotFilter`.
+- The old R2 object is deleted only AFTER the new one uploads, so a failed press
+  leaves the previous thumbnail intact. The key is a fresh uuid every time,
+  which is also what stops the browser serving a cached previous frame.
+- A press that cannot decode a frame returns 502 and changes nothing — including
+  `thumbnail_attempt`, so the same bad position is retried rather than skipped.
+  If that turns out to be annoying on damaged sources, advancing the attempt on
+  failure is the fix.
+- The columns are server-written and deliberately absent from
+  `MovieRecapProjectPatch`.
