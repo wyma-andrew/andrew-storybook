@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -25,6 +25,20 @@ import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderSta
 import type { supabaseRoute } from "./supabase/route";
 
 const execFileAsync = promisify(execFile);
+
+// Whisper rejects an upload over 25MB. That is a real ceiling on this feature,
+// not a formality: the extraction used to be 16kHz mono PCM, which is 32,000
+// bytes a second, so anything longer than about 13.6 MINUTES failed — and the
+// whole point is recapping feature-length films. Measured on a 131s source:
+// 4,204,190 bytes of WAV against 245,693 of Opus.
+//
+// Opus at 16kbps mono is ~1,870 bytes a second, which puts the ceiling near 3.9
+// hours and covers any film. It is a speech codec at a speech bitrate, so the
+// quality cost is small: transcribing the same clip as WAV and as Opus returned
+// the same dialogue apart from one proper noun. The narration prompt summarizes
+// rather than quotes, so that is a fair trade for the feature working at all.
+const TRANSCRIBE_AUDIO_BITRATE = "16k";
+const WHISPER_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 // Homebrew's plain `ffmpeg` formula no longer bundles libass/freetype (they
 // moved to the keg-only `ffmpeg-full`), and burning styled Burmese subtitles
@@ -510,8 +524,21 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
       // 1c. What each scene SOUNDS like.
       await setProgress(db, project.id, "extracting_audio");
-      const audioPath = path.join(workDir, "audio.wav");
-      await run(FFMPEG, ["-y", "-i", localSource, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audioPath], signal);
+      const audioPath = path.join(workDir, "audio.ogg");
+      await run(
+        FFMPEG,
+        ["-y", "-i", localSource, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", TRANSCRIBE_AUDIO_BITRATE, audioPath],
+        signal
+      );
+      // Checked rather than assumed: the ceiling is wide but not infinite, and
+      // the API's own error for an oversized upload does not say what to do
+      // about it.
+      const audioBytes = (await stat(audioPath)).size;
+      if (audioBytes > WHISPER_MAX_UPLOAD_BYTES) {
+        throw new Error(
+          `The source is too long to transcribe in one pass (${(audioBytes / 1024 / 1024).toFixed(1)}MB of audio against a 25MB limit).`
+        );
+      }
       await setProgress(db, project.id, "transcribing");
       const transcription = await openai().audio.transcriptions.create(
         {

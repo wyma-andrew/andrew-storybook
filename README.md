@@ -65,6 +65,14 @@ Check a build before using it — all three filters must be listed:
 "$FFMPEG_PATH" -filters | grep -E ' (subtitles|ass|drawtext) '
 ```
 
+The build also needs the Opus encoder, which the audio the render sends to
+Whisper is compressed with (uncompressed audio hits Whisper's 25MB upload limit
+after about 13 minutes of source):
+
+```bash
+"$FFMPEG_PATH" -encoders | grep libopus
+```
+
 ## Movie Recap scene detection (PySceneDetect)
 
 The render pipeline reads the source twice — its audio (Whisper) and its

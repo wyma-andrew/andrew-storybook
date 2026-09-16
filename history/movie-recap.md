@@ -1999,3 +1999,41 @@ describes a bug that is now present again:**
 
 - **Diagnostic note:** `r_frame_rate` reports 30 for every segment and hides this
   entirely. Only `avg_frame_rate` and the raw frame timestamps show it.
+
+## 2026-09-17 — Transcription audio is compressed, because WAV capped the feature at 13 minutes
+
+**Bug, found before it was hit:** the render extracted 16kHz mono PCM for
+Whisper. That is 32,000 bytes a second against Whisper's 25MB upload limit, so
+any source longer than **about 13.6 minutes** failed the transcribe step. Every
+test source so far had been 60-131 seconds, which is the only reason it had not
+surfaced — and the feature exists to recap feature-length films, which are 7-11x
+over the limit.
+
+**Fix:** extract Opus at 16kbps mono instead (`-c:a libopus -b:a 16k`). Measured
+on the same 131s source: 4,204,190 bytes of WAV against 245,693 of Opus, which is
+1,870 bytes a second and puts the ceiling near **3.9 hours**.
+
+**Why Opus and not MP3 or AAC**, projected to a two-hour film from the same
+measurement: Opus 12.8MB, MP3 13.8MB, AAC 21.2MB. AAC was rejected for leaving no
+margin. All three were confirmed to be *accepted* by Whisper — that was tested,
+not assumed, by transcribing each.
+
+**Quality cost, measured rather than asserted:** the same clip transcribed as
+WAV, Opus and MP3 returned the same dialogue apart from one proper noun
+("Anderton's" became "Hannityd's" under Opus and "Anna and his" under MP3).
+Segment counts differed (60/43/54), so cue granularity shifts slightly. Accepted
+because the narration prompt summarizes rather than quotes, and because the
+alternative is the feature not working on a real film.
+
+**A size check runs before the upload** and throws a message naming the limit.
+The ceiling is wide but not infinite, and Whisper's own error for an oversized
+upload does not say what to do about it.
+
+**Not done — chunking.** Splitting the audio and stitching segment timings would
+remove the ceiling entirely rather than raising it. It was not needed once the
+ceiling passed any plausible film length, and the size check makes the failure
+legible if one ever exceeds it.
+
+**Host requirement:** the ffmpeg build now needs libopus. Verified present in
+both Homebrew's plain `ffmpeg` and `ffmpeg-full`, so this adds no setup step;
+noted in the README beside the libass check.
