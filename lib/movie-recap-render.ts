@@ -73,6 +73,17 @@ const CONTINUATION_CHARS_PER_SECOND = 36;
 // cap rather than becoming unreadable. That is the signal the narration prompt
 // is being ignored, not something to solve with timing.
 const MAX_SEGMENT_S = 3.5;
+// A beat is cut into shots rather than holding one clip for its whole length —
+// real recaps cut every second or two under a continuous line, and a single
+// held shot is what made the pacing drag. The model groups the scenes (see
+// lib/prompts/movie-recap-narration.ts); these decide how many of them a given
+// beat can actually afford.
+const SHOT_TARGET_S = 1.4;
+const MIN_SHOT_S = 1;
+// No shot holds longer than this. A beat whose scenes cannot fill its line
+// borrows unused ones rather than sitting on a single frame — 3-4s holds were
+// what still read as static after the first pacing pass.
+const MAX_SHOT_S = 2.4;
 const ABS_MAX_CUE_CHARS_PER_SECOND = 26;
 // Floors, applied after the estimate. A recap beat shorter than this reads as a
 // flash cut however well the narration fits it.
@@ -97,6 +108,20 @@ const TARGET_DIMENSIONS = MOVIE_RECAP_TARGET_DIMENSIONS;
 // the concat demuxer needs one identical format across all of them, and a
 // provider is free to return whatever rate it likes.
 const NARRATION_SAMPLE_RATE = 24000;
+
+// Azure pads every clip it returns with silence — measured at ~0.18s before the
+// speech and ~0.81s after it on a 4.85s clip. That silence is part of the file,
+// so its duration sizes the beat, and the picture sits on a frame through all of
+// it: five beats of narration carried nearly five seconds of dead air. Clips are
+// trimmed back to their speech, and a single deliberate gap is added instead.
+const SILENCE_THRESHOLD_DB = -40;
+// Left either side of the speech so trimming can never clip a soft first or last
+// syllable.
+const SPEECH_MARGIN_S = 0.06;
+// The breath between one line and the next. Real narration has one; what it does
+// not have is a different one every time, set by whatever the TTS felt like
+// appending.
+const BEAT_GAP_S = 0.15;
 
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 
@@ -158,6 +183,64 @@ function timeCaptionChunks(chunks: string[], segmentS: number) {
   const floors = chunks.map((chunk) => chunk.length / ABS_MAX_CUE_CHARS_PER_SECOND);
   const squeezed = wanted.map((value, i) => Math.max(floors[i], value * (MAX_SEGMENT_S / grown)));
   return { durations: squeezed, segmentS: squeezed.reduce((sum, value) => sum + value, 0) };
+}
+
+// How many of a beat's scenes it can afford, and how long each gets. Enough
+// cuts for roughly one per SHOT_TARGET_S, but never so many that a shot falls
+// under MIN_SHOT_S — below that a cut reads as a glitch rather than an edit.
+// Scenes the line is too short to pay for are DROPPED rather than squeezed:
+// the model is asked for 2-4 scenes a beat and cannot know how long the
+// synthesized line will actually run.
+//
+// `ceil`, not `round`: at 2s of speech, rounding gives one 2s hold while
+// ceiling gives two 1s cuts, and a held shot is exactly the dragging pace this
+// replaced. The MIN_SHOT_S cap below it stops that bias from producing flicker.
+export function planBeatShots<T>(shots: T[], targetS: number) {
+  const affordable = Math.max(1, Math.floor(targetS / MIN_SHOT_S));
+  const wanted = Math.max(1, Math.ceil(targetS / SHOT_TARGET_S));
+  const shotCount = Math.min(shots.length, wanted, affordable);
+  return { shots: shots.slice(0, shotCount), shotCount, slotS: targetS / shotCount };
+}
+
+// How many scenes a beat needs before any of its shots would exceed MAX_SHOT_S.
+// The beat borrows from unused scenes to reach it; if the pool runs dry the hold
+// stands, because repeating footage inside one beat looks worse than a long shot.
+export function shotsNeededFor(targetS: number) {
+  return Math.max(1, Math.ceil(targetS / MAX_SHOT_S));
+}
+
+// Cuts a synthesized clip back to the speech inside it. ffmpeg reports where the
+// silence runs are; the first non-silent sample and the last are the bounds, with
+// SPEECH_MARGIN_S left on either side. A clip that is silent end to end, or that
+// ffmpeg reports nothing for, is passed through untouched — better a long beat
+// than one with its first word missing.
+async function trimToSpeech(inputPath: string, outputPath: string, durationSeconds: number, signal?: AbortSignal) {
+  // ffmpeg writes silencedetect to stderr and exits 0; a failure still carries
+  // whatever it managed to report, so both paths feed the same parse.
+  const args = ["-hide_banner", "-i", inputPath, "-af", `silencedetect=noise=${SILENCE_THRESHOLD_DB}dB:d=0.1`, "-f", "null", "-"];
+  const report = await execFileAsync(FFMPEG, args, { maxBuffer: 1024 * 1024 * 16, signal })
+    .then((result) => result.stderr)
+    .catch((error: { stderr?: string }) => error.stderr ?? "");
+
+  const starts = [...report.matchAll(/silence_start:\s*(-?[\d.]+)/g)].map((m) => Number(m[1]));
+  const ends = [...report.matchAll(/silence_end:\s*([\d.]+)/g)].map((m) => Number(m[1]));
+  // A leading run is one starting at (or just after) zero. A trailing run is one
+  // whose END lands on the end of the file: ffmpeg closes the final run at EOF
+  // rather than leaving it open, so testing for a missing `silence_end` finds
+  // nothing and the clip keeps its tail.
+  const leading = starts.length && starts[0] <= 0.05 && ends.length ? ends[0] : 0;
+  const lastEnd = ends.length ? ends[ends.length - 1] : 0;
+  const closesAtEof = ends.length === starts.length && lastEnd >= durationSeconds - 0.02;
+  const trailing = closesAtEof || ends.length < starts.length ? starts[starts.length - 1] : durationSeconds;
+
+  const from = Math.max(0, leading - SPEECH_MARGIN_S);
+  const to = Math.min(durationSeconds, trailing + SPEECH_MARGIN_S);
+  // Nothing usable detected, or the clip is silence end to end: pass it through
+  // rather than risk cutting a word off.
+  if (!(to > from) || to - from < 0.2) return { path: inputPath, durationSeconds };
+
+  await run(FFMPEG, ["-y", "-i", inputPath, "-ss", from.toFixed(3), "-to", to.toFixed(3), "-c:a", "pcm_s16le", outputPath], signal);
+  return { path: outputPath, durationSeconds: Number((to - from).toFixed(3)) };
 }
 
 function scaleFilter(project: MovieRecapProject) {
@@ -341,11 +424,19 @@ function mockNarration(project: MovieRecapProject): MovieRecapNarrationSegment[]
     Math.min(project.sourceDurationSeconds || MOVIE_RECAP_MOCK_SOURCE_SECONDS, MOVIE_RECAP_MOCK_SOURCE_SECONDS)
   );
   const each = span / MOVIE_RECAP_MOCK_NARRATION.length;
-  return MOVIE_RECAP_MOCK_NARRATION.map((text, i) => ({
-    sourceStartS: Number((i * each).toFixed(3)),
-    sourceEndS: Number(((i + 1) * each).toFixed(3)),
-    text,
-  }));
+  // Two shots per line: a mock render has to exercise the cutting path, not
+  // just the single-shot case, or it stops being a preview of the real one.
+  return MOVIE_RECAP_MOCK_NARRATION.map((text, i) => {
+    const start = i * each;
+    const mid = start + each / 2;
+    return {
+      shots: [
+        { sourceStartS: Number(start.toFixed(3)), sourceEndS: Number(mid.toFixed(3)) },
+        { sourceStartS: Number(mid.toFixed(3)), sourceEndS: Number(((i + 1) * each).toFixed(3)) },
+      ],
+      text,
+    };
+  });
 }
 
 // Dialogue spoken inside a scene's own time range, joined into one string for
@@ -385,6 +476,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
     let transcript: TranscriptSegment[] = [];
     let narration: MovieRecapNarrationSegment[];
+    let spareScenes: { sourceStartS: number; sourceEndS: number }[] = [];
 
     if (mock) {
       // Mock render: no download, no scene detection, no Whisper, no GPT, no
@@ -442,14 +534,29 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // The model returns scene indexes, not timestamps, so every clip lands on
       // a real cut. Out-of-range indexes are dropped rather than clamped — a
       // wrong index means the model lost track, not that it meant the last scene.
+      // A scene used twice would show the same footage under two different
+      // lines, which reads as a mistake even when the prompt allows it by
+      // accident. First use wins.
+      const usedScenes = new Set<number>();
       narration = selected
-        .filter((line) => scenes[line.sceneIndex] && line.text.trim())
-        .sort((a, b) => a.sceneIndex - b.sceneIndex)
         .map((line) => ({
-          sourceStartS: scenes[line.sceneIndex].startS,
-          sourceEndS: scenes[line.sceneIndex].endS,
           text: line.text.trim(),
-        }));
+          shots: (line.sceneIndexes ?? [])
+            .filter((index) => {
+              if (!scenes[index] || usedScenes.has(index)) return false;
+              usedScenes.add(index);
+              return true;
+            })
+            .map((index) => ({ sourceStartS: scenes[index].startS, sourceEndS: scenes[index].endS })),
+        }))
+        .filter((line) => line.text && line.shots.length)
+        .sort((a, b) => a.shots[0].sourceStartS - b.shots[0].sourceStartS);
+      // Scenes the model passed over are not waste: a beat whose line outruns
+      // its own scenes borrows the nearest of these rather than holding one
+      // frame for four seconds.
+      spareScenes = scenes
+        .filter((scene) => !usedScenes.has(scene.index))
+        .map((scene) => ({ sourceStartS: scene.startS, sourceEndS: scene.endS }));
       if (!narration.length) throw new Error("The AI returned no narration segments.");
       console.log(
         `[MovieRecapRender] project=${project.id} ${rows.length} scenes detected, ${transcript.length} transcript lines, ${narration.length} narration beats.`
@@ -471,9 +578,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       await setProgress(db, project.id, "synthesizing_narration", 0, narration.length);
       for (const [i, segment] of narration.entries()) {
         const result = await synthesize({ text: segment.text, voice, signal });
+        const rawPath = path.join(workDir, `narration-${i}-raw.wav`);
+        await writeFile(rawPath, result.audio);
         const wavPath = path.join(workDir, `narration-${i}.wav`);
-        await writeFile(wavPath, result.audio);
-        spokenAudio[i] = { path: wavPath, durationSeconds: result.durationSeconds };
+        const trimmed = await trimToSpeech(rawPath, wavPath, result.durationSeconds, signal);
+        spokenAudio[i] = { path: trimmed.path, durationSeconds: trimmed.durationSeconds };
         await setProgress(db, project.id, "synthesizing_narration", i + 1, narration.length);
       }
       console.log(
@@ -488,17 +597,17 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     const sourceForClips = mock ? project.sourceUrl! : path.join(workDir, "source.mp4");
     const vf = scaleFilter(project);
     const segmentPaths: string[] = [];
-    // The length each video segment was rendered to, reused below to pad each
-    // narration clip onto the same timeline.
-    const segmentDurations: number[] = [];
+    // The length each BEAT was rendered to, reused below to pad that beat's
+    // narration clip onto the same timeline. One entry per beat, not per shot:
+    // a beat's shots share its single line of speech.
+    const beatDurations: number[] = [];
     const cues: { start: number; end: number; text: string }[] = [];
     let cursor = 0;
 
     for (const [i, segment] of narration.entries()) {
-      const sourceDurationS = Math.max(MIN_SEGMENT_S, segment.sourceEndS - segment.sourceStartS);
       // Subtitles decide the beat's length, not the other way round: split the
       // line into cues, give each one enough time to be read, and take the
-      // total as this segment's target. It is never below MIN_SEGMENT_S.
+      // total as this beat's target. It is never below MIN_SEGMENT_S.
       const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
       const spokenS = spokenAudio[i]?.durationSeconds ?? estimateSpokenSeconds(segment.text);
       const timed = timeCaptionChunks(chunks, spokenS);
@@ -509,36 +618,61 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // words being spoken instead of finishing early.
       const stretch = spokenAudio[i] && spokenS > timed.segmentS ? spokenS / timed.segmentS : 1;
       const cueDurations = stretch === 1 ? timed.durations : timed.durations.map((value) => value * stretch);
-      const targetS = timed.segmentS * stretch;
-      const ratio = targetS / sourceDurationS;
+      // One deliberate breath per beat, now that the clip carries no silence of
+      // its own. The last beat gets none — a recap should not end on dead air.
+      const gapS = !mock && spokenAudio[i] && i < narration.length - 1 ? BEAT_GAP_S : 0;
+      const targetS = timed.segmentS * stretch + gapS;
 
-      if (ratio < EXTREME_RATIO_MIN || ratio > EXTREME_RATIO_MAX) {
-        console.warn(
-          `[MovieRecapRender] project=${project.id} segment=${i + 1} extreme duration mismatch (ratio=${ratio.toFixed(2)}) — a real re-cut would fit better than freeze/trim, but re-cut is out of scope for this phase.`
-        );
+      // Borrow unused scenes until this beat can be cut without exceeding
+      // MAX_SHOT_S, taking whichever are nearest in time to what it already has
+      // so the borrowed footage still belongs to this stretch of the film.
+      const beatShots = [...segment.shots];
+      const needed = Math.min(shotsNeededFor(targetS), Math.floor(targetS / MIN_SHOT_S) || 1);
+      while (beatShots.length < needed && spareScenes.length) {
+        const anchor = beatShots[beatShots.length - 1].sourceEndS;
+        let nearest = 0;
+        for (let k = 1; k < spareScenes.length; k++) {
+          if (Math.abs(spareScenes[k].sourceStartS - anchor) < Math.abs(spareScenes[nearest].sourceStartS - anchor)) nearest = k;
+        }
+        beatShots.push(spareScenes.splice(nearest, 1)[0]);
       }
+      // Cuts play in the order they happen in the film, borrowed or not.
+      beatShots.sort((a, b) => a.sourceStartS - b.sourceStartS);
 
-      const segPath = path.join(workDir, `seg-${i}.mp4`);
-      const args = ["-y", "-i", sourceForClips, "-ss", String(segment.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
+      const { shots, slotS, shotCount } = planBeatShots(beatShots, targetS);
 
-      if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {
-        // Speed-ramp: stretch/compress playback so the clip's own length becomes the estimate.
-        args.push("-to", String(segment.sourceEndS), "-vf", `${vf},setpts=PTS*${ratio.toFixed(4)}`);
-      } else if (targetS < sourceDurationS) {
-        // Trim: the scene runs longer than the narration needs, so cut it down —
-        // but targetS already carries the MIN_SEGMENT_S floor and the cues'
-        // reading time, so a trim can never produce a flash cut.
-        args.push("-to", String(segment.sourceStartS + targetS), "-vf", vf);
-      } else {
-        // Freeze-pad: the beat needs longer than the scene runs, hold the last frame.
-        const padS = targetS - sourceDurationS;
-        args.push("-to", String(segment.sourceEndS), "-vf", `${vf},tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`);
+      for (const [shotIndex, shot] of shots.entries()) {
+        const sourceDurationS = Math.max(0.05, shot.sourceEndS - shot.sourceStartS);
+        const ratio = slotS / sourceDurationS;
+
+        if (ratio < EXTREME_RATIO_MIN || ratio > EXTREME_RATIO_MAX) {
+          console.warn(
+            `[MovieRecapRender] project=${project.id} beat=${i + 1} shot=${shotIndex + 1} extreme duration mismatch (ratio=${ratio.toFixed(2)}) — a real re-cut would fit better than freeze/trim, but re-cut is out of scope for this phase.`
+          );
+        }
+
+        const segPath = path.join(workDir, `seg-${i}-${shotIndex}.mp4`);
+        const args = ["-y", "-i", sourceForClips, "-ss", String(shot.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
+
+        if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {
+          // Speed-ramp: stretch/compress playback so the clip's own length becomes its slot.
+          args.push("-to", String(shot.sourceEndS), "-vf", `${vf},setpts=PTS*${ratio.toFixed(4)}`);
+        } else if (slotS < sourceDurationS) {
+          // Trim: the scene runs longer than its slot, so cut it down. The slot
+          // is never below MIN_SHOT_S, so a trim cannot produce a flash frame.
+          args.push("-to", String(shot.sourceStartS + slotS), "-vf", vf);
+        } else {
+          // Freeze-pad: the slot outlasts the scene, hold the last frame.
+          const padS = slotS - sourceDurationS;
+          args.push("-to", String(shot.sourceEndS), "-vf", `${vf},tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`);
+        }
+        args.push(segPath);
+        await run(FFMPEG, args, signal);
+        segmentPaths.push(segPath);
       }
-      args.push(segPath);
+      beatDurations.push(slotS * shotCount);
+
       await setProgress(db, project.id, "rendering_segments", i + 1, narration.length);
-      await run(FFMPEG, args, signal);
-      segmentPaths.push(segPath);
-      segmentDurations.push(targetS);
 
       // Cues were sliced and timed above, before the clip length was chosen —
       // a mock line is deliberately left whole, so the burned caption is the
@@ -558,14 +692,15 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatPath], signal);
 
     // The narration track, built on the same timeline as the video: each clip
-    // padded with silence out to the length its own segment was rendered to, so
-    // beat N's speech starts exactly when beat N's picture does. Segments were
-    // already sized to fit their audio, so padding never truncates.
+    // padded with silence out to the length of its BEAT — the sum of that beat's
+    // shots — so beat N's speech starts exactly when beat N's first shot does
+    // and keeps playing across its cuts. Beats were already sized to fit their
+    // audio, so padding never truncates.
     let narrationPath: string | null = null;
     if (spokenAudio.some(Boolean)) {
       const trackParts: string[] = [];
       for (const [i, clip] of spokenAudio.entries()) {
-        const slotS = segmentDurations[i];
+        const slotS = beatDurations[i];
         const partPath = path.join(workDir, `track-${i}.wav`);
         const args = clip
           ? ["-y", "-i", clip.path, "-af", "apad"]

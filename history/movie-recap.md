@@ -1416,3 +1416,106 @@ previous values (`white`, `black`) to `mono` and narrows the check constraint to
 colours. `yellow` is a borderline case kept as-is because that colour is the
 point of it — it is the reference caption's signature — but a new preset should
 be named for what it is for.
+
+## 2026-09-16 — A narration beat cuts between several shots
+
+**Problem:** the pacing dragged. Every narration line held ONE clip for its whole
+length, so a 5-second line meant a 5-second static shot. Real recaps cut every
+second or two underneath a continuous line.
+
+**Decision:** a beat is now a group of scenes, not one scene.
+`generateMovieRecapNarration` returns `{ sceneIndexes: number[], text }` and the
+prompt asks for 2-4 scenes per beat that belong together, in order. The render
+cuts between them while the beat's single line of speech plays over the top.
+
+**Why the model groups them rather than the render:** grouping is an editorial
+judgement — which shots belong to the same moment — and the model is the only
+part of the pipeline that knows the plot. A render-side rule would cut wherever
+the clock said, including across an unrelated scene. (The alternative was
+offered and rejected for that reason.)
+
+**`planBeatShots()` decides how many of a beat's scenes it can afford**: roughly
+one cut per `SHOT_TARGET_S` (1.5s), floored at `MIN_SHOT_S` (1s). Scenes the line
+is too short to pay for are dropped rather than squeezed — the model picks scenes
+before anything knows how long the synthesized line will run, so over-supply is
+normal and has to be absorbed somewhere. It is exported and unit-tested because
+the arithmetic decides every cut in the video.
+
+**`ceil`, not `round`, on the shot count.** A test written first with `round`
+caught it: at 2s of speech, rounding gives ONE 2s hold, which is precisely the
+dragging pace this change exists to remove. Ceiling gives two 1s cuts, and the
+`MIN_SHOT_S` floor stops that bias from producing flicker.
+
+**Timeline consequence:** `beatDurations` (one entry per beat) is now separate
+from the clip list (one entry per shot). The narration track pads each line out
+to its BEAT's length — the sum of its shots — so speech starts with a beat's
+first shot and keeps playing across its cuts. Confusing the two arrays would
+desynchronize audio from picture for the rest of the video.
+
+**Also changed:** a mock render now builds two shots per canned line, so mock
+exercises the cutting path instead of only the single-shot case. Scene reuse is
+rejected at map time — first use wins — because the same footage under two
+different lines reads as a bug even when the model does it deliberately.
+
+**Not verified end to end yet:** no real render has run through this.
+
+## 2026-09-16 — Second pacing pass: a hold cap, and unused scenes get borrowed
+
+Review of a rendered 37s recap: median shot ~1.4s, which matched the target, but
+three things stood out. Two were real.
+
+**Real: 3-4s holds remained.** `slotS = targetS / shotCount`, so a beat the model
+gave one or two scenes, carrying a 4-7s line, sat on a frame. Fixed with
+`MAX_SHOT_S` (2.4s) and a borrowing pass: before planning, a beat pulls unused
+scenes — the ones the model passed over — until it has enough to cut without
+exceeding the cap, taking whichever are nearest in time so borrowed footage still
+belongs to that stretch of the film. Shots are re-sorted chronologically
+afterwards. If the pool is empty the hold stands: repeating footage inside one
+beat looks worse than a long shot.
+
+**Real: beats could group near-identical angles.** Nothing in the prompt said the
+scenes in a beat should look DIFFERENT from each other, so two shots of the same
+person at almost the same framing were a legal grouping. The prompt now asks for
+a new subject, place, or clearly different framing within a beat.
+
+**Not real: "some cuts are 0.4-0.7s, raise the minimum to 0.8s."** `planBeatShots`
+cannot emit a shot under `MIN_SHOT_S` — `affordable = floor(targetS / MIN_SHOT_S)`
+caps the count, and `targetS` is itself floored at 1s by the cue timing. Any
+sub-second cut in the output is a cut INSIDE the source footage that scene
+detection missed, so one of our ~1.4s clips contains an original edit. Measuring
+the output counts those as ours. Raising the floor would not touch them and would
+only license genuinely faster cuts. Left at 1.0s.
+
+`SHOT_TARGET_S` moved 1.5 -> 1.4. Tests cover the hold cap, the floor, and the
+single-scene fallback.
+
+## 2026-09-16 — Azure's own silence was pacing the video
+
+**Bug:** a rendered recap had ~0.95s of dead air after every narration line —
+19.7% of a 23.65s video. It was not padding added by the render.
+
+**Cause:** Azure returns each clip with silence baked in. Measured on one
+4.85s clip: 0.18s before the speech, 0.81s after it. `durationSeconds` is the
+file's duration, that duration sizes the beat, and the picture therefore holds
+through silence the render never chose to add.
+
+**Fix:** `trimToSpeech()` cuts each clip back to its speech (silencedetect,
+-40dB, with a 60ms margin either side so a soft syllable cannot be clipped) and
+the trimmed length is what sizes the beat. One deliberate `BEAT_GAP_S` (0.15s)
+is then added between beats, and none after the last — a recap should not end on
+dead air. The gap is now uniform and chosen, rather than whatever the TTS felt
+like appending.
+
+**Trap, caught by dry-running the parser against a real clip:** silencedetect
+closes the FINAL silence run at EOF rather than leaving it open, so testing for
+"a start with no matching end" finds nothing and the tail survives. The first
+version of this saved 0.12s instead of 0.86s. The test is whether the last run's
+END lands on the end of the file.
+
+**Also:** the narration prompt capped lines at 60 characters and the model was
+writing 63-70. 60 characters is about four seconds of speech — a whole beat on
+one thought. The cap is now 50 with the reason stated.
+
+**Not fixed here:** the delivery rate itself is Azure's default. Measured 16.5
+Burmese characters per second across five beats. `rate` is already plumbed
+through `AzureVoiceParams` if that needs to move.

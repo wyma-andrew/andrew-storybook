@@ -6,13 +6,15 @@ export const MOVIE_RECAP_NARRATION_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          // Which detected scene this narration line covers. The render maps it
-          // back to that scene's real start/end, so the model never invents
-          // timestamps and every clip lands on a real cut.
-          sceneIndex: { type: "integer", minimum: 0 },
+          // The detected scenes this narration line plays over, in the order
+          // they should be cut. The render maps each back to that scene's real
+          // start/end, so the model never invents timestamps and every cut lands
+          // on a real one. Several scenes per line is the normal case — the
+          // picture cuts between them while the line is spoken.
+          sceneIndexes: { type: "array", items: { type: "integer", minimum: 0 } },
           text: { type: "string" },
         },
-        required: ["sceneIndex", "text"],
+        required: ["sceneIndexes", "text"],
         additionalProperties: false,
       },
     },
@@ -26,11 +28,19 @@ export const movieRecapNarrationSystemPrompt =
   "You are given the source video broken into detected scenes. Each scene has an index, its start and end time, " +
   "a one-line description of what is visible in it, and any spoken dialogue transcribed from it (dialogue may be empty — " +
   "action scenes often have none, and the visual description is all you get for those). " +
-  "Select the scenes that carry the plot and write one recap line per selected scene, in ascending scene order. " +
-  "Skip scenes that add nothing; you do not have to cover every scene, but the selected scenes together must tell the whole story " +
-  "from beginning to end. Never use the same scene twice. " +
-  "Keep every line very short — one idea, ideally 25-45 Burmese characters, never more than 60. " +
-  "The line's length decides how long its clip stays on screen, so a rambling line makes the video drag. " +
+  "Group the scenes that carry the plot into beats, and write ONE recap line per beat. " +
+  "A beat is 2-4 scenes that belong together — the picture cuts between them while your line is spoken, the way a real recap does. " +
+  "Within a beat, pick scenes that LOOK different from each other: a new subject, a new place, or a clearly different framing. " +
+  "Two near-identical shots of the same person at almost the same angle read as a glitch rather than an edit, so prefer the scene " +
+  "that shows something new over the one that merely continues the same image. " +
+  "Use one scene alone only when it genuinely stands by itself. Keep scenes within a beat in the order they happen, " +
+  "and keep the beats in ascending order. Skip scenes that add nothing; you do not have to cover every scene, but the beats " +
+  "together must tell the whole story from beginning to end. Never use the same scene twice, in the same beat or a different one. " +
+  "Keep every line very short — one idea, 25-45 Burmese characters. Never write more than 50; a 60-character line " +
+  "takes about four seconds to speak, which is a whole beat on one thought. " +
+  "The line's length decides how long its beat stays on screen, so a rambling line makes the video drag. " +
+  "A beat is cut into roughly 1.5-second shots, so a line spoken over four scenes wants about six seconds of speech — " +
+  "if a line is too short to give each of its scenes that long, the render drops the extra scenes. " +
   "Condense the plot into third-person recap narration — do not quote dialogue verbatim, summarize what happens, " +
   "and use the visual description to describe action the dialogue does not explain. " +
   // Deliberately a role, not a grammar checklist. An earlier version listed the

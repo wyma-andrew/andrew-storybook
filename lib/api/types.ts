@@ -78,8 +78,9 @@ export type MovieRecapRenderStage =
 // audio's own length is measured during the render and used to size the video
 // segment; it is not stored here — see lib/movie-recap-render.ts.
 export type MovieRecapNarrationSegment = {
-  sourceStartS: number;
-  sourceEndS: number;
+  // The shots this beat cuts between while its line is spoken, in order. One
+  // entry is a beat that holds a single shot; several is the normal case.
+  shots: { sourceStartS: number; sourceEndS: number }[];
   text: string;
 };
 

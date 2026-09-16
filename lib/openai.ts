@@ -250,13 +250,13 @@ export async function describeMovieRecapScenes(
   return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string }[] }).scenes ?? [];
 }
 
-// Returns one narration line per SELECTED scene index — the model picks which
-// scenes carry the plot rather than inventing timestamps, so every recap clip
-// lands on a real cut.
+// Returns one narration line per BEAT, each naming the scenes it plays over —
+// the model picks which scenes carry the plot and how they group, rather than
+// inventing timestamps, so every recap cut lands on a real one.
 export async function generateMovieRecapNarration(
   scenes: RecapScene[],
   signal?: AbortSignal
-): Promise<{ sceneIndex: number; text: string }[]> {
+): Promise<{ sceneIndexes: number[]; text: string }[]> {
   const res = await openai().chat.completions.create(
     {
       model: "gpt-5.6-luna",
@@ -272,5 +272,5 @@ export async function generateMovieRecapNarration(
     { signal }
   );
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { segments: { sceneIndex: number; text: string }[] }).segments ?? [];
+  return (JSON.parse(raw) as { segments: { sceneIndexes: number[]; text: string }[] }).segments ?? [];
 }
