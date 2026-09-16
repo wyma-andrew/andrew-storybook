@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { Select, SelectOption, ConfirmDialog, toast } from "@geckoui/geckoui";
+import { Select, SelectOption, ConfirmDialog, Drawer, toast } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { useWrite } from "@/lib/spoosh";
+import { ExportStoryMenuItem } from "@/components/StoryTransfer";
 import { ASPECT_RATIOS } from "@/lib/constants/aspect-ratios";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 import { REGIONS, type Region } from "@/lib/constants/regions";
@@ -114,6 +115,65 @@ export function StoryControlsMenu({
     });
   }
 
+  // One set of controls, rendered in two shells: a dropdown from sm up, and a
+  // GeckoUI bottom Drawer below it. The dropdown is anchored to this button's
+  // right edge, and on a phone the button sits mid-row, so 260px of panel
+  // reached past the left edge of the (app) layout's overflow-hidden container
+  // and the labels were cut in half. See history/routing.md.
+  const sections = (
+    <>
+      <div className="px-3.5 py-3">
+        <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
+        <Select value={resolvedStyleId ?? ""} onChange={handleStyleChange} placeholder="None set">
+          {VISUAL_STYLES.map((s) => (
+            <SelectOption key={s.id} value={s.id} label={s.name} />
+          ))}
+        </Select>
+      </div>
+      <div className="border-t border-line px-3.5 py-3">
+        <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Motion style</label>
+        <Select value={resolvedMotionStyleId} onChange={handleMotionStyleChange}>
+          {MOTION_STYLES.map((s) => (
+            <SelectOption key={s.id} value={s.id} label={s.name} />
+          ))}
+        </Select>
+      </div>
+      <div className="border-t border-line px-3.5 py-3">
+        <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Aspect ratio</label>
+        <Select value={currentAspectRatio} onChange={handleAspectChange}>
+          {ASPECT_RATIOS.map((r) => (
+            <SelectOption key={r.value} value={r.value} label={r.label} />
+          ))}
+        </Select>
+      </div>
+      <div className="border-t border-line px-3.5 py-3">
+        <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Region</label>
+        <Select value={currentRegion} onChange={handleRegionChange}>
+          {REGIONS.map((r) => (
+            <SelectOption key={r.value} value={r.value} label={r.label} />
+          ))}
+        </Select>
+      </div>
+      <div className="border-t border-line">
+        <Link
+          href={`/stories/${storyId}/bible`}
+          className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-hover"
+          onClick={() => setOpen(false)}
+        >
+          Manage Bible
+        </Link>
+        <ExportStoryMenuItem storyId={storyId} onDone={() => setOpen(false)} />
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="block w-full px-3.5 py-2.5 text-left text-[13px] text-danger hover:bg-hover"
+        >
+          Delete story
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <div className="relative shrink-0" ref={ref}>
       <Button
@@ -126,57 +186,20 @@ export function StoryControlsMenu({
       </Button>
 
       {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-[260px] rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)]">
-          <div className="px-3.5 py-3">
-            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Visual style</label>
-            <Select value={resolvedStyleId ?? ""} onChange={handleStyleChange} placeholder="None set">
-              {VISUAL_STYLES.map((s) => (
-                <SelectOption key={s.id} value={s.id} label={s.name} />
-              ))}
-            </Select>
-          </div>
-          <div className="border-t border-line px-3.5 py-3">
-            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Motion style</label>
-            <Select value={resolvedMotionStyleId} onChange={handleMotionStyleChange}>
-              {MOTION_STYLES.map((s) => (
-                <SelectOption key={s.id} value={s.id} label={s.name} />
-              ))}
-            </Select>
-          </div>
-          <div className="border-t border-line px-3.5 py-3">
-            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Aspect ratio</label>
-            <Select value={currentAspectRatio} onChange={handleAspectChange}>
-              {ASPECT_RATIOS.map((r) => (
-                <SelectOption key={r.value} value={r.value} label={r.label} />
-              ))}
-            </Select>
-          </div>
-          <div className="border-t border-line px-3.5 py-3">
-            <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Region</label>
-            <Select value={currentRegion} onChange={handleRegionChange}>
-              {REGIONS.map((r) => (
-                <SelectOption key={r.value} value={r.value} label={r.label} />
-              ))}
-            </Select>
-          </div>
-          <div className="overflow-hidden rounded-b-[10px] border-t border-line">
-            <Link
-              href={`/stories/${storyId}/bible`}
-              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-hover"
-              onClick={() => setOpen(false)}
-            >
-              Manage Bible
-            </Link>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="block w-full px-3.5 py-2.5 text-left text-[13px] text-danger hover:bg-hover"
-            >
-              Delete story
-            </button>
-          </div>
+        <div className="absolute top-[calc(100%+8px)] right-0 z-50 hidden max-h-[min(70vh,440px)] w-[260px] overflow-y-auto rounded-[10px] border border-line bg-panel-2 shadow-[0_12px_30px_rgba(0,0,0,.5)] sm:block">
+          {sections}
         </div>
       )}
+
+      <Drawer
+        open={open}
+        handleClose={() => setOpen(false)}
+        placement="bottom"
+        className="max-h-[40vh] rounded-t-[14px] border-t border-line bg-panel-2 sm:hidden"
+        backdropClassName="sm:hidden"
+      >
+        {sections}
+      </Drawer>
     </div>
   );
 }

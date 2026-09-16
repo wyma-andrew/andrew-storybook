@@ -7,6 +7,7 @@ import { AccentTag } from "@/components/ui/Tag";
 import { TopBar, Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonStoryGrid } from "@/components/ui/Skeleton";
 import { useRead } from "@/lib/spoosh";
+import { ImportStoryButton } from "@/components/StoryTransfer";
 
 export default function StoriesPage() {
   const { data: stories, loading, error } = useRead((api) => api("stories").GET());
@@ -16,6 +17,7 @@ export default function StoriesPage() {
       <TopBar>
         <div className="text-[19px] font-medium">AI Storybook</div>
         <div className="ml-auto flex items-center gap-2.5">
+          <ImportStoryButton />
           <LinkButton
             variant="secondary"
             href="/stories/trash"

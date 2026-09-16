@@ -293,3 +293,39 @@ regeneration changed the shot count without scrolling the whole chapter.
 **Consequence:** desktop changed too. The stats no longer sit to the right of
 the Hints toggle; they are above the first scene. This was deliberate rather
 than a mobile-only branch — one place for the reading, one place for controls.
+
+## 2026-09-16 — Story options becomes a bottom sheet below `sm`
+
+`StoryControlsMenu`'s panel was `absolute right-0 w-[260px]`, anchored to the
+"Story options" button. On a phone that button sits mid-row (the "+ New Episode"
+button is to its right), so 260px of panel reached past the left edge of the
+`(app)` layout's `overflow-hidden` container and the labels were cut in half;
+the lower rows were cut off at the container's bottom the same way.
+
+The controls are now built once as `sections` and rendered in two shells: the
+same absolute dropdown from `sm` up (now with `max-h-[min(70vh,440px)]` so a
+long menu scrolls instead of being cut at the container's bottom), and GeckoUI's
+`Drawer` with `placement="bottom"` and `max-h-[40vh]` below it — the same
+`className`/`backdropClassName` `hidden`-at-breakpoint pattern `Sidebar` uses
+for the mobile nav.
+
+**Why the GeckoUI Drawer and not a hand-rolled `fixed` sheet:** a first pass
+used `fixed inset-x-2 bottom-2`, which does escape the overflow-hidden ancestor,
+but the UI rule is that interactive shells come from GeckoUI — and the Drawer
+brings the backdrop, Escape handling and open/closed data-state for free. A
+width cap alone (what `ChapterControlsMenu` uses) was not an option here: it
+only works because that trigger is already at the far right of its header.
+
+**Rejected:** measuring the available space in JS and flipping the anchor. Same
+reason as the drawer entry above — a JS-measured layout decision renders wrong
+on the server and flips on hydration.
+
+**Consequence:** the menu's own click-outside handler is unchanged and does not
+fight the Drawer. GeckoUI renders the Drawer inline rather than through a
+portal, so both the sheet and its backdrop are DOM descendants of the menu
+wrapper the handler checks; the backdrop closes the sheet through the Drawer's
+own `handleClose`.
+
+**Consequence:** `sections` is mounted twice (once per shell), so the Selects
+exist in both. They are controlled by the same props, so there is no state to
+keep in sync — the same trade `Sidebar` already makes.

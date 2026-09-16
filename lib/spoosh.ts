@@ -7,6 +7,7 @@ import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
 import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
+import type { StoryBundle } from "@/lib/story-transfer";
 
 export type ApiSchema = {
   "labs/voice/health": {
@@ -123,6 +124,14 @@ export type ApiSchema = {
       }>;
     };
     DELETE: { data: null };
+  };
+  // Portable story transfer between accounts: the export is read as JSON and
+  // saved to a file by the browser; the import posts a parsed file back.
+  "stories/:id/export": {
+    GET: { data: StoryBundle };
+  };
+  "stories/import": {
+    POST: { data: Story; body: { bundle: StoryBundle; title?: string } };
   };
   "stories/trash": {
     GET: { data: StoryListItem[] };

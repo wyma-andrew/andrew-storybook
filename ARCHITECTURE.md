@@ -36,6 +36,8 @@ app/
   api/                         Next Route Handlers; browser data boundary
     auth/                      Email/password session operations
     (story)/stories/           Story list, detail, trash, bible, chapters (URL: /api/stories)
+    (story)/stories/:id/export  One story as a portable JSON bundle
+    (story)/stories/import      Rebuilds a bundle as a new story owned by the caller
     chapters/                  Script persistence, extraction, sync, storyboard
     chapters/:id/images/       List + record uploaded renders; /presign mints R2 PUT URLs
     chapter-images/:id         Delete one uploaded render (row + R2 object)
@@ -65,6 +67,7 @@ components/
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
   ScriptEditor.tsx             Tiptap screenplay editor and import UI
+  StoryTransfer.tsx            Export-story menu item and import-file button
   ChapterHeader.tsx            Chapter navigation and workflow tabs
   StoryControlsMenu.tsx        Story style, motion style, region, aspect, delete, bible
   ChapterControlsMenu.tsx      Chapter aspect override and story region
@@ -76,6 +79,7 @@ lib/
   prompts/                     Asset, regeneration, and storyboard instructions
   constants/                   Styles, motion styles, system presets, regions, aspect ratios
   prompt-copy.ts               Final copied-prompt composition
+  story-transfer.ts            Story bundle build/parse/import (cross-account transfer)
   tiptap-text.ts               Tiptap JSON -> role-tagged AI input
   tiptap/                      Custom screenplay nodes and text importer
   api/                         API types, row mappers, matching, auth guards
@@ -239,6 +243,22 @@ narration ranges may start or end inside the replaced scene. `voice_over_segment
 the script snapshot and a nullable text override; narration is copied and
 edited separately and is never injected into per-shot video prompts.
 
+### Story transfer between accounts
+
+- Bundle format + rebuild: `lib/story-transfer.ts`
+- Export: `GET /api/stories/:id/export`
+- Import: `POST /api/stories/import`
+- UI: `components/StoryTransfer.tsx` (Story options menu, Stories header)
+
+Export returns the story, its Asset Bible, and every chapter (script, site map,
+chapter assets, scenes, shots, Voice Over segments) as ordinary JSON, which the
+browser saves as a `.storybook.json` file. Import parses a picked file, posts it
+back, and inserts the whole tree as a new story owned by the signed-in user.
+Database ids never travel: bible entries carry a bundle-local key and Voice Over
+ranges reference `{ sceneIndex, shotIndex }`, remapped during import. Uploaded
+chapter images (R2 objects) are deliberately excluded — see
+`history/story-transfer.md`.
+
 ### Prompt copying
 
 Copied shot prompts are composed as shot text, then `[Style]`, then
@@ -314,7 +334,8 @@ location reference-image URLs, storyboard
 generation, editable/restorable shot prompts, style/region selection,
 story-wide motion style with a per-shot motion mode override, per-scene
 storyboard regeneration, and
-story/chapter aspect ratios, and a per-chapter gallery of externally generated
+story/chapter aspect ratios, cross-account story export/import as a JSON file,
+and a per-chapter gallery of externally generated
 images uploaded to R2 and ordered by file name. Anonymous Voice Over blocks are mapped to editable
 storyboard shot ranges as a separate narration overlay. The UI ships a dark and a
 light theme, chosen by the user in the account menu (dark by default, OS
@@ -345,6 +366,7 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Shot prompts holding the location reference | `history/shot-location-consistency.md` |
 | Chapter image gallery and R2 uploads | `history/chapter-images.md` |
 | Movie Recap phase-one projects and uploads | `history/movie-recap.md` |
+| Story export/import bundle format | `history/story-transfer.md` |
 | Burmese self-hosted narration experiments | `history/voice-lab.md` |
 | Light/dark theming and color tokens | `history/theming.md` |
 | Documentation ownership and maintenance | `history/project-documentation.md` |
