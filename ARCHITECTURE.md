@@ -144,7 +144,8 @@ Users create resumable recap projects, upload one browser-playable source,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
 movable blur configuration, and a per-project copyright-free toggle that drives
 the per-shot transform in `lib/movie-recap-transform.ts` (a per-project zoom,
-colour, mirror on 16:9, and a blurred fill behind letterbox bars). Subtitle appearance is a two-option preset (yellow or
+colour, mirror, and a blurred fill behind letterbox bars) plus a per-shot playback
+speed that is never the source's own. Subtitle appearance is a two-option preset (yellow or
 white text, black shadow, no background box) whose size follows the aspect ratio;
 only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
 aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the

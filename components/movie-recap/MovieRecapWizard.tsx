@@ -162,6 +162,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     merge({ fitMode, ...(project.copyrightFree ? { copyrightZoom: null } : {}) });
   }
 
+  // The recommendation depends on the aspect ratio as well as the fit mode, so
+  // changing either one returns the zoom to unset.
+  function setAspectRatio(aspectRatio: MovieRecapProject["aspectRatio"]) {
+    if (!project) return;
+    merge({ aspectRatio, ...(project.copyrightFree ? { copyrightZoom: null } : {}) });
+  }
+
   async function saveAndGo(target: 2 | 3 | 4) {
     if (!project) return;
     const body: MovieRecapProjectPatch = { currentStep: target };
@@ -404,7 +411,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   {tab === "aspect" && <div>
                     <div className="grid grid-cols-2 gap-3">{MOVIE_RECAP_ASPECT_RATIOS.map((item) => {
                       const Icon = item.id === "9:16" ? RectangleVertical : RectangleHorizontal;
-                      return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} onClick={() => merge({ aspectRatio: item.id })}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
+                      return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} onClick={() => setAspectRatio(item.id)}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
                     })}</div>
                     <div className="mt-5"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Fit mode</div>
                       <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>

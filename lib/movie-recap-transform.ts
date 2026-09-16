@@ -35,35 +35,53 @@ export function shotFilterContext(project: MovieRecapProject): ShotFilterContext
   };
 }
 
-// A crop that throws away the outer edges before the frame is scaled up to fill
-// the output. Applied first so everything after it works on the kept region.
-function zoomFilter(ctx: ShotFilterContext) {
-  if (!ctx.copyrightFree) return null;
-  const zoom = ctx.zoom;
-  // 1 is no zoom, and anything below it would enlarge the crop past the frame.
-  if (!Number.isFinite(zoom) || zoom <= 1) return null;
-  // Even dimensions: an odd crop width breaks yuv420p chroma subsampling.
-  return `crop=floor(iw/${zoom}/2)*2:floor(ih/${zoom}/2)*2`;
+// Zoom magnifies the FITTED picture, so it is applied after framing, never
+// before. Cropping the source first would keep the source's aspect ratio, which
+// means the letterbox bars on `contain` stay exactly as wide however far you zoom
+// — the picture just loses its edges inside unchanged bars. Scaling the fitted
+// result instead makes the picture grow into the frame and the bars shrink, which
+// is what "zoom" is expected to do.
+//
+// `min(iw,...)` because on `contain` the zoomed picture may still be smaller than
+// the frame — crop must not ask for more than it was given.
+function zoomSteps(zoom: number, w: number, h: number) {
+  if (!Number.isFinite(zoom) || zoom <= 1) return [];
+  return [
+    // Even dimensions: an odd width breaks yuv420p chroma subsampling.
+    `scale=trunc(iw*${zoom}/2)*2:trunc(ih*${zoom}/2)*2`,
+    // The commas inside these expressions must reach ffmpeg escaped, or it reads
+    // them as filter separators and fails with "No such filter". In a template
+    // literal that means a DOUBLE backslash: `\\,` emits `\,`, while `\,`
+    // collapses to a bare comma.
+    `crop=min(iw\\,${w}):min(ih\\,${h})`,
+  ];
 }
 
-// How the kept region becomes an output frame. `cover` crops to fill; `contain`
-// fits the whole picture and has to put something in the bars it leaves.
+// How the source becomes an output frame, with zoom applied to the result.
+// `cover` crops to fill; `contain` fits the whole picture and has to put
+// something in the bars it leaves.
 function framingFilter(ctx: ShotFilterContext) {
   const [w, h] = MOVIE_RECAP_TARGET_DIMENSIONS[ctx.aspectRatio];
+  const zoom = ctx.copyrightFree ? ctx.zoom : 1;
+  const zoomed = zoomSteps(zoom, w, h);
+
   if (ctx.fitMode !== "contain") {
-    return `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`;
+    // Already fills the frame, so zoom takes more off the edges.
+    return [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, ...zoomed].join(",");
   }
   if (!ctx.copyrightFree) {
     return `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`;
   }
   // Blurred backfill: the same clip, scaled to cover and blurred, sits behind the
   // contained copy. The background moves with the footage rather than being a
-  // still, and the bars stop reading as missing picture.
+  // still, and the bars stop reading as missing picture. The foreground is fitted
+  // and THEN zoomed, so zooming eats into the bars rather than into the picture.
   const { backfillBlurRadius: radius, backfillBlurPasses: passes } = MOVIE_RECAP_COPYRIGHT_TRANSFORM;
+  const fg = [`scale=${w}:${h}:force_original_aspect_ratio=decrease`, ...zoomed].join(",");
   return [
     `split[bg][fg]`,
     `[bg]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},boxblur=${radius}:${passes}[bgb]`,
-    `[fg]scale=${w}:${h}:force_original_aspect_ratio=decrease[fgs]`,
+    `[fg]${fg}[fgs]`,
     `[bgb][fgs]overlay=(W-w)/2:(H-h)/2`,
   ].join(";");
 }
@@ -86,7 +104,5 @@ function adjustmentFilters(ctx: ShotFilterContext) {
 // `,setpts=...` on the end and keeps one output. Any step added here must leave
 // the chain in that state.
 export function buildShotFilter(ctx: ShotFilterContext) {
-  const zoom = zoomFilter(ctx);
-  const head = zoom ? `${zoom},${framingFilter(ctx)}` : framingFilter(ctx);
-  return [head, ...adjustmentFilters(ctx)].join(",");
+  return [framingFilter(ctx), ...adjustmentFilters(ctx)].join(",");
 }

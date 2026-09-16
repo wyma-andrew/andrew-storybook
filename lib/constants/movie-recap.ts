@@ -132,10 +132,20 @@ export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
   contrast: 1.06,
   saturation: 1.08,
   gamma: 0.98,
-  // Landscape only. A mirrored portrait clip is just as transformed, but 16:9 is
-  // where the framing survives it — and any text in frame reads backwards either
-  // way, which is the cost of this one.
-  mirrorAspectRatios: ["16:9"] as readonly string[],
+  // Both ratios. It was landscape-only at first, following the original spec
+  // where mirroring sat under the 16:9 rules; portrait was added once the
+  // transform was running. The cost is the same either way: any text in frame —
+  // signs, screens, captions already burned into the source — reads backwards.
+  mirrorAspectRatios: ["16:9", "9:16"] as readonly string[],
+  // Playback speeds a shot may run at, never 1.0. Duration matching used to
+  // DERIVE the speed from how long a shot had to last, which left most shots at
+  // the source's own speed; here the speed is chosen first and the length of
+  // source taken absorbs it, so the output timing is unchanged.
+  //
+  // Kept inside +-7%: `setpts` resamples timestamps rather than frames, so at
+  // 30fps a few percent is invisible, while past ~15% motion starts to read as
+  // wrong. The 1.0 +-2% dead zone is skipped — too close to untouched to count.
+  speeds: [0.94, 0.96, 1.05, 1.07] as readonly number[],
   // Letterbox fill: the same clip scaled to cover, blurred, and sat behind the
   // contained one, so the bars carry moving picture instead of black.
   backfillBlurRadius: 20,
@@ -143,7 +153,7 @@ export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
 } as const;
 
 // Zoom is a DIVISOR on the source crop (`crop = iw/zoom`), so 1 is no zoom and
-// higher is tighter: 1.5 keeps the middle ~67% of the frame, 1.56 about 64%.
+// higher is tighter: 1.05 keeps the middle ~95% of the frame, 1.56 about 64%.
 //
 // The recommendations are seeded into the project when copyright-free is turned
 // on, and depend on the fit mode rather than the aspect ratio. A project with the
@@ -156,16 +166,38 @@ export const MOVIE_RECAP_ZOOM = {
   min: 1,
   max: 2,
   step: 0.02,
+  // Keyed by fit mode AND aspect ratio, because how much the frame can afford to
+  // lose depends on both.
   recommended: {
-    contain: 1.56,
-    cover: 1.5,
+    contain: {
+      // Landscape contain holds a portrait source between wide blurred bars, and
+      // that centre strip is already small — zooming it crops the subject
+      // further while the bars stay exactly as wide, since a centre crop keeps
+      // the source's aspect ratio.
+      "16:9": 1,
+      // Portrait contain has room to push in without losing anything visible.
+      "9:16": 1.56,
+    },
+    cover: {
+      // Landscape `cover` already crops a landscape source to fill; zooming on
+      // top of that keeps taking from a frame that has nothing spare.
+      "16:9": 1,
+      // Portrait has width to give.
+      "9:16": 1.05,
+    },
   },
   // What a project carries when copyright-free is off.
   none: 1,
-} as const satisfies { min: number; max: number; step: number; recommended: Record<string, number>; none: number };
+} as const satisfies {
+  min: number;
+  max: number;
+  step: number;
+  recommended: Record<string, Record<string, number>>;
+  none: number;
+};
 
-export function recommendedMovieRecapZoom(fitMode: MovieRecapFitMode) {
-  return MOVIE_RECAP_ZOOM.recommended[fitMode];
+export function recommendedMovieRecapZoom(fitMode: MovieRecapFitMode, aspectRatio: MovieRecapAspectRatio) {
+  return MOVIE_RECAP_ZOOM.recommended[fitMode][aspectRatio];
 }
 
 // `copyrightZoom` is null when the user has not chosen one, which is not the same
@@ -175,8 +207,9 @@ export function recommendedMovieRecapZoom(fitMode: MovieRecapFitMode) {
 export function effectiveMovieRecapZoom(project: {
   copyrightZoom: number | null;
   fitMode: MovieRecapFitMode;
+  aspectRatio: MovieRecapAspectRatio;
 }) {
-  return project.copyrightZoom ?? recommendedMovieRecapZoom(project.fitMode);
+  return project.copyrightZoom ?? recommendedMovieRecapZoom(project.fitMode, project.aspectRatio);
 }
 
 // Output frame size, shared by the ffmpeg render and anything in the UI that

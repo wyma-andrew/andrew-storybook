@@ -5,7 +5,7 @@ const ctx = (over: Partial<ShotFilterContext> = {}): ShotFilterContext => ({
   aspectRatio: "16:9",
   fitMode: "cover",
   copyrightFree: false,
-  zoom: 1.5,
+  zoom: 1.05,
   ...over,
 });
 
@@ -14,7 +14,7 @@ describe("buildShotFilter", () => {
     // Every transform is gated on the toggle, including the blurred backfill.
     const plain = buildShotFilter(ctx());
     expect(plain).toBe("scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720");
-    for (const fragment of ["crop=floor", "eq=", "hflip", "boxblur"]) {
+    for (const fragment of ["trunc(iw*", "eq=", "hflip", "boxblur"]) {
       expect(plain).not.toContain(fragment);
     }
     expect(buildShotFilter(ctx({ fitMode: "contain" }))).toContain("color=black");
@@ -22,17 +22,16 @@ describe("buildShotFilter", () => {
 
   it("zooms, recolours and mirrors a 16:9 shot", () => {
     const filter = buildShotFilter(ctx({ copyrightFree: true }));
-    expect(filter).toContain("crop=floor(iw/1.5/2)*2");
+    expect(filter).toContain("scale=trunc(iw*1.05/2)*2");
     expect(filter).toContain("hflip");
     expect(filter).toContain("eq=contrast=1.06:saturation=1.08:gamma=0.98");
   });
 
-  it("does not mirror portrait", () => {
-    // Mirroring is landscape-only; the colour and zoom steps still apply.
+  it("mirrors portrait too", () => {
     const filter = buildShotFilter(ctx({ aspectRatio: "9:16", copyrightFree: true }));
-    expect(filter).not.toContain("hflip");
+    expect(filter).toContain("hflip");
     expect(filter).toContain("eq=");
-    expect(filter).toContain("crop=floor");
+    expect(filter).toContain("scale=trunc(iw*");
   });
 
   it("fills letterbox bars with the blurred clip instead of black", () => {
@@ -58,13 +57,28 @@ describe("buildShotFilter", () => {
     // 1 is the value a project carries with the transform off, and the value the
     // slider's floor produces. `crop=iw/1` would be a no-op filter; skip it.
     const filter = buildShotFilter(ctx({ copyrightFree: true, zoom: 1 }));
-    expect(filter).not.toContain("crop=floor");
+    expect(filter).not.toContain("trunc(iw*");
     expect(filter).toContain("eq=");
   });
 
-  it("crops to even dimensions", () => {
-    // An odd crop width breaks yuv420p chroma subsampling, which is what the
-    // clips are encoded as.
+  it("scales to even dimensions", () => {
+    // An odd width breaks yuv420p chroma subsampling, which is what the clips
+    // are encoded as.
     expect(buildShotFilter(ctx({ copyrightFree: true }))).toContain("/2)*2");
+  });
+
+  it("zooms AFTER framing, so the zoom eats into the letterbox bars", () => {
+    // Cropping the source first would preserve its aspect ratio, leaving the
+    // bars exactly as wide however far you zoom — see history/movie-recap.md.
+    const filter = buildShotFilter(ctx({ fitMode: "contain", copyrightFree: true, zoom: 1.56 }));
+    const fit = filter.indexOf("force_original_aspect_ratio=decrease");
+    const zoom = filter.indexOf("scale=trunc(iw*1.56");
+    expect(fit).toBeGreaterThan(-1);
+    expect(zoom).toBeGreaterThan(fit);
+    // And the zoomed picture is clipped to the frame, never past it — with the
+    // commas ESCAPED, or ffmpeg reads them as filter separators and fails with
+    // "No such filter". This assertion exists because the first version of this
+    // emitted bare commas: `\,` in a template literal collapses to `,`.
+    expect(filter).toContain("crop=min(iw\\,1280):min(ih\\,720)");
   });
 });

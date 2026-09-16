@@ -7,11 +7,13 @@ import { promisify } from "node:util";
 import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
 import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { movieRecapObjectKey, putObject } from "./r2";
+import { pickShotSpeed } from "./movie-recap";
 import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
 import { synthesize } from "./tts/synthesize";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
+  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
@@ -656,6 +658,36 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         }
 
         const segPath = path.join(workDir, `seg-${i}-${shotIndex}.mp4`);
+
+        if (project.copyrightFree) {
+          // Speed is an INPUT here, not something derived from how long the shot
+          // has to last. Pick a speed that is never 1.0, then take `slot * speed`
+          // seconds of source and play them at that speed: the output is still
+          // exactly `slot` long, so nothing downstream moves and the narration
+          // stays aligned. This is why the transform can change every shot's
+          // speed without touching the planner.
+          const speed = pickShotSpeed(MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds, project.id, i, shotIndex);
+          const takenS = Math.min(slotS * speed, sourceDurationS);
+          // `-ss`/`-t` BEFORE `-i` — input-side seeking. As output options they
+          // are applied AFTER the filter chain, so `setpts` has already re-timed
+          // the stream and the window means something else entirely (measured:
+          // a 1.4s slot came out 1.30s and 1.47s at two different speeds).
+          //
+          // Then `tpad` holds the last frame — covering both a scene shorter than
+          // the window and the frame of rounding a speed change leaves — and the
+          // output-side `-t` cuts back to exactly the slot. Belt and braces, but
+          // the alternative is audio drifting away from the picture.
+          const filters = [vf, `setpts=PTS/${speed.toFixed(4)}`, `tpad=stop_mode=clone:stop_duration=${(slotS + 0.2).toFixed(3)}`];
+          await run(
+            FFMPEG,
+            ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", takenS.toFixed(3), "-i", sourceForClips, "-an",
+             "-vf", filters.join(","), "-t", slotS.toFixed(3), "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
+            signal
+          );
+          segmentPaths.push(segPath);
+          continue;
+        }
+
         const args = ["-y", "-i", sourceForClips, "-ss", String(shot.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
 
         if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {

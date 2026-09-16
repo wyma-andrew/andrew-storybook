@@ -1605,9 +1605,9 @@ frame-for-frame copy, not that it looks processed:
 
 | Step | What | Scope |
 | --- | --- | --- |
-| zoom | centre crop by `copyrightZoom`, seeded from the fit mode | both ratios |
+| zoom | magnify the FITTED picture by `copyrightZoom`, then clip to frame | both ratios |
 | framing | blurred copy of the clip behind the letterbox bars | `contain` only |
-| mirror | `hflip` | 16:9 only |
+| mirror | `hflip` | both ratios |
 | colour | `eq` contrast 1.06, saturation 1.08, gamma 0.98 | both ratios |
 
 **Why a separate module rather than growing `scaleFilter`:** the render decides
@@ -1646,8 +1646,13 @@ is set from a slider in the customize step. It is a DIVISOR on the source crop, 
 **1 means no zoom** and higher is tighter; a project with the transform off carries
 1, and the render skips the crop entirely at that value.
 
-**Seeding:** turning the transform on, or changing the fit mode while it is on,
-sets the recommended value — `contain` 1.56, `cover` 1.5. Turning it off returns
+**Seeding:** turning the transform on, or changing the fit mode or aspect ratio
+while it is on, sets the recommended value. It is keyed by fit mode AND aspect ratio, and only portrait
+gets a real zoom: `9:16` is 1.56 contained and 1.05 covered, `16:9` is 1 in both.
+Landscape cover already crops a landscape source to fill, and landscape contain
+holds a portrait source in a narrow centre strip that zooming only eats into —
+the bars stay the same width either way, because a centre crop preserves the
+source's aspect ratio. Changing either driver returns the zoom to unset. Turning it off returns
 to 1.
 
 **Why seeding is tied to fit mode and nothing else:** the recommendation depends
@@ -1738,3 +1743,112 @@ the rotation IS visible. Worth doing when phone footage becomes a real input.
 **Columns are nullable** because rows created before this, and any file whose
 metadata cannot be read, legitimately have no dimensions — `movieRecapOrientationMismatch()`
 stays quiet rather than guessing for those.
+
+## 2026-09-16 — Bug fixed: the preview grew the letterbox strip when zooming
+
+**Bug:** with `contain` and a zoom set, the step-3 preview and the rendered output
+disagreed — the render looked like no zoom had been applied, the preview like a
+lot had. Reported the other way round ("preview zoomed, render did not"), which is
+what made it worth measuring: on a 1722x720 source in a 9:16 frame, the preview's
+strip measured 355px where 224px was correct, a factor of 1.58 against a zoom of
+1.56.
+
+**Cause:** the preview scaled the whole `<video>` element with CSS `transform`.
+That enlarges the LETTERBOXED STRIP along with the picture. The render crops the
+source before fitting it, and a centre crop preserves the source's aspect ratio,
+so the strip's size never changes — only how much of the picture survives inside
+it. The render was right.
+
+**Fix at the time:** the preview drew a box at the SOURCE's aspect ratio, clipped
+it, and scaled the video inside — what crop-then-fit looks like.
+
+**Then reverted the same day**, because the RENDER changed instead: zoom now
+magnifies the fitted picture (see the entry below), so a plain CSS transform on
+the fitted video is the correct emulation again — the strip grows, the bars
+shrink, the sides leave the frame. The source-aspect box held the bars still and
+cropped all four sides, which was right for the old render and wrong for the new
+one.
+
+**The lesson worth keeping:** the preview emulates the render, so it has to be
+re-derived every time the render's filter ORDER changes, not just its values. Two
+renderers expressing one rule in different tools will drift silently otherwise —
+and both times here, the drift looked like "zoom is broken" rather than "the
+preview is stale".
+
+**The general shape of this:** the preview is CSS and the render is ffmpeg, so
+every visual rule has to be expressed twice, in tools that do not agree. When they
+disagree, measure a burned frame against the preview rather than deciding from
+memory which one looks right — the render is the output, so it wins by default,
+but only measurement says which one moved.
+
+## 2026-09-16 — Zoom magnifies the fitted picture, not the source (supersedes)
+
+**Decision:** zoom is applied AFTER framing, not before. The earlier version
+cropped the source and then fitted it, which is why a zoomed `contain` render
+looked untouched: a centre crop preserves the source's aspect ratio, so the
+letterbox bars stay exactly as wide however far you zoom — the picture just loses
+its edges inside unchanged bars.
+
+Scaling the fitted result instead makes the picture grow into the frame and the
+bars shrink, which is what the preview already showed and what was wanted.
+Measured on a 1722x720 source in a 720x1280 frame:
+
+| zoom | picture inside the frame |
+| --- | --- |
+| 1.00 | 720x301 |
+| 1.56 | 720x468 |
+| 3.00 | 720x902 |
+
+Width clamps at the frame (`crop=min(iw,W):min(ih,H)`), so a large enough zoom
+becomes a full-bleed crop — the sensible end state rather than an error.
+
+**Trap that nearly shipped:** those `min()` expressions contain commas, and
+ffmpeg reads an unescaped comma in a filter chain as a filter separator — it
+fails with `No such filter: '720):min(ih'`. The escape has to survive the
+template literal, where `\,` COLLAPSES to a bare comma; it needs `\\,` in
+source to emit `\,`. The first version emitted bare commas and would have broken
+every render with the transform on. Caught by printing the generated string and
+running it through ffmpeg, not by reading it.
+
+**Worth repeating:** a string that is correct in the editor is not a filter that
+runs. Print it, then run it.
+
+## 2026-09-16 — Speed is an input, so no shot plays at the source's own speed
+
+**Decision:** with the transform on, every shot plays at a speed drawn from
+`MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds` (0.94, 0.96, 1.05, 1.07) — never 1.0.
+
+**The inversion that makes it cheap:** duration matching used to DERIVE the speed
+from how long a shot had to last, which left most shots at the source's own speed
+(the trim and freeze-pad branches both play at 1.0). Now the speed is chosen
+first and the LENGTH OF SOURCE TAKEN absorbs it:
+
+```
+window = slot x speed      seconds of source taken
+setpts = PTS/speed         played at that speed
+output = window / speed = slot
+```
+
+The output is still exactly the slot, so the planner, `beatDurations` and the
+narration track are all untouched. That is why this needed no timing work.
+
+**Deterministic, not random.** `pickShotSpeed()` hashes the project id and the
+shot's position, so a re-render of the same project produces the same file — the
+same reason the voice profiles carry fixed seeds. Neighbouring shots land on
+different speeds, and both directions appear, so a render never comes out
+uniformly faster than its source.
+
+**Trap, caught by measuring rather than reading:** `-ss`/`-t` after `-i` are
+OUTPUT options, applied after the filter chain — so `setpts` has already re-timed
+the stream and the window means something else. A 1.4s slot came out 1.30s at
+0.94 and 1.47s at 1.07. The fix is input-side seeking (`-ss`/`-t` before `-i`),
+plus a `tpad` hold and an output `-t` that cuts back to exactly the slot; that
+also absorbs the frame of rounding a speed change leaves at 30fps. Verified at all
+four speeds: 1.400 every time.
+
+**Only the copyright-free path changed.** With the toggle off the original hybrid
+— speed-ramp inside the band, else trim or freeze — is untouched.
+
+**Side effect worth knowing:** this partly covers the unbuilt source-continuity
+item. A run of adjacent scenes is no longer a faithful copy of the original once
+each one plays at a different speed.

@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Grip } from "lucide-react";
+import { Grip, Pause, Play } from "lucide-react";
 import type { MovieRecapProject } from "@/lib/api/types";
 import {
+  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_SUBTITLE_SAMPLE,
   MOVIE_RECAP_TARGET_DIMENSIONS,
@@ -58,6 +59,11 @@ export function MovieRecapPreview({
   previewZoom?: number;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
+  // The native control bar sits along the bottom of the frame — exactly where the
+  // subtitle is — so it hid the thing this preview exists to show. Play/pause is
+  // all a design preview needs.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
   const frameWidth = useFrameWidth(frameRef);
   // The export blurs in output pixels; the preview frame is drawn a few hundred
   // pixels wide, so the same radius here would blur far harder than the render.
@@ -99,29 +105,70 @@ export function MovieRecapPreview({
           style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
         >
           {videoUrl ? (
+            // Zoom magnifies the FITTED picture and the frame clips it, which is
+            // what the render does (`scale` after framing, then crop to frame).
+            // So the CSS is a plain transform on the fitted video: the letterboxed
+            // strip grows, the bars shrink, and the sides leave the frame.
+            //
+            // An earlier version drew the strip at the SOURCE's aspect ratio and
+            // scaled inside it, which held the bars still and cropped all four
+            // sides. That matched the render as it was THEN — zoom applied before
+            // framing — and stopped matching the moment the render's order
+            // changed. Both are in history/movie-recap.md; the render is the
+            // output, so the preview follows it.
             <video
               src={videoUrl}
               className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
-              // The transform is CSS here and a crop in ffmpeg, so this is an
-              // approximation of the export, not a match: scaling up the drawn
-              // frame shows the same framing the crop would, but the browser
-              // resamples from what it already drew. Mirror and colour are shown
-              // too so the whole transform can be judged at once. Overlays
-              // (subtitles, logo, blur box) sit outside this element and are
-              // deliberately not transformed — the render applies them after the
-              // per-shot filters as well.
               style={{
                 transform: [
                   previewZoom && previewZoom !== 1 ? `scale(${previewZoom})` : "",
-                  project.copyrightFree && project.aspectRatio === "16:9" ? "scaleX(-1)" : "",
+                  // Read from the same constant the render reads. This was a
+                  // hardcoded `=== "16:9"` and would have gone on showing an
+                  // unmirrored portrait preview against a mirrored export.
+                  project.copyrightFree && MOVIE_RECAP_COPYRIGHT_TRANSFORM.mirrorAspectRatios.includes(project.aspectRatio)
+                    ? "scaleX(-1)"
+                    : "",
                 ].filter(Boolean).join(" ") || undefined,
-                filter: project.copyrightFree ? "contrast(1.06) saturate(1.08)" : undefined,
+                // Same numbers the ffmpeg `eq` gets, read from the constant so
+                // the two cannot drift. Gamma is deliberately absent: CSS has no
+                // gamma filter, so the preview is slightly lighter than the
+                // export at gamma 0.98.
+                filter: project.copyrightFree
+                  ? `contrast(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.contrast}) saturate(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.saturation})`
+                  : undefined,
               }}
-              controls
               preload="metadata"
+              ref={videoRef}
+              playsInline
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              onEnded={() => setPlaying(false)}
             />
           ) : (
             <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
+          )}
+          {videoUrl && (
+            // A button rather than a click handler on the video: it has to be
+            // reachable by keyboard, and the blur rectangle above it needs its
+            // own pointer events, so this layer sits below that one.
+            <button
+              type="button"
+              aria-label={playing ? "Pause preview" : "Play preview"}
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                if (video.paused) void video.play().catch(() => setPlaying(false));
+                else video.pause();
+              }}
+              className="absolute inset-0 z-20 focus-visible:outline-none"
+            >
+              {/* Small and in a corner: a centred badge covers the middle of the
+                  frame, which is the part being designed. The whole surface is
+                  still the click target — this is only the state indicator. */}
+              <span className="absolute bottom-2 left-2 grid h-7 w-7 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+                {playing ? <Pause size={13} /> : <Play size={13} className="ml-px" />}
+              </span>
+            </button>
           )}
 
           <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />

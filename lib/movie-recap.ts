@@ -66,3 +66,22 @@ export function suggestMovieRecapFraming(width: number, height: number) {
     fitMode: "cover" as const,
   };
 }
+
+
+// Which speed a given shot plays at. Deterministic, not random: the same project
+// must render to the same file twice, the way the voice seeds do, or a re-render
+// quietly produces different output and nothing can be compared against anything.
+//
+// The hash is FNV-1a over the project id and the shot's position — small, stable,
+// and it does not matter that it is weak, only that it spreads neighbouring shots
+// across different speeds so a run does not all drift the same way.
+export function pickShotSpeed(speeds: readonly number[], projectId: string, beatIndex: number, shotIndex: number) {
+  if (!speeds.length) return 1;
+  const key = `${projectId}:${beatIndex}:${shotIndex}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return speeds[hash % speeds.length];
+}
