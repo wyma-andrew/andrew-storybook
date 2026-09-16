@@ -1519,3 +1519,20 @@ one thought. The cap is now 50 with the reason stated.
 **Not fixed here:** the delivery rate itself is Azure's default. Measured 16.5
 Burmese characters per second across five beats. `rate` is already plumbed
 through `AzureVoiceParams` if that needs to move.
+
+## 2026-09-16 — Bug fixed: Contain was never saved
+
+**Bug:** picking "Contain" in the customize step did nothing — the render still
+cropped, and reopening the project showed "Cover" selected again.
+
+**Cause:** `fitMode` was missing from the step-3 save payload in
+`MovieRecapWizard`. The picker wrote it to local state, the PATCH route accepted
+it, and the render honoured it (`scaleFilter`), so every part of the chain worked
+except the one that put it on the wire. Nothing failed or logged; the value was
+simply dropped between the click and the request.
+
+**Worth noting for the next field:** that payload is a hand-written list of keys.
+Every control added to step 3 has to be added to it by hand, and forgetting costs
+a setting that appears to work in the UI and silently reverts. Check it whenever
+a control is added, and be suspicious of "the UI shows my choice but the output
+ignores it" — that is this shape of bug.

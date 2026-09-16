@@ -127,6 +127,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       }
       Object.assign(body, {
         aspectRatio: project.aspectRatio,
+        fitMode: project.fitMode,
         subtitlePreset: project.subtitlePreset,
         subtitlePosition: project.subtitlePosition,
         subtitleOffset: project.subtitleOffset,
