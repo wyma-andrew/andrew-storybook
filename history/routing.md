@@ -97,6 +97,25 @@ actions only — don't re-add theme/account controls there. Any future control
 that belongs on every page (not just `(app)` pages) goes in `Sidebar`'s
 footer, not back into `TopBar`.
 
+## 2026-09-16 — Movie Recap and Voice Lab hidden from the sidebar
+
+`NAV_ITEMS` entries carry a `hidden` flag and `Sidebar` renders
+`VISIBLE_NAV_ITEMS`. Movie Recap and Voice Lab are both flagged hidden, leaving
+Stories as the only nav destination.
+
+Both are unfinished — Movie Recap's wizard is mid-build and untested below `md`,
+Voice Lab is a test harness — and a nav item is a promise that the thing behind
+it works.
+
+**Why a flag and not deleting the entries:** the routes still resolve, so both
+features can be worked on and shared by URL; putting them back is one boolean.
+
+**Rejected:** removing the routes or gating them on `ADMIN_EMAILS`. They are not
+sensitive, only unfinished, and an auth gate would have to be unpicked later.
+
+**Consequence:** nothing links to `/movie-recap` or `/labs/voice` from inside
+the app. A signed-in user reaches them only by typing the URL.
+
 ## 2026-09-16 — Sidebar becomes an off-canvas drawer below `md`
 
 `Sidebar` had no responsive behaviour: the same inline rail rendered at every

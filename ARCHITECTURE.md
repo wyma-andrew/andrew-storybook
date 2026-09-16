@@ -59,7 +59,8 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories (Movie Recap and Voice Lab
+                               entries exist but are `hidden`; routes still work by URL).
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)

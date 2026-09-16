@@ -10,11 +10,16 @@ import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { AccountMenu } from "@/components/AccountMenu";
 import { useMobileNav } from "@/components/MobileNav";
 
+// `hidden` keeps an unfinished feature out of the nav without deleting its
+// entry — the route still works if you type it, so it can be worked on and
+// shared by URL. Flip the flag to put it back.
 const NAV_ITEMS = [
-  { href: "/stories", label: "Stories", icon: BookOpen },
-  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard },
-  { href: "/labs/voice", label: "Voice Lab", icon: Beaker },
+  { href: "/stories", label: "Stories", icon: BookOpen, hidden: false },
+  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: true },
+  { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: true },
 ] as const;
+
+const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
 
 const STORAGE_KEY = "sidebar-collapsed";
 
@@ -23,7 +28,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
 
   return (
     <>
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      {VISIBLE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
