@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planBeatShots, shotsNeededFor } from "./movie-recap-render";
+import { planBeatShots, segmentFilters, shotsNeededFor } from "./movie-recap-render";
 
 const scenes = (n: number) => Array.from({ length: n }, (_, i) => i);
 
@@ -62,5 +62,23 @@ describe("planBeatShots", () => {
       const plan = planBeatShots(scenes(4), targetS);
       expect(plan.slotS * plan.shotCount).toBeCloseTo(targetS, 6);
     }
+  });
+});
+
+describe("segmentFilters", () => {
+  it("resamples to a constant frame rate, last", () => {
+    // `setpts` re-times frames without resampling them, so a slowed shot carries
+    // fewer frames across the same slot. Concatenating that with `-c copy`
+    // against a full-rate segment holds frames for two frame periods, which is a
+    // visible stutter — measured at two per 1.4s shot before this existed.
+    // `fps` has to come after `setpts`/`tpad`, or it resamples timing those
+    // then overwrite.
+    expect(segmentFilters("scale=720:1280", "setpts=PTS/0.9400")).toBe("scale=720:1280,setpts=PTS/0.9400,fps=30");
+  });
+
+  it("resamples even a segment with no retiming", () => {
+    // A source that is not 30fps would otherwise concatenate against 30fps
+    // segments at its own rate.
+    expect(segmentFilters("scale=720:1280")).toBe("scale=720:1280,fps=30");
   });
 });

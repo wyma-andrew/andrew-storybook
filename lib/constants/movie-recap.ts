@@ -214,6 +214,17 @@ export function effectiveMovieRecapZoom(project: {
 
 // Output frame size, shared by the ffmpeg render and anything in the UI that
 // has to express a size in OUTPUT pixels (the blur radius below).
+// Every segment is resampled to this before the parts are concatenated.
+//
+// Not cosmetic: `setpts` re-times frames without resampling them, so a shot
+// played at 0.94 comes out with FEWER frames spread over the same slot (measured:
+// 40 frames in 1.4s, an average 28.57fps). Concatenating that with a 30fps
+// segment using `-c copy` holds single frames for two frame periods, which reads
+// as a stutter — see history/movie-recap.md. Forcing one frame rate on every
+// segment also makes `concat -c copy` correct for sources that are not 30fps to
+// begin with.
+export const MOVIE_RECAP_TARGET_FPS = 30;
+
 export const MOVIE_RECAP_TARGET_DIMENSIONS = {
   "16:9": [1280, 720],
   "9:16": [720, 1280],

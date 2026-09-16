@@ -2000,3 +2000,44 @@ rate reached them. Anyone changing a voice's `params` again must re-run it.
 **Guarded by a test** asserting both Azure voices carry the rate and that it
 reaches the SSML, because losing it fails silently: renders simply get longer
 and slower again with nothing erroring.
+
+## 2026-09-17 — Bug fixed: slowed shots stuttered, because `setpts` does not resample
+
+**Bug:** the export visibly hitched on some shots. Reported as "some are
+glitching", with no pattern named.
+
+**Cause:** `setpts` re-times frames; it does not resample them. A shot played at
+0.94 takes `1.4 × 0.94 = 1.316s` of 30fps source — about 39.5 frames — and
+stretches it across a 1.4s slot, so the segment carries 40 frames where a
+full-rate one carries 42. Measured on a real source, the slowed segments came out
+at an average 28.57fps (`200/7`) against 30fps for the sped-up ones. The segments
+are then joined with `concat -c copy`, which cannot reconcile two frame rates:
+dumping frame timestamps from the result showed four double-length gaps
+(0.0667s against 0.0333s), all of them inside the two slowed segments — two
+stutters per slowed shot.
+
+**Why it appeared now:** the speeds only vary when `copyright_free` is on, so
+this arrived with the per-shot speed work and not before. The non-copyright
+speed-ramp branch had the same latent flaw, and so did any source that was not
+30fps to begin with.
+
+**Fix:** every segment ends in `fps=MOVIE_RECAP_TARGET_FPS` (30), applied through
+a single `segmentFilters()` helper that all four branches — copyright-free,
+speed-ramp, trim, freeze-pad — now go through. Re-measured after the change: all
+four speeds produce 42 frames at exactly 30fps and the concatenated timestamps
+show one uniform gap, with no stutters.
+
+**Why `fps` must come last:** it resamples whatever timing `setpts` and `tpad`
+produced onto a constant grid. Before them it would resample timing they then
+overwrite. The helper exists so no branch can forget it — one segment skipping
+the resample re-introduces the stutter for the whole video, because `-c copy`
+carries the mismatch through.
+
+**Consequence:** a source at 24 or 60fps is now conformed to 30 rather than
+passed through. That is the intended trade — the render already targets fixed
+output dimensions, and a mixed-frame-rate concat is never correct.
+
+**Method worth reusing:** the diagnosis was `ffprobe -show_entries
+frame=pts_time` over the concatenated file, with the gaps histogrammed. Frame
+rate reported on the stream (`r_frame_rate`) said 30 for every segment and hid
+the problem entirely; only `avg_frame_rate` and the actual timestamps showed it.
