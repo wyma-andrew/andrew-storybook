@@ -11,11 +11,13 @@ import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
 import type { MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
 import {
   MOVIE_RECAP_ASPECT_RATIOS,
+  MOVIE_RECAP_ZOOM,
   MOVIE_RECAP_FIT_MODES,
   MOVIE_RECAP_LANGUAGES,
   MOVIE_RECAP_LOGO_PLACEMENTS,
   MOVIE_RECAP_SUBTITLE_PRESETS,
   MOVIE_RECAP_SUBTITLE_SIZE_PCT,
+  effectiveMovieRecapZoom,
   MOVIE_RECAP_SUBTITLE_POSITIONS,
   MOVIE_RECAP_VOICES,
 } from "@/lib/constants/movie-recap";
@@ -27,6 +29,37 @@ import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapSource } from "./MovieRecapSource";
 
 const STEP_NAMES = ["Add Source", "Project Settings", "Customize Video", "Review"];
+
+// What each step saves, as a list rather than a hand-copied object literal. The
+// literal version silently dropped `fitMode` — the control worked, the value
+// never left the browser, and nothing errored. `satisfies` makes a name that is
+// not a patchable field a compile error, so adding a control to a step means
+// adding one word here.
+type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
+
+const STEP_2_FIELDS = ["name", "outputLanguage", "voiceProfileId"] as const satisfies readonly PatchableField[];
+
+const STEP_3_FIELDS = [
+  "aspectRatio",
+  "fitMode",
+  "copyrightFree",
+  "copyrightZoom",
+  "subtitlePreset",
+  "subtitlePosition",
+  "subtitleOffset",
+  "logoEnabled",
+  "logoPlacement",
+  "logoOpacity",
+  "blurEnabled",
+  "blurX",
+  "blurY",
+  "blurWidth",
+  "blurHeight",
+] as const satisfies readonly PatchableField[];
+
+function pick(project: MovieRecapProject, fields: readonly PatchableField[]) {
+  return Object.fromEntries(fields.map((field) => [field, project[field]])) as MovieRecapProjectPatch;
+}
 // The wizard step and the customize sub-tab live in the query string, so a step
 // is linkable, survives a reload, and the browser's Back button walks back
 // through the wizard instead of leaving it. Slugs rather than numbers because
@@ -110,6 +143,25 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     setProject((current) => current ? { ...current, ...patch } : current);
   }
 
+  // Zoom is seeded from the fit mode, not typed in from nothing: turning the
+  // transform on, or changing the fit mode while it is on, sets the recommended
+  // value. Turning it off returns to 1 (no zoom), which is also what the render
+  // ignores. A hand-set zoom therefore survives everything except a fit-mode
+  // change, which is the one thing the recommendation depends on.
+  // Turning the transform on or off, and changing the fit mode while it is on,
+  // both UNSET the zoom rather than writing a number. Unset means "use the
+  // recommendation for this fit mode", so the value tracks the fit mode until
+  // someone moves the slider — and once they do, it stays where they put it
+  // until the fit mode changes again.
+  function setCopyrightFree(enabled: boolean) {
+    merge({ copyrightFree: enabled, copyrightZoom: null });
+  }
+
+  function setFitMode(fitMode: MovieRecapProject["fitMode"]) {
+    if (!project) return;
+    merge({ fitMode, ...(project.copyrightFree ? { copyrightZoom: null } : {}) });
+  }
+
   async function saveAndGo(target: 2 | 3 | 4) {
     if (!project) return;
     const body: MovieRecapProjectPatch = { currentStep: target };
@@ -118,29 +170,14 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
         toast.error("Project name is required.");
         return;
       }
-      Object.assign(body, { name: project.name, outputLanguage: project.outputLanguage, voiceProfileId: project.voiceProfileId });
+      Object.assign(body, pick(project, STEP_2_FIELDS));
     }
     if (step === 3) {
       if (project.logoEnabled && !project.logoUrl) {
         toast.error("Upload a brand logo or turn Add Logo off.");
         return;
       }
-      Object.assign(body, {
-        aspectRatio: project.aspectRatio,
-        fitMode: project.fitMode,
-        copyrightFree: project.copyrightFree,
-        subtitlePreset: project.subtitlePreset,
-        subtitlePosition: project.subtitlePosition,
-        subtitleOffset: project.subtitleOffset,
-        logoEnabled: project.logoEnabled,
-        logoPlacement: project.logoPlacement,
-        logoOpacity: project.logoOpacity,
-        blurEnabled: project.blurEnabled,
-        blurX: project.blurX,
-        blurY: project.blurY,
-        blurWidth: project.blurWidth,
-        blurHeight: project.blurHeight,
-      });
+      Object.assign(body, pick(project, STEP_3_FIELDS));
     }
     const result = await updateProject({ params: { id: project.id }, body });
     if (result.error || !result.data) {
@@ -359,7 +396,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             <div>
               <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Preview how framing and overlays will be applied in phase 2.</p>
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
-                <MovieRecapPreview project={project} videoUrl={videoUrl} blur={blur} onBlurChange={(rect) => merge({ blurX: rect.x, blurY: rect.y, blurWidth: rect.width, blurHeight: rect.height })} />
+                <MovieRecapPreview project={project} videoUrl={videoUrl} blur={blur} previewZoom={project.copyrightFree ? effectiveMovieRecapZoom(project) : 1} onBlurChange={(rect) => merge({ blurX: rect.x, blurY: rect.y, blurWidth: rect.width, blurHeight: rect.height })} />
                 <div className="rounded-xl border border-line bg-panel-2 p-4">
                   <div className="mb-5 grid grid-cols-4 gap-2">
                     {CUSTOMIZE_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => void setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
@@ -370,15 +407,39 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                       return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} onClick={() => merge({ aspectRatio: item.id })}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
                     })}</div>
                     <div className="mt-5"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Fit mode</div>
-                      <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => merge({ fitMode: item.id })}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
+                      <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
                     </div>
                     <label className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-line bg-panel-2 p-3">
                       <span>
                         <span className="block text-sm font-medium">Copyright-free transform</span>
                         <span className="mt-1 block text-xs text-fg-3">Re-cut and alter the source so the export is not a continuous copy of it. Turn off to keep the footage as it is.</span>
                       </span>
-                      <Switch checked={project.copyrightFree} onChange={(checked) => merge({ copyrightFree: checked })} />
+                      <Switch checked={project.copyrightFree} onChange={setCopyrightFree} />
                     </label>
+                    {project.copyrightFree && (
+                      <label className="mt-3 block">
+                        <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
+                          <span>Zoom</span>
+                          <span>
+                            {effectiveMovieRecapZoom(project).toFixed(2)}x
+                            {project.copyrightZoom === null ? " · recommended" : ""}
+                          </span>
+                        </span>
+                        <input
+                          aria-label="Copyright-free zoom"
+                          type="range"
+                          min={MOVIE_RECAP_ZOOM.min}
+                          max={MOVIE_RECAP_ZOOM.max}
+                          step={MOVIE_RECAP_ZOOM.step}
+                          value={effectiveMovieRecapZoom(project)}
+                          onChange={(event) => merge({ copyrightZoom: Number(event.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <span className="mt-2 block text-[11px] text-fg-3">
+                          1.00x keeps the original framing. Changing the fit mode returns this to the recommended value.
+                        </span>
+                      </label>
+                    )}
                   </div>}
                   {tab === "subtitle" && <div>
                     <p className="mb-5 text-xs text-fg-2">Subtitles are burned into the exported video. Pick a look; its size is set by the aspect ratio.</p>
@@ -469,7 +530,7 @@ function Review({
     ["Project name", project.name], ["Output language", "Burmese"], ["Voice profile", MOVIE_RECAP_VOICES.find((voice) => voice.id === project.voiceProfileId)?.name ?? project.voiceProfileId], ["Aspect ratio", project.aspectRatio],
     ["Subtitles", `Burned in · ${MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)?.name ?? project.subtitlePreset} · ${MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}% · ${MOVIE_RECAP_SUBTITLE_POSITIONS.find((item) => item.id === project.subtitlePosition)?.name ?? project.subtitlePosition}`],
     ["Logo", project.logoEnabled ? `${project.logoFileName ?? "Missing"} · ${MOVIE_RECAP_LOGO_PLACEMENTS.find((item) => item.id === project.logoPlacement)?.name} · ${project.logoOpacity}%` : "Off"],
-    ["Copyright-free", project.copyrightFree ? "On" : "Off"],
+    ["Copyright-free", project.copyrightFree ? `On · zoom ${effectiveMovieRecapZoom(project).toFixed(2)}x` : "Off"],
     ["Blur", project.blurEnabled ? `${Math.round(project.blurWidth)}% × ${Math.round(project.blurHeight)}% at ${Math.round(project.blurX)}%, ${Math.round(project.blurY)}%` : "Off"],
   ];
   const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";

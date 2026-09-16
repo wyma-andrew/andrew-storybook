@@ -50,6 +50,10 @@ export type ApiSchema = {
     POST: {
       data: MovieRecapProject;
       body: {
+        // Source pixel dimensions, read from the file in the browser. Optional:
+        // a file whose metadata cannot be read still uploads.
+        width?: number;
+        height?: number;
         fileName: string;
         contentType: string;
         sizeBytes: number;

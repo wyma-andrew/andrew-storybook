@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth-guard";
 import { mapMovieRecapProject } from "@/lib/api/map";
+import { suggestMovieRecapFraming } from "@/lib/movie-recap";
 import { createMultipartUpload, isVideoContentType, movieRecapObjectKey, r2Configured } from "@/lib/r2";
 import { supabaseRoute } from "@/lib/supabase/route";
 
@@ -35,6 +36,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "The video metadata is invalid." }, { status: 400 });
   }
 
+  // Dimensions are optional — a source whose metadata the browser could not read
+  // still uploads, it just gets the default framing.
+  const width = Number(body?.width);
+  const height = Number(body?.height);
+  const hasDimensions = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+  // Seeded ONCE, here, because a new project has no configuration worth keeping.
+  // Nothing re-runs this later; see history/movie-recap.md on seeding.
+  const framing = hasDimensions ? suggestMovieRecapFraming(width, height) : null;
+
   const id = crypto.randomUUID();
   const objectKey = movieRecapObjectKey(id, "source", fileName);
   const db = await supabaseRoute();
@@ -50,6 +60,8 @@ export async function POST(req: NextRequest) {
       source_size_bytes: sizeBytes,
       source_duration_seconds: durationSeconds,
       source_last_modified: lastModified,
+      ...(hasDimensions ? { source_width: Math.round(width), source_height: Math.round(height) } : {}),
+      ...(framing ? { aspect_ratio: framing.aspectRatio, fit_mode: framing.fitMode } : {}),
     })
     .select("*")
     .single();

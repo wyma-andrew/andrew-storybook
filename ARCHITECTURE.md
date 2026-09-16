@@ -143,10 +143,11 @@ its visual prompt to improve image-model recognition without changing that key.
 Users create resumable recap projects, upload one browser-playable source,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
 movable blur configuration, and a per-project copyright-free toggle that drives
-the per-shot transform in `lib/movie-recap-transform.ts` (zoom, colour, mirror on
-16:9, and a blurred fill behind letterbox bars). Subtitle appearance is a two-option preset (yellow or
+the per-shot transform in `lib/movie-recap-transform.ts` (a per-project zoom,
+colour, mirror on 16:9, and a blurred fill behind letterbox bars). Subtitle appearance is a two-option preset (yellow or
 white text, black shadow, no background box) whose size follows the aspect ratio;
-only position and edge distance stay adjustable. Source bytes upload directly to R2 in parts; the
+only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
+aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
 same local file is reselected. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are

@@ -126,9 +126,8 @@ export const MOVIE_RECAP_SUBTITLE_POSITIONS = [
 // These live here rather than in the render so the numbers are readable in one
 // place and can be shown in the UI later without importing the render.
 export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
-  // Centre crop before scaling. 1.08 discards ~7% of each edge; past ~1.15 the
-  // softening is visible at 720p.
-  zoom: 1.08,
+  // Zoom is per project now (`copyrightZoom`), not a constant — see
+  // MOVIE_RECAP_ZOOM below for the range and the recommendations.
   // eq: a nudge, not a look.
   contrast: 1.06,
   saturation: 1.08,
@@ -142,6 +141,43 @@ export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
   backfillBlurRadius: 20,
   backfillBlurPasses: 2,
 } as const;
+
+// Zoom is a DIVISOR on the source crop (`crop = iw/zoom`), so 1 is no zoom and
+// higher is tighter: 1.5 keeps the middle ~67% of the frame, 1.56 about 64%.
+//
+// The recommendations are seeded into the project when copyright-free is turned
+// on, and depend on the fit mode rather than the aspect ratio. A project with the
+// toggle off carries 1.
+//
+// Worth knowing when reading these numbers: a centre crop keeps the source's
+// aspect ratio, so zoom does NOT shrink the letterbox bars on `contain` — it
+// tightens the subject inside them.
+export const MOVIE_RECAP_ZOOM = {
+  min: 1,
+  max: 2,
+  step: 0.02,
+  recommended: {
+    contain: 1.56,
+    cover: 1.5,
+  },
+  // What a project carries when copyright-free is off.
+  none: 1,
+} as const satisfies { min: number; max: number; step: number; recommended: Record<string, number>; none: number };
+
+export function recommendedMovieRecapZoom(fitMode: MovieRecapFitMode) {
+  return MOVIE_RECAP_ZOOM.recommended[fitMode];
+}
+
+// `copyrightZoom` is null when the user has not chosen one, which is not the same
+// as choosing 1 (no zoom) — that distinction is why the column is nullable. Unset
+// follows the recommendation for the current fit mode, so changing fit mode moves
+// it, while a chosen value stays put.
+export function effectiveMovieRecapZoom(project: {
+  copyrightZoom: number | null;
+  fitMode: MovieRecapFitMode;
+}) {
+  return project.copyrightZoom ?? recommendedMovieRecapZoom(project.fitMode);
+}
 
 // Output frame size, shared by the ffmpeg render and anything in the UI that
 // has to express a size in OUTPUT pixels (the blur radius below).

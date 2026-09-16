@@ -22,7 +22,7 @@ function uploadError(event: string, error: unknown, details?: Record<string, unk
 }
 
 function readVideo(file: File) {
-  return new Promise<{ duration: number; url: string }>((resolve, reject) => {
+  return new Promise<{ duration: number; width: number; height: number; url: string }>((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.preload = "metadata";
@@ -32,7 +32,10 @@ function readVideo(file: File) {
         reject(new Error("Could not read this video's duration."));
         return;
       }
-      resolve({ duration: video.duration, url });
+      // videoWidth/Height are already loaded with the duration. They are 0 for
+      // an audio-only file, and they ignore rotation metadata — see
+      // suggestMovieRecapFraming() for what that costs.
+      resolve({ duration: video.duration, width: video.videoWidth, height: video.videoHeight, url });
     };
     video.onerror = () => {
       URL.revokeObjectURL(url);
@@ -106,7 +109,7 @@ export function MovieRecapSource({
     let active = project;
     try {
       const metadata = await readVideo(file);
-      uploadLog("metadata-ready", { durationSeconds: metadata.duration });
+      uploadLog("metadata-ready", { durationSeconds: metadata.duration, width: metadata.width, height: metadata.height });
       setPreviewUrl(metadata.url);
       if (active) {
         const matches =
@@ -130,6 +133,8 @@ export function MovieRecapSource({
             contentType: file.type,
             sizeBytes: file.size,
             durationSeconds: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
             lastModified: file.lastModified,
           },
         });

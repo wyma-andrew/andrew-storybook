@@ -45,11 +45,17 @@ export function MovieRecapPreview({
   videoUrl,
   blur,
   onBlurChange,
+  previewZoom,
 }: {
   project: MovieRecapProject;
   videoUrl: string | null;
   blur: BlurRect;
   onBlurChange: (rect: BlurRect) => void;
+  // TEMPORARY: a zoom factor to try out in the preview only. It is not saved and
+  // the render does not read it — `MOVIE_RECAP_COPYRIGHT_TRANSFORM.zoom` is what
+  // actually burns. This exists to pick that number by eye; remove the prop and
+  // the slider once it is chosen.
+  previewZoom?: number;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const frameWidth = useFrameWidth(frameRef);
@@ -96,6 +102,21 @@ export function MovieRecapPreview({
             <video
               src={videoUrl}
               className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
+              // The transform is CSS here and a crop in ffmpeg, so this is an
+              // approximation of the export, not a match: scaling up the drawn
+              // frame shows the same framing the crop would, but the browser
+              // resamples from what it already drew. Mirror and colour are shown
+              // too so the whole transform can be judged at once. Overlays
+              // (subtitles, logo, blur box) sit outside this element and are
+              // deliberately not transformed — the render applies them after the
+              // per-shot filters as well.
+              style={{
+                transform: [
+                  previewZoom && previewZoom !== 1 ? `scale(${previewZoom})` : "",
+                  project.copyrightFree && project.aspectRatio === "16:9" ? "scaleX(-1)" : "",
+                ].filter(Boolean).join(" ") || undefined,
+                filter: project.copyrightFree ? "contrast(1.06) saturate(1.08)" : undefined,
+              }}
               controls
               preload="metadata"
             />

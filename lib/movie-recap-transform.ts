@@ -1,4 +1,8 @@
-import { MOVIE_RECAP_COPYRIGHT_TRANSFORM, MOVIE_RECAP_TARGET_DIMENSIONS } from "./constants/movie-recap";
+import {
+  effectiveMovieRecapZoom,
+  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
+  MOVIE_RECAP_TARGET_DIMENSIONS,
+} from "./constants/movie-recap";
 import type { MovieRecapProject } from "./api/types";
 
 // Builds the ffmpeg filter chain for ONE shot: how the source is framed into the
@@ -18,18 +22,26 @@ export type ShotFilterContext = {
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
   copyrightFree: boolean;
+  // A divisor on the source crop, so 1 is no zoom. Per project, not a constant.
+  zoom: number;
 };
 
 export function shotFilterContext(project: MovieRecapProject): ShotFilterContext {
-  return { aspectRatio: project.aspectRatio, fitMode: project.fitMode, copyrightFree: project.copyrightFree };
+  return {
+    aspectRatio: project.aspectRatio,
+    fitMode: project.fitMode,
+    copyrightFree: project.copyrightFree,
+    zoom: effectiveMovieRecapZoom(project),
+  };
 }
 
 // A crop that throws away the outer edges before the frame is scaled up to fill
 // the output. Applied first so everything after it works on the kept region.
 function zoomFilter(ctx: ShotFilterContext) {
   if (!ctx.copyrightFree) return null;
-  const { zoom } = MOVIE_RECAP_COPYRIGHT_TRANSFORM;
-  if (zoom <= 1) return null;
+  const zoom = ctx.zoom;
+  // 1 is no zoom, and anything below it would enlarge the crop past the frame.
+  if (!Number.isFinite(zoom) || zoom <= 1) return null;
   // Even dimensions: an odd crop width breaks yuv420p chroma subsampling.
   return `crop=floor(iw/${zoom}/2)*2:floor(ih/${zoom}/2)*2`;
 }

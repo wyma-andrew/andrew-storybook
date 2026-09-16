@@ -1605,7 +1605,7 @@ frame-for-frame copy, not that it looks processed:
 
 | Step | What | Scope |
 | --- | --- | --- |
-| zoom | centre crop 1.08x before scaling | both ratios |
+| zoom | centre crop by `copyrightZoom`, seeded from the fit mode | both ratios |
 | framing | blurred copy of the clip behind the letterbox bars | `contain` only |
 | mirror | `hflip` | 16:9 only |
 | colour | `eq` contrast 1.06, saturation 1.08, gamma 0.98 | both ratios |
@@ -1626,6 +1626,11 @@ argument for leaving it always-on for `contain` (black bars just look worse) was
 raised and set aside: with the toggle off, `contain` letterboxes in black exactly
 as it did before.
 
+**Zoom was 1.08 first and read as no change at all** — on `cover` the framing
+barely moves, because cover already crops to fill. 1.2 keeps the middle ~83% of
+the frame. Much past that softens visibly at 720p, since a smaller kept region is
+stretched further to reach full width.
+
 **Two consequences worth stating:** mirroring reverses any text in frame — signs,
 phone screens, burned-in captions from a source that already had them. And the
 backfill encodes two scaled copies per shot, so `contain` renders cost roughly
@@ -1633,3 +1638,103 @@ backfill encodes two scaled copies per shot, so `contain` renders cost roughly
 
 Verified by running both chains — cover and contain, with `setpts` appended as
 the render appends it — through ffmpeg against a real file.
+
+## 2026-09-16 — Zoom is a project value seeded from the fit mode, not a constant
+
+**Decision:** `copyright_zoom` (real, 1-2, default 1) lives on the project row and
+is set from a slider in the customize step. It is a DIVISOR on the source crop, so
+**1 means no zoom** and higher is tighter; a project with the transform off carries
+1, and the render skips the crop entirely at that value.
+
+**Seeding:** turning the transform on, or changing the fit mode while it is on,
+sets the recommended value — `contain` 1.56, `cover` 1.5. Turning it off returns
+to 1.
+
+**Why seeding is tied to fit mode and nothing else:** the recommendation depends
+on the fit mode, so a fit-mode change is the one edit that should overwrite a
+hand-set zoom. Everything else leaves it alone. The slider labels itself
+"recommended" only while it matches, so a hand-set value is visibly not the
+default.
+
+**Range stops at 2.** Past that the kept region is under half the frame, and
+upscaling it to 1280 wide is visibly soft.
+
+**Reminder that keeps being needed:** a centre crop preserves the source's aspect
+ratio, so zoom does not shrink the letterbox bars on `contain`. It tightens the
+subject inside them. Wanting the bars gone means `cover`, or a crop that changes
+aspect — which this is not.
+
+**The temporary preview-only slider added an hour earlier is gone**, replaced by
+this one. The preview still shows zoom, mirror and colour as CSS, which is an
+approximation: ffmpeg crops then upscales from source pixels, the browser scales
+what it already drew, so the export is sharper than the preview at the same
+number.
+
+## 2026-09-16 — Zoom "unset" is null, and step payloads are field lists
+
+**Bug:** a project arriving with copyright-free already on showed zoom 1.00x and
+stayed there until the fit mode was switched back and forth. Seeding only ran on
+explicit actions — the toggle, or a fit-mode change — and every existing row had
+`copyright_free = true` with `copyright_zoom = 1` from two separate column
+defaults, so nothing ever fired.
+
+**Cause, underneath:** `1` meant two things — "no zoom, deliberately" and "never
+chosen". No amount of seeding logic fixes an ambiguous value.
+
+**Fix:** `copyright_zoom` is nullable. NULL means unchosen: the UI shows the
+recommendation for the fit mode and the render uses it, via
+`effectiveMovieRecapZoom()`. Toggling the transform, and changing fit mode while
+it is on, now write NULL rather than a number — so the value tracks the fit mode
+until someone moves the slider, and stays put afterwards. 1.00x is a real choice
+again. Existing rows were reset to NULL by the migration.
+
+**Rejected:** seeding on page load when zoom equals 1. It makes a deliberate 1.00x
+impossible to keep — every reload would overwrite it — and writes to the user's
+data without them touching anything.
+
+**Separately: the step save payloads are now field lists** (`STEP_2_FIELDS`,
+`STEP_3_FIELDS`) with a `satisfies readonly PatchableField[]` check, instead of
+hand-copied object literals. The literal is what silently dropped `fitMode`: the
+control worked, the value never left the browser, nothing errored. A name that is
+not a patchable field is now a compile error, and adding a control means adding
+one word.
+
+**React Hook Form was considered for this and set aside.** The defect was the
+hand-maintained payload, which a five-line field list fixes. RHF earns its place
+when there is client-side validation, dirty-field tracking or an unsaved-changes
+guard to build — none of which exist here — and it fits this component badly
+today, because the project object is replaced wholesale by every server response
+(`setProject(result.data)`), which would mean `reset()` on each one.
+
+## 2026-09-16 — The source's own dimensions choose the framing
+
+**Decision:** the browser already reads the source's dimensions when it reads the
+duration, so they are now stored (`source_width`, `source_height`, both nullable)
+and used once, at upload, to seed `aspect_ratio` and `fit_mode`: portrait source
+-> 9:16, landscape -> 16:9, and `cover` either way, since the orientations match
+by construction.
+
+**Why seed only at upload:** a new project has no configuration worth protecting,
+and re-seeding later fights the user — the mistake the zoom default made an hour
+earlier. Nothing re-runs it. Replacing the source creates the values again because
+that is a new upload.
+
+**Why `cover` and not `contain`:** cover fills the frame by cropping, which is
+correct exactly when the output orientation matches the source's.
+
+**No warning when they later disagree.** A banner for "portrait source, landscape
+output" was built and then removed: the ratio and fit controls sit next to a live
+preview, so a user who does not like the result changes it there. A warning about
+something visible, next to the control that fixes it, is noise. The helper behind
+it went with it rather than sitting unused.
+
+**Known limitation, deliberately not solved here:** `videoWidth`/`videoHeight` in
+the browser ignore rotation metadata. A phone video shot in portrait commonly
+reports 1920x1080 with a 90-degree flag, and the browser does not expose the flag,
+so the suggestion can be exactly wrong for that file. It is a default the user can
+change, and the honest fix is an `ffprobe` pass server-side after upload, where
+the rotation IS visible. Worth doing when phone footage becomes a real input.
+
+**Columns are nullable** because rows created before this, and any file whose
+metadata cannot be read, legitimately have no dimensions — `movieRecapOrientationMismatch()`
+stays quiet rather than guessing for those.

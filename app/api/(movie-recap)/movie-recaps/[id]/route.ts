@@ -68,8 +68,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   for (const [client, column, min, max] of [
     ["subtitleOffset", "subtitle_offset", 0, 45],
+    // null is a legal value here: it means the zoom has not been chosen and the
+    // recommendation for the fit mode applies.
+    ["copyrightZoom", "copyright_zoom", 1, 2],
   ] as const) {
     if (body?.[client] !== undefined) {
+      if (client === "copyrightZoom" && body[client] === null) {
+        patch[column] = null;
+        changesConfiguration = true;
+        continue;
+      }
       const value = Number(body[client]);
       if (!Number.isFinite(value) || value < min || value > max) {
         return NextResponse.json({ error: `${client} must be ${min}–${max}.` }, { status: 400 });

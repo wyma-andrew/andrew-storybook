@@ -5,6 +5,7 @@ const ctx = (over: Partial<ShotFilterContext> = {}): ShotFilterContext => ({
   aspectRatio: "16:9",
   fitMode: "cover",
   copyrightFree: false,
+  zoom: 1.5,
   ...over,
 });
 
@@ -21,7 +22,7 @@ describe("buildShotFilter", () => {
 
   it("zooms, recolours and mirrors a 16:9 shot", () => {
     const filter = buildShotFilter(ctx({ copyrightFree: true }));
-    expect(filter).toContain("crop=floor(iw/1.08/2)*2");
+    expect(filter).toContain("crop=floor(iw/1.5/2)*2");
     expect(filter).toContain("hflip");
     expect(filter).toContain("eq=contrast=1.06:saturation=1.08:gamma=0.98");
   });
@@ -51,6 +52,14 @@ describe("buildShotFilter", () => {
     ]) {
       expect(buildShotFilter(c)).not.toMatch(/\]$/);
     }
+  });
+
+  it("treats zoom 1 as no zoom", () => {
+    // 1 is the value a project carries with the transform off, and the value the
+    // slider's floor produces. `crop=iw/1` would be a no-op filter; skip it.
+    const filter = buildShotFilter(ctx({ copyrightFree: true, zoom: 1 }));
+    expect(filter).not.toContain("crop=floor");
+    expect(filter).toContain("eq=");
   });
 
   it("crops to even dimensions", () => {

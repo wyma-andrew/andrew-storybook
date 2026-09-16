@@ -22,6 +22,9 @@ export type MovieRecapProject = {
   sourceContentType: string;
   sourceSizeBytes: number;
   sourceDurationSeconds: number;
+  // Source pixel size, null when the browser could not read it.
+  sourceWidth: number | null;
+  sourceHeight: number | null;
   sourceLastModified: number;
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
@@ -29,6 +32,10 @@ export type MovieRecapProject = {
   // Whether the render applies the copyright-free transform to the source. A
   // per-project choice again — see history/movie-recap.md.
   copyrightFree: boolean;
+  // Divisor on the source crop; 1 is no zoom. NULL means the user has not chosen
+  // one and the recommendation for the fit mode applies — see
+  // effectiveMovieRecapZoom(). Only read when copyrightFree.
+  copyrightZoom: number | null;
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
@@ -94,6 +101,7 @@ export type MovieRecapProjectPatch = Partial<{
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
   copyrightFree: boolean;
+  copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;
