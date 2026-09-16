@@ -39,14 +39,6 @@ export type MovieRecapProject = {
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
-  // Cover art grabbed from the SOURCE (not the render) — see
-  // history/movie-recap.md. `thumbnailAttempt` is the shuffle position the
-  // current image came from, so the next press moves on instead of repeating.
-  // Server-written only, which is why none of these are in the patch type.
-  thumbnailUrl: string | null;
-  thumbnailObjectKey: string | null;
-  thumbnailAtSeconds: number | null;
-  thumbnailAttempt: number;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;
@@ -69,6 +61,11 @@ export type MovieRecapProject = {
   renderProgressCurrent: number | null;
   renderProgressTotal: number | null;
   renderScript: MovieRecapNarrationSegment[] | null;
+  // Generated after a render, from that render's narration. `hookTitles` is the
+  // server-written set of options; `hookTitle` is the one the user picked and is
+  // the only patchable half, so regenerating never discards a choice.
+  hookTitles: string[];
+  hookTitle: string | null;
   renderOutputUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
@@ -89,7 +86,8 @@ export type MovieRecapRenderStage =
   | "rendering_segments"
   | "concatenating"
   | "applying_overlays"
-  | "uploading";
+  | "uploading"
+  | "writing_hook_titles";
 
 // One narration line from the render pipeline's script-generation step, timed
 // against the ORIGINAL source video (sourceStartS/sourceEndS). The synthesized
@@ -121,6 +119,7 @@ export type MovieRecapProjectPatch = Partial<{
   blurY: number;
   blurWidth: number;
   blurHeight: number;
+  hookTitle: string | null;
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];
 }>;

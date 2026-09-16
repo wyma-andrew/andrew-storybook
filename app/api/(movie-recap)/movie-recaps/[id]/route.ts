@@ -118,6 +118,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     Object.assign(patch, { blur_x: blur.x, blur_y: blur.y, blur_width: blur.width, blur_height: blur.height });
     changesConfiguration = true;
   }
+  // Deliberately does NOT set changesConfiguration: picking a hook title does
+  // not alter what the render would produce, so it must not demote an approved
+  // project back to draft the way the framing and subtitle settings do.
+  if (body?.hookTitle !== undefined) {
+    if (body.hookTitle === null) {
+      patch.hook_title = null;
+    } else if (typeof body.hookTitle === "string" && body.hookTitle.trim()) {
+      patch.hook_title = body.hookTitle.trim().slice(0, 300);
+    } else {
+      return NextResponse.json({ error: "Invalid hook title." }, { status: 400 });
+    }
+  }
   if (body?.currentStep !== undefined) {
     const step = Number(body.currentStep);
     if (!Number.isInteger(step) || step < 1 || step > 4) return NextResponse.json({ error: "Invalid wizard step." }, { status: 400 });

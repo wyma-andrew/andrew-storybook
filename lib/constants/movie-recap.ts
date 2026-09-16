@@ -255,6 +255,17 @@ export const MOVIE_RECAP_MOCK_NARRATION = [
   "လျှို့ဝှက်ချက်တွေ တစ်ခုပြီးတစ်ခု ပေါ်ထွက်လာပါတယ်။",
   "နောက်ဆုံးမှာတော့ သူဟာ အဖြေတစ်ခုကို ရှာတွေ့ခဲ့ပါတယ်။",
 ] as const;
+// Canned hook titles for a MOCK render, which never calls GPT — same contract
+// as MOVIE_RECAP_MOCK_NARRATION above, so the Review panel can be checked
+// without spending anything.
+export const MOVIE_RECAP_MOCK_HOOK_TITLES = [
+  "သူ့အတိတ်က ပြန်လိုက်လာပြီ",
+  "တစ်ညတည်းနဲ့ ဘဝတစ်ခုလုံး ပြောင်းသွားတယ်",
+  "ဒီလျှို့ဝှက်ချက်ကို ဘယ်သူမှ မသိခဲ့ဘူး",
+  "မမျှော်လင့်တဲ့ တွေ့ဆုံမှုတစ်ခု",
+  "အဖြေရှာဖို့ သူ ဘာတွေ ပေးဆပ်ခဲ့လဲ",
+] as const;
+
 // Only this much of the source is used for a mock render — it exists to check
 // framing, logo, and subtitle design quickly, not to preview the whole movie.
 export const MOVIE_RECAP_MOCK_SOURCE_SECONDS = 40;

@@ -1855,6 +1855,10 @@ each one plays at a different speed.
 
 ## 2026-09-17 — The thumbnail is grabbed from the SOURCE, and the button is a shuffle
 
+**SUPERSEDED the same day — see "Hook titles replace the thumbnail" below. The
+reasoning is kept because the mechanism is sound and will be the starting point
+if cover art comes back alongside the frame-design work.**
+
 **Decision:** the Review tab has a "Grab Thumbnail" button that pulls one frame
 from the uploaded source video, runs it through the render's own filter chain,
 and stores it on the project as `thumbnail_url` / `thumbnail_object_key` /
@@ -1910,3 +1914,55 @@ would repeat frames after any failed press.
   failure is the fix.
 - The columns are server-written and deliberately absent from
   `MovieRecapProjectPatch`.
+
+## 2026-09-17 — Hook titles replace the thumbnail, generated at the end of a render
+
+**Decision:** the source-frame thumbnail is removed — code, route, UI and
+columns — and replaced by generated Burmese hook titles. At the end of a
+successful render the pipeline writes five title options to `hook_titles` from
+the narration it just produced; the Review tab lists them and the user's pick is
+stored in `hook_title`.
+
+**Why it replaced rather than joined the thumbnail:** requested directly, one
+day after the thumbnail shipped and before anyone had used it. The columns were
+dropped rather than left in place precisely because nothing depended on them
+yet; dead schema outlives the memory of why it is dead. The forward migration is
+kept and a second migration drops the columns, because the first had already
+been pushed — an applied migration is walked back, not deleted.
+
+**Why the render writes them, not a button:** the input is the narration script,
+which only exists once a render has run, and the render already has it in
+memory. Generating at the end of the pipeline costs one small GPT call at a
+moment the user is already waiting, instead of a press that would have to reload
+the script to do the same thing.
+
+**Why five options rather than one:** a hook is judged by comparison, and asking
+for five costs the same single request as asking for one. The prompt explicitly
+demands different ANGLES — a question, a stake, a twist, a character, a
+consequence — because the observed failure mode is five rewordings of one
+sentence, which defeats the point of returning several. It also forbids
+revealing the ending, which the model otherwise does reliably; a title that
+gives away the twist replaces the video instead of selling it.
+
+**Why `hook_titles` and `hook_title` are separate columns:** the generated set is
+server-written and replaced by each render, while the choice is the user's and
+must survive a re-render that produces a different set. Collapsing them into an
+index into the array would break the moment the array changed.
+
+**Consequences a future reader should not mistake for bugs:**
+- A failed title call leaves `hook_titles` UNTOUCHED rather than blanking it.
+  Re-rendering is currently the only way to get titles, so a transient GPT
+  failure must not destroy the set from the previous render. The render itself
+  still succeeds — the video is the deliverable and it is already uploaded by
+  this point.
+- A cancel during the title call is re-thrown rather than swallowed, or
+  "Cancel" would report a finished render.
+- Choosing a title does NOT set `changesConfiguration` in the PATCH handler, so
+  it cannot demote a `ready_for_generation` project back to `draft`. It does not
+  change what the render would produce.
+- A mock render writes `MOVIE_RECAP_MOCK_HOOK_TITLES` and spends nothing, the
+  same contract as its canned narration.
+- Length is clamped in code, not trusted from the model: a strict JSON schema
+  guarantees an array of strings but not how many or how long. Measured output
+  clusters at 44-52 Burmese characters against a stated 20-45 preference and a
+  55 hard cap, so the cap is what actually holds the line.

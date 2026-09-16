@@ -15,6 +15,11 @@ import {
   movieRecapNarrationSystemPrompt,
   movieRecapSceneVisionSystemPrompt,
 } from "./prompts/movie-recap-narration";
+import {
+  MOVIE_RECAP_HOOK_TITLE_COUNT,
+  MOVIE_RECAP_HOOK_TITLE_SCHEMA,
+  movieRecapHookTitleSystemPrompt,
+} from "./prompts/movie-recap-hook-title";
 import type { Region } from "./constants/regions";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
@@ -253,6 +258,43 @@ export async function describeMovieRecapScenes(
 // Returns one narration line per BEAT, each naming the scenes it plays over —
 // the model picks which scenes carry the plot and how they group, rather than
 // inventing timestamps, so every recap cut lands on a real one.
+// Hook titles for a finished recap, written from the narration the render just
+// produced. Several options, because the user picks one — see
+// history/movie-recap.md.
+//
+// Length and count are clamped here rather than trusted from the model: a
+// strict JSON schema can guarantee an array of strings, but not how many or how
+// long, and the UI has fixed room for them.
+export async function generateMovieRecapHookTitles(
+  narration: { text: string }[],
+  signal?: AbortSignal
+): Promise<string[]> {
+  const lines = narration.map((segment) => segment.text).filter(Boolean);
+  if (!lines.length) return [];
+  const res = await openai().chat.completions.create(
+    {
+      model: "gpt-5.6-luna",
+      messages: [
+        { role: "system", content: movieRecapHookTitleSystemPrompt },
+        { role: "user", content: JSON.stringify({ narration: lines }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "movie_recap_hook_titles", schema: MOVIE_RECAP_HOOK_TITLE_SCHEMA, strict: true },
+      },
+    },
+    { signal }
+  );
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  const titles = (JSON.parse(raw) as { titles?: unknown }).titles;
+  if (!Array.isArray(titles)) return [];
+  return titles
+    .filter((title): title is string => typeof title === "string")
+    .map((title) => title.trim())
+    .filter(Boolean)
+    .slice(0, MOVIE_RECAP_HOOK_TITLE_COUNT);
+}
+
 export async function generateMovieRecapNarration(
   scenes: RecapScene[],
   signal?: AbortSignal

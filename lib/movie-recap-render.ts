@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
+import { generateMovieRecapHookTitles, generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
 import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { movieRecapObjectKey, putObject } from "./r2";
 import { pickShotSpeed } from "./movie-recap";
@@ -15,6 +15,7 @@ import {
   movieRecapSubtitleStyle,
   MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
+  MOVIE_RECAP_MOCK_HOOK_TITLES,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
@@ -781,6 +782,27 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     const outputKey = movieRecapObjectKey(project.id, "render", `recap-${project.id}.mp4`);
     const outputUrl = await putObject(outputKey, outputBuffer, "video/mp4");
 
+    // Hook titles last, from the narration this render just wrote. It runs after
+    // the upload on purpose: the video is the deliverable, and a GPT call that
+    // fails must not cost the user a render that already succeeded. A mock
+    // render uses canned titles, like its canned narration, so it spends nothing.
+    await setProgress(db, project.id, "writing_hook_titles");
+    // null means "leave the column alone" — a failed call must not blank the
+    // titles a previous render produced, since the only way to get titles is to
+    // render again.
+    let hookTitles: string[] | null = null;
+    if (mock) {
+      hookTitles = [...MOVIE_RECAP_MOCK_HOOK_TITLES];
+    } else {
+      try {
+        hookTitles = await generateMovieRecapHookTitles(narration, signal);
+      } catch (error) {
+        // A cancel is not a title failure — let it fail the render like any
+        // other aborted step, or "Cancel" would report a finished video.
+        if (signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+      }
+    }
+
     await db
       .from("movie_recap_projects")
       .update({
@@ -790,6 +812,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         render_script: narration satisfies MovieRecapNarrationSegment[],
         render_output_url: outputUrl,
         render_output_object_key: outputKey,
+        ...(hookTitles ? { hook_titles: hookTitles } : {}),
         render_stage: null,
         render_progress_current: null,
         render_progress_total: null,

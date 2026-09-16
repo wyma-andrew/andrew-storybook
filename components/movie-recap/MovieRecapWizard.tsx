@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
-import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Image as ImageIcon, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Shuffle, Stamp, Trash2, Upload } from "lucide-react";
+import { Captions, Check, ChevronLeft, ChevronRight, Copy, Crop, Droplet, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Sparkles, Stamp, Trash2, Upload } from "lucide-react";
 import { Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -21,6 +21,7 @@ import {
   MOVIE_RECAP_SUBTITLE_POSITIONS,
   MOVIE_RECAP_VOICES,
 } from "@/lib/constants/movie-recap";
+import { copyText } from "@/lib/copy";
 import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { useRead, useWrite } from "@/lib/spoosh";
@@ -113,7 +114,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
-  const { trigger: grabThumbnail, loading: grabbingThumbnail } = useWrite((api) => api("movie-recaps/:id/thumbnail").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
@@ -283,13 +283,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   // One <audio> for the whole list: playing a different voice re-points it.
-  // Cover art from the source. Each press advances the shuffle server-side, so
-  // the client sends nothing and simply takes the row it gets back.
-  async function grabProjectThumbnail() {
+  // Picking a hook title saves immediately: step 4 has no "Save & Continue" to
+  // carry it, and the choice does not demote the project the way the render
+  // settings do.
+  async function chooseHookTitle(title: string) {
     if (!project) return;
-    const result = await grabThumbnail({ params: { id: project.id } });
+    const previous = project.hookTitle;
+    const next = previous === title ? null : title;
+    merge({ hookTitle: next });
+    const result = await updateProject({ params: { id: project.id }, body: { hookTitle: next } });
     if (result.error || !result.data) {
-      toast.error(result.error?.error ?? "Could not grab a thumbnail.");
+      merge({ hookTitle: previous });
+      toast.error(result.error?.error ?? "Could not save the hook title.");
       return;
     }
     setProject(result.data);
@@ -508,8 +513,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             <Review
               project={project}
               onGenerate={generate}
-              onGrabThumbnail={grabProjectThumbnail}
-              grabbingThumbnail={grabbingThumbnail}
+              onChooseHookTitle={chooseHookTitle}
               saving={saving}
               onRenderPreview={renderRecapPreview}
               rendering={rendering}
@@ -533,8 +537,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 function Review({
   project,
   onGenerate,
-  onGrabThumbnail,
-  grabbingThumbnail,
+  onChooseHookTitle,
   saving,
   onRenderPreview,
   rendering,
@@ -543,8 +546,7 @@ function Review({
 }: {
   project: MovieRecapProject;
   onGenerate: () => void;
-  onGrabThumbnail: () => void;
-  grabbingThumbnail: boolean;
+  onChooseHookTitle: (title: string) => void;
   saving: boolean;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
@@ -573,6 +575,7 @@ function Review({
         concatenating: "Combining segments",
         applying_overlays: "Applying blur/logo",
         uploading: "Uploading result",
+        writing_hook_titles: "Writing hook titles",
       }[project.renderStage]
     : null;
   const mockTag = project.renderIsMock && project.renderStatus !== "idle" ? " (mock)" : "";
@@ -580,28 +583,6 @@ function Review({
   return <div><h2 className="mb-1 text-lg font-semibold">Review Configuration</h2><p className="mb-6 text-sm text-fg-2">Confirm the settings that phase 2 will use.</p>
     <div className="overflow-hidden rounded-xl border border-line bg-panel-2"><table className="w-full border-collapse"><tbody>{rows.map(([label, value]) => <tr key={label} className="border-b border-line last:border-0"><th className="w-1/3 px-4 py-3 text-left text-xs font-medium text-fg-3">{label}</th><td className="px-4 py-3 text-sm text-fg">{value}</td></tr>)}</tbody></table></div>
     <div className="mt-6 flex flex-wrap items-center gap-3"><LoadingButton variant="primary" loading={saving} onClick={onGenerate}>Generate Recap Video</LoadingButton>{project.status === "ready_for_generation" && <span className="flex items-center gap-1.5 text-sm text-ok"><Check size={16} /> Ready for phase 2</span>}</div>
-
-    <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-sm font-medium">Thumbnail</span>
-        {project.thumbnailAtSeconds !== null && <span className="text-xs text-fg-3">Frame at {formatDuration(project.thumbnailAtSeconds)}</span>}
-      </div>
-      <p className="mb-4 text-xs text-fg-2">
-        Grabbed from the uploaded source, so it needs no render. The frame is cropped to {project.aspectRatio} and carries the same zoom, mirror and colour the export uses. Press again for a different frame — each press moves to a new point in the film, not the next second of it.
-      </p>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className={`${project.aspectRatio === "9:16" ? "aspect-[9/16] w-32" : "aspect-video w-56"} overflow-hidden rounded-lg border border-line bg-panel`}>
-          {project.thumbnailUrl
-            /* The key is a fresh uuid every press, so the URL changes and the
-               browser never serves the previous frame from cache. */
-            ? <img src={project.thumbnailUrl} alt="Recap thumbnail" className="size-full object-cover" />
-            : <div className="flex size-full items-center justify-center text-fg-3"><ImageIcon size={24} /></div>}
-        </div>
-        <LoadingButton loading={grabbingThumbnail} onClick={onGrabThumbnail}>
-          <Shuffle size={16} /> {project.thumbnailUrl ? "Grab Another Frame" : "Grab Thumbnail"}
-        </LoadingButton>
-      </div>
-    </div>
 
     <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
       <div className="mb-1 flex items-center justify-between">
@@ -619,5 +600,34 @@ function Review({
       </div>
       {project.renderStatus === "done" && project.renderOutputUrl && <MovieRecapRenderPlayer project={project} />}
     </div>
+
+    {project.hookTitles.length > 0 && (
+      <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
+        <div className="mb-1 flex items-center gap-2">
+          <Sparkles size={16} className="text-fg-3" />
+          <span className="text-sm font-medium">Hook titles</span>
+        </div>
+        <p className="mb-4 text-xs text-fg-2">
+          Written from this render&apos;s narration, each taking a different angle. Pick the one to publish with — click it again to unpick. Regenerating means rendering again, so the set stays until then.
+        </p>
+        <ul className="flex flex-col gap-2">
+          {project.hookTitles.map((title) => {
+            const selected = project.hookTitle === title;
+            return (
+              <li key={title} className="flex items-center gap-2">
+                <Button
+                  onClick={() => onChooseHookTitle(title)}
+                  className={`!h-auto min-w-0 flex-1 !justify-start !py-2.5 !text-left ${selected ? "!border-accent !bg-accent-dim !text-fg" : ""}`}
+                >
+                  {selected ? <Check size={16} className="shrink-0" /> : <span className="w-4 shrink-0" />}
+                  <span className="whitespace-normal">{title}</span>
+                </Button>
+                <Button aria-label="Copy title" onClick={() => void copyText(title, "Title")}><Copy size={16} /></Button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    )}
   </div>;
 }
