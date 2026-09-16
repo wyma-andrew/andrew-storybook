@@ -1967,77 +1967,35 @@ index into the array would break the moment the array changed.
   clusters at 44-52 Burmese characters against a stated 20-45 preference and a
   55 hard cap, so the cap is what actually holds the line.
 
-## 2026-09-17 — Azure narration speaks at +10%
+## 2026-09-17 — Reverted: the +10% speech rate and the 30fps segment resample
 
-**Decision:** both Azure Burmese voices carry `rate: "+10%"`, shared through one
-`AZURE_NARRATION_RATE` constant in `lib/tts/voices.ts`. This closes the item the
-2026-09-16 pacing entry left open ("the delivery rate itself is Azure's
-default … `rate` is already plumbed through `AzureVoiceParams` if that needs to
-move").
+**Decision:** `c18d550` (Azure narration at `+10%`) and `cf79207` (resample every
+segment to 30fps before concat) were both reverted at the user's request, as
+`git revert`, so they remain in history and can be re-applied. The reason for the
+revert was not stated; do not assume either change was found to be wrong.
 
-**Measured, not assumed:** the same two-sentence Burmese line synthesized at
-Azure's default and at `+10%` came back 6.825s and 6.204s — 9.1% shorter, which
-is exactly `1/1.1`. Azure treats the percentage as a rate multiplier, so a
-`+10%` rate is a 9.1% duration cut, not a 10% one.
+**State after the revert:** narration speaks at Azure's default rate, the
+committed voice previews are the default-rate files again, and segments are
+concatenated at whatever frame rate `setpts` leaves them with.
 
-**Why one shared constant rather than a rate per voice:** beat durations are
-measured from the synthesized audio, so a per-voice rate would make switching
-from Thiha to Nilar silently change the export's length.
+**The measurements are kept here, because they cost real work and the second one
+describes a bug that is now present again:**
 
-**Why +10% and not more:** shot count is `ceil(beatDuration / SHOT_TARGET_S)`,
-so faster narration means fewer shots per beat, and the narration prompt already
-drops scenes from a beat whose line is too short to give each scene its time.
-Around +15% that starts biting. +10% was chosen as the step that is clearly
-quicker while leaving the scene count alone.
+- **Rate.** The same Burmese line measured 6.825s at Azure's default and 6.204s
+  at `+10%` — a 9.1% cut, exactly `1/1.1`. Azure treats the percentage as a rate
+  multiplier, not a duration one. Changing the rate requires re-running
+  `scripts/generate-voice-previews.ts`; the previews are committed files.
 
-**Consequence — the committed previews had to be regenerated.**
-`public/movie-recap/voices/*.mp3` are static files, so changing the rate without
-re-running `scripts/generate-voice-previews.ts` leaves the wizard's play button
-demonstrating a delivery the render no longer produces. Both files shrank ~9%,
-which is the same change measured above and a cheap confirmation that the new
-rate reached them. Anyone changing a voice's `params` again must re-run it.
+- **Stutter — STILL PRESENT ON THIS BRANCH.** `setpts` re-times frames without
+  resampling them, so a shot played at 0.94 carries about 40 frames across a
+  1.4s slot where a full-rate shot carries 42 (an average 28.57fps against 30).
+  `concat -c copy` cannot reconcile two frame rates, so those frames are held for
+  two frame periods. Measured by dumping `frame=pts_time` from the concatenated
+  file: four double-length gaps (0.0667s against 0.0333s), all inside the two
+  slowed segments — two stutters per slowed shot, on roughly half the shots
+  whenever `copyright_free` is on. Appending `fps=30` after `setpts`/`tpad` on
+  every segment branch fixed it completely (42 frames at 30fps for all four
+  speeds, one uniform gap). `cf79207` has the implementation.
 
-**Guarded by a test** asserting both Azure voices carry the rate and that it
-reaches the SSML, because losing it fails silently: renders simply get longer
-and slower again with nothing erroring.
-
-## 2026-09-17 — Bug fixed: slowed shots stuttered, because `setpts` does not resample
-
-**Bug:** the export visibly hitched on some shots. Reported as "some are
-glitching", with no pattern named.
-
-**Cause:** `setpts` re-times frames; it does not resample them. A shot played at
-0.94 takes `1.4 × 0.94 = 1.316s` of 30fps source — about 39.5 frames — and
-stretches it across a 1.4s slot, so the segment carries 40 frames where a
-full-rate one carries 42. Measured on a real source, the slowed segments came out
-at an average 28.57fps (`200/7`) against 30fps for the sped-up ones. The segments
-are then joined with `concat -c copy`, which cannot reconcile two frame rates:
-dumping frame timestamps from the result showed four double-length gaps
-(0.0667s against 0.0333s), all of them inside the two slowed segments — two
-stutters per slowed shot.
-
-**Why it appeared now:** the speeds only vary when `copyright_free` is on, so
-this arrived with the per-shot speed work and not before. The non-copyright
-speed-ramp branch had the same latent flaw, and so did any source that was not
-30fps to begin with.
-
-**Fix:** every segment ends in `fps=MOVIE_RECAP_TARGET_FPS` (30), applied through
-a single `segmentFilters()` helper that all four branches — copyright-free,
-speed-ramp, trim, freeze-pad — now go through. Re-measured after the change: all
-four speeds produce 42 frames at exactly 30fps and the concatenated timestamps
-show one uniform gap, with no stutters.
-
-**Why `fps` must come last:** it resamples whatever timing `setpts` and `tpad`
-produced onto a constant grid. Before them it would resample timing they then
-overwrite. The helper exists so no branch can forget it — one segment skipping
-the resample re-introduces the stutter for the whole video, because `-c copy`
-carries the mismatch through.
-
-**Consequence:** a source at 24 or 60fps is now conformed to 30 rather than
-passed through. That is the intended trade — the render already targets fixed
-output dimensions, and a mixed-frame-rate concat is never correct.
-
-**Method worth reusing:** the diagnosis was `ffprobe -show_entries
-frame=pts_time` over the concatenated file, with the gaps histogrammed. Frame
-rate reported on the stream (`r_frame_rate`) said 30 for every segment and hid
-the problem entirely; only `avg_frame_rate` and the actual timestamps showed it.
+- **Diagnostic note:** `r_frame_rate` reports 30 for every segment and hides this
+  entirely. Only `avg_frame_rate` and the raw frame timestamps show it.
