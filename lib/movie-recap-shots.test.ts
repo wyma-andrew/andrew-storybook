@@ -172,6 +172,24 @@ describe("planBeat", () => {
     expect(plan.warning).toContain("cannot hold source under 3s");
   });
 
+  it("separates a pair that skips only a fraction of a second", () => {
+    // From a real export: shots 0.29s apart in the source, 3.54s on screen back
+    // to back. A third of a second skipped inside the same scene reads as one
+    // clip, not as a cut, so the pair has to come apart.
+    const plan = planBeat({
+      shots: [
+        { sourceStartS: 30.03, sourceEndS: 33.0 },
+        { sourceStartS: 33.29, sourceEndS: 36.5 },
+      ],
+      spares: [],
+      targetS: 3.54,
+    });
+    expect(plan.shotCount).toBe(2);
+    const gap = plan.shots[1].sourceStartS - plan.shots[0].sourceEndS;
+    expect(gap).toBeGreaterThanOrEqual(MIN_JUMP_S - 1e-9);
+    expect(longestContinuousRun(plan.shots, plan.slotS)).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
+  });
+
   it("separates three contiguous scenes in a row", () => {
     const plan = planBeat({
       shots: [
@@ -409,6 +427,25 @@ describe("motion-aware placement", () => {
     });
     expect(plan.sparesUsed).toEqual([1]);
     expect(plan.warning).toBeNull();
+  });
+
+  it("counts playback speed when asking whether a scene fills the slot", () => {
+    // The copyright-free transform plays `slot * speed` seconds of source, so a
+    // scene that clears the slot can still be too short. Measured on a real
+    // export: a 2.93s scene under a 2.92s slot at 1.04x held 0.10s.
+    // Slot is 2.0s, so a shot at 1.07x eats 2.14s of source. The nearer spare
+    // clears the slot but not the footage; the farther one covers both.
+    const plan = planBeat({
+      shots: [{ sourceStartS: 0, sourceEndS: 4 }],
+      spares: [
+        { sourceStartS: 20, sourceEndS: 22.05 },
+        { sourceStartS: 60, sourceEndS: 64 },
+      ],
+      targetS: 4,
+      speedFor: () => 1.07,
+    });
+    expect(plan.sparesUsed).toContain(1);
+    expect(plan.sparesUsed).not.toContain(0);
   });
 
   it("says so when a beat has to be padded with held frames", () => {

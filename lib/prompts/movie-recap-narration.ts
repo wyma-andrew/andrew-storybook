@@ -39,8 +39,14 @@ export const movieRecapNarrationSystemPrompt =
   "Keep every line very short — one idea, 25-45 Burmese characters. Never write more than 50; a 60-character line " +
   "takes about four seconds to speak, which is a whole beat on one thought. " +
   "The line's length decides how long its beat stays on screen, so a rambling line makes the video drag. " +
-  "A beat is cut into roughly 1.5-second shots, so a line spoken over four scenes wants about six seconds of speech — " +
-  "if a line is too short to give each of its scenes that long, the render drops the extra scenes. " +
+  // Removed rather than re-costed: this used to quote the shot length and tell
+  // the model how many seconds of speech a four-scene beat "wants", which is
+  // exactly the per-clip coupling the narration must not have. A line carries
+  // ONE idea and its length comes from that idea; the planner fits clips to the
+  // line, never the other way round. (The numbers were stale too — shots are
+  // 1.5-2.5s now — but updating them would have made the coupling worse.)
+  "Pick the scenes that show this beat. Supplying more than the render can use is fine — it keeps the ones that fit " +
+  "the line and drops the rest. Never lengthen a line to justify more scenes. " +
   "Condense the plot into third-person recap narration — do not quote dialogue verbatim, summarize what happens, " +
   "and use the visual description to describe action the dialogue does not explain. " +
   // Deliberately a role, not a grammar checklist. An earlier version listed the

@@ -2768,3 +2768,99 @@ shared empty array, since the store does not exist on the server.
 **Every storage access is wrapped**, because `localStorage` throws in a private
 window and returns nothing with site data blocked. A history that cannot be read
 or written degrades to empty; it must never take a render down with it.
+
+## 2026-09-17 — Narration is beat-level; it never scales per clip
+
+**Principle, stated by the user and worth keeping at the top of any future
+prompt work:** a narration line carries ONE story idea and its length comes from
+that idea. Several clips may support the same line. The planner fits clips to
+the narration — never the other way round.
+
+**What was removed:**
+
+> "A beat is cut into roughly 1.5-second shots, so a line spoken over four
+> scenes wants about six seconds of speech — if a line is too short to give each
+> of its scenes that long, the render drops the extra scenes."
+
+It taught the model to budget narration by clip count. Its numbers were also
+stale — shots are 1.5-2.5s now, not 1.5s.
+
+**REJECTED, and this is the trap to avoid:** re-costing that sentence for the
+current band, i.e. telling the model "each scene costs about 40 Burmese
+characters, so write the line long enough to pay for the scenes you picked."
+That was proposed here and turned down. It reads like a fix — the arithmetic is
+correct, and it would make the model's scene choices survive instead of being
+dropped — but it makes narration a function of clip count, which is precisely
+the coupling that must not exist. A recap where every visual cut needs its own
+chunk of narration is a list, not a story.
+
+**What replaced it:**
+
+> "Pick the scenes that show this beat. Supplying more than the render can use is
+> fine — it keeps the ones that fit the line and drops the rest. Never lengthen a
+> line to justify more scenes."
+
+Over-supply was already absorbed — `keepLiveliest()` drops what a beat cannot
+afford, by motion. The prompt now says so, so the model has no reason to pad.
+
+**Accepted consequence:** a line under about 62 Burmese characters can only fund
+ONE clip, so many beats are a single clip held up to `MAX_CONTINUOUS_SOURCE_S`.
+That is within the rule and was accepted knowingly. **If more visual variety is
+wanted, the lever is `MIN_SHOT_S`, not the narration** — lowering it lets a short
+line carry more cuts. Do not reach for the prompt for this.
+
+**Unchanged and still correct:** "the line's length decides how long its beat
+stays on screen, so a rambling line makes the video drag." That couples length to
+PACING, which is real, rather than to clip count.
+
+## 2026-09-17 — A third of a second skipped is not a cut: continuity threshold 0.15s -> 0.5s
+
+**Measured on a real export** (23.53s, 12 shots, 7 beats), three pairs played
+near-adjacent footage back to back:
+
+| pair | skipped | on screen together |
+|------|---------|--------------------|
+| 3.1 -> 3.2 | 0.47s | 3.54s |
+| 4.1 -> 4.2 | 0.29s | 3.54s |
+| 4.2 -> 5.1 | 0.42s | 3.41s |
+
+Each PASSED the rule: `CONTINUITY_EPSILON_S` was 0.15s, so any gap above that
+counted as a genuine cut. But skipping a third of a second inside the same scene
+and carrying on does not read as a cut, it reads as one clip — and each of these
+ran ~3.5s, over the 3.0s limit the rule exists to enforce.
+
+**Decision:** `CONTINUITY_EPSILON_S` 0.15 -> **0.5**. The old value only ever
+covered the 2dp rounding of scene boundaries; it was never chosen against how a
+skip actually looks.
+
+**`MIN_JUMP_S` 0.5 -> 0.75 comes with it, and has to.** It is the gap the
+planner opens when it breaks a pair, so it must sit ABOVE the threshold that
+decides whether a pair is joined — at 0.5 and 0.5, a freshly separated pair
+lands exactly on the boundary it was trying to clear and the fix does nothing.
+Keep that ordering if either value is tuned again.
+
+**Cost:** sub-splitting a scene needs `k * slot + (k - 1) * 0.75`, so a scene has
+to be slightly longer to be split. Borrowing also skips more spares as
+"touching". Both are the intended trade.
+
+## 2026-09-17 — Bug fixed: the fill test ignored playback speed
+
+**Same export, 0.24s of held frames across two shots** — the class of bug
+supposedly closed earlier the same day:
+
+```
+2.1: slot 2.92s needs 3.04s of footage at 1.04x, scene has 2.93s -> held 0.10s
+7.1: slot 2.96s needs 3.17s of footage at 1.07x, scene has 3.03s -> held 0.13s
+```
+
+Off by exactly the speed multiplier. The "can this scene fill the slot?" guard
+compared the scene against `slotS`, but the copyright-free transform plays
+`slot * speed` seconds of source — up to 7% more. `footageFor()` now applies the
+FASTEST speed the beat could be given, since which shot index gets which speed is
+not known while scenes are being chosen.
+
+**What this does NOT fix, deliberately:** the guard only runs while BORROWING. In
+both shots above the beat had one scene and needed one shot, so nothing was
+borrowed and the model's own too-short scene was used as-is. Closing that would
+mean swapping out a scene the narration model chose to save about three frames of
+held picture. Offered and declined.

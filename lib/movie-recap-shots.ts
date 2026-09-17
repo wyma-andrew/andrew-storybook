@@ -30,13 +30,18 @@ export const MAX_SHOT_S = 2.4;
 // source and played back to back are one unbroken run of footage, however many
 // "cuts" the plan thinks it made.
 export const MAX_CONTINUOUS_SOURCE_S = 3;
-// Two windows whose ends are this close are treated as joining. Slack rather
-// than equality because scene boundaries are rounded to 2dp upstream.
-export const CONTINUITY_EPSILON_S = 0.15;
+// Two windows this close are treated as JOINING, even though a gap exists.
+// Raised from 0.15s, which only covered the rounding of scene boundaries: a real
+// export played three pairs that skipped just 0.29-0.47s of film, and each ran
+// ~3.5s on screen. Formally those were cuts; to the eye, skipping a third of a
+// second inside the same scene and carrying on is one unbroken clip, which is
+// what MAX_CONTINUOUS_SOURCE_S exists to prevent.
+export const CONTINUITY_EPSILON_S = 0.5;
 // A skip smaller than this does not read as a cut — it reads as a dropped
 // frame. Used both to break an adjacent pair apart and to space the sub-windows
-// of a split scene.
-export const MIN_JUMP_S = 0.5;
+// of a split scene. It has to stay ABOVE CONTINUITY_EPSILON_S, or breaking a
+// pair would land it exactly on the threshold it is trying to clear.
+export const MIN_JUMP_S = 0.75;
 // Never leave a window shorter than this behind when opening a gap: below it the
 // shot is mostly freeze-padding.
 const MIN_WINDOW_S = 0.5;
@@ -267,6 +272,17 @@ export function minShotsFor(targetS: number) {
 // a spare that BUTTS UP against a window the beat already holds is skipped
 // while a non-touching one is available, because playing it next to its own
 // neighbour produces exactly the unbroken run this module exists to prevent.
+// The fastest speed any shot in this beat can be given. Speed is picked per
+// shot index, so which one a scene ends up with is not known while scenes are
+// being chosen — the fastest is the safe assumption, since it needs the most
+// footage.
+function topSpeed(speedFor: ((shotIndex: number) => number) | undefined, count: number) {
+  if (!speedFor) return 1;
+  let top = 1;
+  for (let i = 0; i < count; i++) top = Math.max(top, speedFor(i));
+  return top;
+}
+
 function motionOf(window: SourceWindow, motion?: MotionTrack | null) {
   return motion ? motionMean(motion, window.sourceStartS, window.sourceEndS) : 0;
 }
@@ -275,7 +291,7 @@ function borrow(
   shots: SourceWindow[],
   spares: SourceWindow[],
   need: number,
-  slotS: number,
+  requiredS: number,
   motion?: MotionTrack | null
 ) {
   const picked = [...shots];
@@ -304,7 +320,7 @@ function borrow(
       .slice(0, BORROW_CANDIDATES);
     // A scene shorter than the slot cannot fill it, and the render holds its
     // last frame for the difference. Prefer one that can, before motion decides.
-    const fills = (window: SourceWindow) => (lengthOf(window) >= slotS - 1e-9 ? 1 : 0);
+    const fills = (window: SourceWindow) => (lengthOf(window) >= requiredS - 1e-9 ? 1 : 0);
     let best = nearest[0];
     for (const candidate of nearest) {
       const better =
@@ -326,14 +342,14 @@ function borrow(
 function keepLiveliest(
   windows: SourceWindow[],
   count: number,
-  slotS: number,
+  requiredS: number,
   motion?: MotionTrack | null
 ) {
   if (windows.length <= count) return [...windows];
   // Scenes too short to fill the slot go first whatever their motion: the render
   // pads the difference by holding a frame, and a held frame is worse than a
   // quiet one.
-  const fills = (window: SourceWindow) => (lengthOf(window) >= slotS - 1e-9 ? 1 : 0);
+  const fills = (window: SourceWindow) => (lengthOf(window) >= requiredS - 1e-9 ? 1 : 0);
   return windows
     .map((window, index) => ({ window, index, motion: motionOf(window, motion) }))
     .sort((a, b) => fills(b.window) - fills(a.window) || b.motion - a.motion || a.index - b.index)
@@ -502,7 +518,13 @@ export function planBeat({
   const wanted = Math.max(1, Math.ceil(targetS / SHOT_TARGET_S));
   const need = Math.max(Math.min(shotsNeededFor(targetS), affordable), minCount);
 
-  const { picked, used } = borrow(shots, spares, need, targetS / need, motion);
+  // How much SOURCE a shot of this length needs, which is not its slot: the
+  // copyright-free transform plays `slot * speed` seconds, so at 1.07x a 2.9s
+  // slot wants 3.1s of footage. Testing against the slot alone let scenes
+  // through that were 4-7% too short, and the render held a frame for the
+  // difference. The fastest speed is used, so the test never under-provisions.
+  const footageFor = (slot: number) => slot * topSpeed(speedFor, Math.max(need, 1));
+  const { picked, used } = borrow(shots, spares, need, footageFor(targetS / need), motion);
   // Cuts play in the order they happen in the film, borrowed or not.
   picked.sort(byStart);
 
@@ -513,7 +535,7 @@ export function planBeat({
   let shotCount = Math.min(picked.length, wanted, affordable);
   shotCount = Math.max(shotCount, Math.min(minCount, picked.length));
 
-  let scenes = keepLiveliest(picked, shotCount, targetS / shotCount, motion);
+  let scenes = keepLiveliest(picked, shotCount, footageFor(targetS / shotCount), motion);
   let warning: string | null = null;
 
   if (shotCount < minCount) {
