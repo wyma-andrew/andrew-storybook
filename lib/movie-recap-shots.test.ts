@@ -1,16 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { segmentFilters } from "./movie-recap-render";
+import { MOVIE_RECAP_PACING, type MovieRecapPacing } from "./constants/movie-recap";
 import {
   focusWindow,
   motionMean,
   type MotionTrack,
-  MAX_CONTINUOUS_SOURCE_S,
   MIN_JUMP_S,
   planBeat,
   playedSourceSeconds,
   shotsNeededFor,
   type SourceWindow,
 } from "./movie-recap-shots";
+
+// The short-form profile is what every test below plans against unless it says
+// otherwise: its numbers are the measured ones, and the suite was written to
+// them. The long-form profile gets its own describe block at the end, plus the
+// invariant check that runs over EVERY profile.
+const SHORT = MOVIE_RECAP_PACING["9:16"];
+const LONG = MOVIE_RECAP_PACING["16:9"];
+const MAX_CONTINUOUS_SOURCE_S = SHORT.maxContinuousSourceS;
 
 // Scenes are at least MIN_SCENE_S (2s) apart in the real pipeline; these are
 // spaced further so a window is only ever adjacent to another on purpose.
@@ -44,7 +52,7 @@ const longestContinuousRun = (
 
 describe("planBeat", () => {
   it("cuts roughly every 2s", () => {
-    const plan = planBeat({ shots: scenes(4), spares: [], targetS: 6 });
+    const plan = planBeat({ pacing: SHORT, shots: scenes(4), spares: [], targetS: 6 });
     expect(plan.shotCount).toBe(3);
     expect(plan.slotS).toBeCloseTo(2, 6);
   });
@@ -53,7 +61,7 @@ describe("planBeat", () => {
     // The pacing complaint this band exists for: a measured export ran 20 shots
     // in 19.7s at a mean of 0.98s. Every beat length should now sit in 1.5-2.5s.
     for (const targetS of [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 9]) {
-      const plan = planBeat({ shots: scenes(8), spares: [], targetS });
+      const plan = planBeat({ pacing: SHORT, shots: scenes(8), spares: [], targetS });
       expect(plan.slotS, `target=${targetS}`).toBeGreaterThanOrEqual(1.5 - 1e-9);
       expect(plan.slotS, `target=${targetS}`).toBeLessThanOrEqual(2.5 + 1e-9);
     }
@@ -62,15 +70,15 @@ describe("planBeat", () => {
   it("rounds toward more cuts, not fewer", () => {
     // 3s is 1.5 shots at the target length; ceiling gives two 1.5s cuts rather
     // than one 3s hold, which is the pacing the cutting replaced.
-    expect(planBeat({ shots: scenes(4), spares: [], targetS: 3 }).shotCount).toBe(2);
-    expect(planBeat({ shots: scenes(5), spares: [], targetS: 5 }).shotCount).toBe(3);
+    expect(planBeat({ pacing: SHORT, shots: scenes(4), spares: [], targetS: 3 }).shotCount).toBe(2);
+    expect(planBeat({ pacing: SHORT, shots: scenes(5), spares: [], targetS: 5 }).shotCount).toBe(3);
   });
 
   it("never exceeds the hard cap, whatever the beat is given", () => {
     // MAX_SHOT_S (2.4) is the borrowing target; MIN_SHOT_S can hold the count
     // below what it asks for, so the cap that actually binds is this one.
     for (const targetS of [2.5, 3.2, 4.8, 7, 9.6]) {
-      const plan = planBeat({ shots: scenes(shotsNeededFor(targetS)), spares: [], targetS });
+      const plan = planBeat({ pacing: SHORT, shots: scenes(shotsNeededFor(targetS, SHORT)), spares: [], targetS });
       expect(plan.slotS).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
     }
   });
@@ -78,7 +86,7 @@ describe("planBeat", () => {
   it("drops scenes the line is too short to pay for", () => {
     // 3s of speech cannot carry four scenes without each falling under the 1.5s
     // floor, so it keeps two and gives them 1.5s each.
-    const plan = planBeat({ shots: scenes(4), spares: [], targetS: 3 });
+    const plan = planBeat({ pacing: SHORT, shots: scenes(4), spares: [], targetS: 3 });
     expect(plan.shotCount).toBe(2);
     expect(plan.slotS).toBe(1.5);
   });
@@ -89,7 +97,7 @@ describe("planBeat", () => {
     // is the one exception — it gets one shot of its own length.
     for (const targetS of [1, 1.4, 2.2, 3.7, 5.1, 9]) {
       for (const count of [1, 2, 3, 4]) {
-        const plan = planBeat({ shots: scenes(count), spares: [], targetS });
+        const plan = planBeat({ pacing: SHORT, shots: scenes(count), spares: [], targetS });
         expect(plan.slotS).toBeGreaterThanOrEqual(Math.min(targetS, 1.5) - 1e-9);
       }
     }
@@ -99,13 +107,14 @@ describe("planBeat", () => {
     // The shots have to add up to the beat, or the narration track and the
     // picture drift apart.
     for (const targetS of [1.2, 3, 4.4, 6.8]) {
-      const plan = planBeat({ shots: scenes(4), spares: [], targetS });
+      const plan = planBeat({ pacing: SHORT, shots: scenes(4), spares: [], targetS });
       expect(plan.slotS * plan.shotCount).toBeCloseTo(targetS, 6);
     }
   });
 
   it("borrows the nearest spare, and reports which", () => {
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 100, sourceEndS: 102 }],
       spares: [
         { sourceStartS: 400, sourceEndS: 402 },
@@ -122,6 +131,7 @@ describe("planBeat", () => {
     // would show one unbroken 4s run of source. The further spare is taken
     // instead, even though the adjacent one is nearer.
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 100, sourceEndS: 102 }],
       spares: [
         { sourceStartS: 102, sourceEndS: 104 },
@@ -137,6 +147,7 @@ describe("planBeat", () => {
     // the source. The planner moves a window inside its own scene rather than
     // reordering the beat.
     const plan = planBeat({
+      pacing: SHORT,
       shots: [
         { sourceStartS: 100, sourceEndS: 102 },
         { sourceStartS: 102, sourceEndS: 104 },
@@ -153,9 +164,59 @@ describe("planBeat", () => {
     expect(plan.warning).toBeNull();
   });
 
+  it("borrows rather than freezing, even when the cut count is already satisfied", () => {
+    // The gap the coverage pass exists for. A 1.2s scene under a 2.4s slot is
+    // half held frames, and every cut-count rule is already satisfied — so
+    // nothing used to ask whether there was footage behind the cuts.
+    const plan = planBeat({
+      pacing: SHORT,
+      shots: [{ sourceStartS: 0, sourceEndS: 1.2 }],
+      spares: [
+        { sourceStartS: 100, sourceEndS: 106 },
+        { sourceStartS: 200, sourceEndS: 206 },
+      ],
+      targetS: 4.8,
+    });
+    expect(plan.shotCount).toBe(3);
+    expect(plan.sparesUsed).toHaveLength(2);
+  });
+
+  it("does not borrow when nothing would freeze", () => {
+    // The coverage pass only spends a cut to avoid a held frame. Scenes that
+    // already fill their slots leave the spare pool alone.
+    const plan = planBeat({
+      pacing: SHORT,
+      shots: [
+        { sourceStartS: 0, sourceEndS: 6 },
+        { sourceStartS: 100, sourceEndS: 106 },
+      ],
+      spares: [{ sourceStartS: 200, sourceEndS: 206 }],
+      targetS: 4.8,
+    });
+    expect(plan.shotCount).toBe(2);
+    expect(plan.sparesUsed).toEqual([]);
+  });
+
+  it("leaves a gap the render can slow-fill alone", () => {
+    // 2.2s of scene under a 2.4s slot is a ratio of 1.09, inside the speed-ramp
+    // band: the render slows the clip and the scene still plays whole. Nothing
+    // freezes, so there is nothing to buy a cut for.
+    const plan = planBeat({
+      pacing: SHORT,
+      shots: [
+        { sourceStartS: 0, sourceEndS: 2.2 },
+        { sourceStartS: 100, sourceEndS: 106 },
+      ],
+      spares: [{ sourceStartS: 200, sourceEndS: 206 }],
+      targetS: 4.8,
+    });
+    expect(plan.shotCount).toBe(2);
+    expect(plan.sparesUsed).toEqual([]);
+  });
+
   it("sub-splits one scene rather than holding it, when there is nothing to borrow", () => {
     // Replaces the old behaviour, where an empty spare pool meant a 6s hold.
-    const plan = planBeat({ shots: [{ sourceStartS: 10, sourceEndS: 26 }], spares: [], targetS: 6 });
+    const plan = planBeat({ pacing: SHORT, shots: [{ sourceStartS: 10, sourceEndS: 26 }], spares: [], targetS: 6 });
     expect(plan.shotCount).toBeGreaterThanOrEqual(2);
     expect(plan.slotS).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
     // Non-contiguous windows: a visible skip, not a hold.
@@ -168,7 +229,7 @@ describe("planBeat", () => {
   it("warns instead of pretending, when the beat has no footage to split", () => {
     // A single 2s scene cannot carry 9s of narration under the cap by any
     // arrangement. It must say so rather than silently holding.
-    const plan = planBeat({ shots: [{ sourceStartS: 10, sourceEndS: 12 }], spares: [], targetS: 9 });
+    const plan = planBeat({ pacing: SHORT, shots: [{ sourceStartS: 10, sourceEndS: 12 }], spares: [], targetS: 9 });
     expect(plan.warning).toContain("cannot hold source under 3s");
   });
 
@@ -177,6 +238,7 @@ describe("planBeat", () => {
     // to back. A third of a second skipped inside the same scene reads as one
     // clip, not as a cut, so the pair has to come apart.
     const plan = planBeat({
+      pacing: SHORT,
       shots: [
         { sourceStartS: 30.03, sourceEndS: 33.0 },
         { sourceStartS: 33.29, sourceEndS: 36.5 },
@@ -192,6 +254,7 @@ describe("planBeat", () => {
 
   it("separates three contiguous scenes in a row", () => {
     const plan = planBeat({
+      pacing: SHORT,
       shots: [
         { sourceStartS: 100, sourceEndS: 102 },
         { sourceStartS: 102, sourceEndS: 104 },
@@ -203,7 +266,10 @@ describe("planBeat", () => {
     expect(longestContinuousRun(plan.shots, plan.slotS)).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
   });
 
-  it("holds nothing past 3s, across supply, beat length and scene length", () => {
+  it.each([
+    ["9:16", SHORT],
+    ["16:9", LONG],
+  ])("holds nothing past the cap on %s, across supply, beat length and scene length", (_ratio, pacing) => {
     for (const targetS of [1, 2, 2.6, 3, 3.4, 4.2, 5.5, 7, 9]) {
       for (const count of [1, 2, 3, 4, 6]) {
         for (const lengthS of [1, 2, 4, 12]) {
@@ -213,6 +279,7 @@ describe("planBeat", () => {
             // borrows are all candidates for one unbroken run.
             for (const gapS of [0, 10]) {
               const plan = planBeat({
+                pacing,
                 shots: scenes(count, { lengthS, gapS }),
                 spares: scenes(spareCount, { lengthS, gapS, fromS: count * (lengthS + gapS) }),
                 targetS,
@@ -220,9 +287,9 @@ describe("planBeat", () => {
               const where = `target=${targetS} scenes=${count}x${lengthS}s gap=${gapS} spares=${spareCount}`;
               expect(plan.slotS * plan.shotCount, where).toBeCloseTo(targetS, 6);
               if (plan.warning) continue; // declared impossible, and said so
-              expect(plan.slotS, where).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
+              expect(plan.slotS, where).toBeLessThanOrEqual(pacing.maxContinuousSourceS + 1e-9);
               expect(longestContinuousRun(plan.shots, plan.slotS), where).toBeLessThanOrEqual(
-                MAX_CONTINUOUS_SOURCE_S + 1e-9
+                pacing.maxContinuousSourceS + 1e-9
               );
             }
           }
@@ -237,6 +304,7 @@ describe("planBeat", () => {
     const speedFor = () => 1.3;
     for (const targetS of [3.4, 5.5, 7]) {
       const plan = planBeat({
+        pacing: SHORT,
         shots: scenes(2, { lengthS: 6, gapS: 0 }),
         spares: [],
         targetS,
@@ -320,6 +388,7 @@ describe("focusWindow", () => {
   it("never lays a planned shot across a cut when the scene has room", () => {
     const cuts = [7, 9.5, 22, 30.5];
     const plan = planBeat({
+      pacing: SHORT,
       shots: [
         { sourceStartS: 0, sourceEndS: 14 },
         { sourceStartS: 20, sourceEndS: 34 },
@@ -339,7 +408,7 @@ describe("focusWindow", () => {
 
   it("is what a planned shot plays, not the head of the scene", () => {
     // The old behaviour: a 12s scene under a 1.4s slot showed 0-1.4s.
-    const plan = planBeat({ shots: [{ sourceStartS: 0, sourceEndS: 12 }], spares: [], targetS: 1.4 });
+    const plan = planBeat({ pacing: SHORT, shots: [{ sourceStartS: 0, sourceEndS: 12 }], spares: [], targetS: 1.4 });
     expect(plan.shots[0].sourceStartS).toBeGreaterThan(0);
     expect(plan.shots[0].sourceStartS).toBeLessThanOrEqual(4);
     expect(plan.shots[0].sourceEndS).toBeGreaterThanOrEqual(4);
@@ -417,6 +486,7 @@ describe("motion-aware placement", () => {
     const trackShort: MotionTrack = { stepS: 1, values: Array(400).fill(0.1) };
     for (let i = 120; i < 122; i++) trackShort.values[i] = 50; // lively but tiny
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 100, sourceEndS: 104 }],
       spares: [
         { sourceStartS: 120, sourceEndS: 120.8 },
@@ -436,6 +506,7 @@ describe("motion-aware placement", () => {
     // Slot is 2.0s, so a shot at 1.07x eats 2.14s of source. The nearer spare
     // clears the slot but not the footage; the farther one covers both.
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 0, sourceEndS: 4 }],
       spares: [
         { sourceStartS: 20, sourceEndS: 22.05 },
@@ -450,6 +521,7 @@ describe("motion-aware placement", () => {
 
   it("says so when a beat has to be padded with held frames", () => {
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 0, sourceEndS: 1 }],
       spares: [],
       targetS: 2.4,
@@ -463,6 +535,7 @@ describe("motion-aware placement", () => {
     track.values = Array(400).fill(0.1);
     for (let i = 160; i < 166; i++) track.values[i] = 8; // lively at 160-166s
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 100, sourceEndS: 104 }],
       spares: [
         { sourceStartS: 120, sourceEndS: 124 },
@@ -485,6 +558,7 @@ describe("motion-aware placement", () => {
     }));
     spares.push({ sourceStartS: 3000, sourceEndS: 3004 });
     const plan = planBeat({
+      pacing: SHORT,
       shots: [{ sourceStartS: 100, sourceEndS: 104 }],
       spares,
       targetS: 4,
@@ -499,6 +573,7 @@ describe("motion-aware placement", () => {
     const track: MotionTrack = { stepS: 1, values: Array(200).fill(6) };
     for (let i = 20; i < 26; i++) track.values[i] = 0.1;
     const plan = planBeat({
+      pacing: SHORT,
       shots: [
         { sourceStartS: 0, sourceEndS: 4 },
         { sourceStartS: 20, sourceEndS: 24 },
@@ -572,5 +647,85 @@ describe("segmentFilters", () => {
     // A source that is not 30fps would otherwise concatenate against 30fps
     // segments at its own rate.
     expect(segmentFilters("scale=720:1280")).toBe("scale=720:1280,fps=30");
+  });
+});
+
+describe("the described moment", () => {
+  it("anchors the shot on a scene's own peak, not the fixed third", () => {
+    // A scene described from several frames carries the model's chosen peak.
+    // Without it every shot sits a third of the way in, which is where the
+    // "main part is cut out" bug came from.
+    const scene = { sourceStartS: 0, sourceEndS: 30, keyframeFraction: 0.8 };
+    const { window } = focusWindow(scene, 2);
+    // 0.8 of 30s is 24s; the window is centred there.
+    expect(window.sourceStartS).toBeCloseTo(23, 1);
+    expect(window.sourceEndS).toBeCloseTo(25, 1);
+  });
+
+  it("falls back to the third when a window has no described moment", () => {
+    // Sub-split and separated windows are invented by the planner and have no
+    // peak of their own.
+    const { window } = focusWindow({ sourceStartS: 0, sourceEndS: 30 }, 2);
+    expect(window.sourceStartS).toBeCloseTo(9, 1);
+  });
+
+  it("carries the peak through planning", () => {
+    const plan = planBeat({
+      pacing: SHORT,
+      shots: [{ sourceStartS: 0, sourceEndS: 30, keyframeFraction: 0.9 }],
+      spares: [],
+      targetS: 2,
+    });
+    expect(plan.shots[0].sourceStartS).toBeGreaterThan(25);
+  });
+});
+
+describe("pacing profiles", () => {
+  it.each(Object.entries(MOVIE_RECAP_PACING))(
+    "%s can always afford the cuts its continuity limit demands",
+    (_ratio, pacing: MovieRecapPacing) => {
+      // THE invariant behind the whole table: `minShotsFor` must never ask for
+      // more cuts than `minShotS` can pay for, or a beat is handed a count it
+      // cannot fill and the limit silently fails. It holds at 1.5/3 and at 2/4;
+      // it would NOT hold at 2/3 — a 3.5s beat asks for 2 and affords 1. Run
+      // this before inventing a third profile.
+      for (let targetS = pacing.minShotS; targetS <= 30; targetS += 0.1) {
+        const affordable = Math.max(1, Math.floor(targetS / pacing.minShotS));
+        const demanded = Math.max(1, Math.ceil(targetS / pacing.maxContinuousSourceS));
+        expect(affordable, `${_ratio} at ${targetS.toFixed(1)}s`).toBeGreaterThanOrEqual(demanded);
+      }
+    }
+  );
+
+  it("cuts a 16:9 beat later than a 9:16 one", () => {
+    // The pacing difference in one assertion: the same 3.5s line is two shots
+    // on a vertical recap and one on a landscape one.
+    const shots = [
+      { sourceStartS: 0, sourceEndS: 6 },
+      { sourceStartS: 100, sourceEndS: 106 },
+    ];
+    expect(planBeat({ pacing: SHORT, shots, spares: [], targetS: 3.5 }).shotCount).toBe(2);
+    expect(planBeat({ pacing: LONG, shots, spares: [], targetS: 3.5 }).shotCount).toBe(1);
+  });
+
+  it("splits a 16:9 beat at 4s, and not before", () => {
+    // `minShotS` is what decides this: `floor(targetS / 2)` is 1 until the beat
+    // reaches 4s, so a normal long-form line plays as ONE clip.
+    const shots = [
+      { sourceStartS: 0, sourceEndS: 8 },
+      { sourceStartS: 100, sourceEndS: 108 },
+      { sourceStartS: 200, sourceEndS: 208 },
+    ];
+    expect(planBeat({ pacing: LONG, shots, spares: [], targetS: 3.9 }).shotCount).toBe(1);
+    expect(planBeat({ pacing: LONG, shots, spares: [], targetS: 4.1 }).shotCount).toBe(2);
+  });
+
+  it("keeps every 16:9 shot in a 2-4s band", () => {
+    const shots = Array.from({ length: 8 }, (_, i) => ({ sourceStartS: i * 20, sourceEndS: i * 20 + 8 }));
+    for (const targetS of [2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 9]) {
+      const plan = planBeat({ pacing: LONG, shots, spares: [], targetS });
+      expect(plan.slotS, `target=${targetS}`).toBeGreaterThanOrEqual(LONG.minShotS - 1e-9);
+      expect(plan.slotS, `target=${targetS}`).toBeLessThanOrEqual(LONG.maxShotS + 1e-9);
+    }
   });
 });

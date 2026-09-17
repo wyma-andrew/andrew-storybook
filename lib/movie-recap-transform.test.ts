@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MOVIE_RECAP_COPYRIGHT_TRANSFORM } from "./constants/movie-recap";
 import { buildShotFilter, type ShotFilterContext } from "./movie-recap-transform";
 
 const ctx = (over: Partial<ShotFilterContext> = {}): ShotFilterContext => ({
@@ -80,5 +81,39 @@ describe("buildShotFilter", () => {
     // "No such filter". This assertion exists because the first version of this
     // emitted bare commas: `\,` in a template literal collapses to `,`.
     expect(filter).toContain("crop=min(iw\\,1280):min(ih\\,720)");
+  });
+});
+
+describe("MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds", () => {
+  it("only ever slows a shot down, and never to 1.0", () => {
+    // Speeding a shot up fights the pacing; a slow one also consumes less source
+    // than its slot, which leaves the continuity invariant more room.
+    for (const speed of MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds) {
+      expect(speed).toBeLessThan(1);
+    }
+  });
+
+  it("stays outside the dead zone and short of visible slow motion", () => {
+    // Under 3% is too close to untouched to count as a transform; 0.94 and below
+    // reads as deliberate slow motion.
+    for (const speed of MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds) {
+      expect(speed).toBeLessThanOrEqual(0.97);
+      expect(speed).toBeGreaterThanOrEqual(0.95);
+    }
+  });
+});
+
+describe("blur radius scaling", () => {
+  it("leaves 16:9 exactly as it was", () => {
+    // 1280 is the width its backfill radius was tuned at, so nothing moves.
+    expect(buildShotFilter(ctx({ fitMode: "contain", copyrightFree: true }))).toContain("boxblur=20:2");
+  });
+
+  it("scales 9:16 with the raised resolution", () => {
+    // 720 -> 1080 is 1.5x, so a radius that hid a watermark at 720 still hides
+    // it at 1080 instead of blurring relatively less.
+    expect(
+      buildShotFilter(ctx({ aspectRatio: "9:16", fitMode: "contain", copyrightFree: true }))
+    ).toContain("boxblur=30:2");
   });
 });

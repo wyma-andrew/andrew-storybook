@@ -10,7 +10,7 @@ import { readSourceCaptions } from "./movie-recap-captions";
 import { movieRecapObjectKey, putObject } from "./r2";
 import { pickShotSpeed } from "./movie-recap";
 import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
-import { planBeat, SPEED_RAMP_MAX, SPEED_RAMP_MIN } from "./movie-recap-shots";
+import { planBeat, type SourceWindow, SPEED_RAMP_MAX, SPEED_RAMP_MIN } from "./movie-recap-shots";
 import { synthesize } from "./tts/synthesize";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
@@ -22,6 +22,8 @@ import {
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
   MOVIE_RECAP_TARGET_DIMENSIONS,
+  movieRecapBlurRadius,
+  movieRecapPacing,
   MOVIE_RECAP_TARGET_FPS,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
@@ -95,7 +97,10 @@ const CONTINUATION_CHARS_PER_SECOND = 36;
 // never past ABS_MAX_CUE_CHARS_PER_SECOND, so an over-long line runs over the
 // cap rather than becoming unreadable. That is the signal the narration prompt
 // is being ignored, not something to solve with timing.
-const MAX_SEGMENT_S = 3.5;
+// The cap a beat's timed length is squeezed back to is per aspect ratio now —
+// a 16:9 beat is allowed to run longer, because its lines are longer and its
+// shots hold longer. It reaches timeCaptionChunks as an argument; see
+// MOVIE_RECAP_PACING for both values.
 // How a beat is cut into shots — the targets, the hold caps and the hard
 // MAX_CONTINUOUS_SOURCE_S limit — lives in lib/movie-recap-shots.ts. The model
 // groups the scenes (see lib/prompts/movie-recap-narration.ts); the planner
@@ -186,7 +191,7 @@ function estimateSpokenSeconds(text: string) {
 // MAX_CUE_CHARS_PER_SECOND. Chunks start out sharing the segment's duration in
 // proportion to their length; raising a short chunk to the floor would overrun
 // the segment, so the whole run is scaled back down to fit afterwards.
-function timeCaptionChunks(chunks: string[], segmentS: number) {
+function timeCaptionChunks(chunks: string[], segmentS: number, maxSegment: number) {
   const totalChars = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   const wanted = chunks.map((chunk) => {
     const share = totalChars > 0 ? (chunk.length / totalChars) * segmentS : segmentS / chunks.length;
@@ -197,12 +202,12 @@ function timeCaptionChunks(chunks: string[], segmentS: number) {
   // estimate allows — the clip is stretched to match further down, so the video
   // follows the subtitles rather than cutting away from them.
   const grown = Math.max(segmentS, needed);
-  if (grown <= MAX_SEGMENT_S) return { durations: wanted, segmentS: grown };
+  if (grown <= maxSegment) return { durations: wanted, segmentS: grown };
 
   // Over the cap: squeeze every cue by the same factor, but stop at the
   // absolute reading limit rather than compressing into an unreadable flash.
   const floors = chunks.map((chunk) => chunk.length / ABS_MAX_CUE_CHARS_PER_SECOND);
-  const squeezed = wanted.map((value, i) => Math.max(floors[i], value * (MAX_SEGMENT_S / grown)));
+  const squeezed = wanted.map((value, i) => Math.max(floors[i], value * (maxSegment / grown)));
   return { durations: squeezed, segmentS: squeezed.reduce((sum, value) => sum + value, 0) };
 }
 
@@ -254,7 +259,7 @@ function buildOverlayFilter(project: MovieRecapProject, assPath: string | null) 
     const bw = Math.min(w - bx, Math.max(2, Math.round((project.blurWidth / 100) * w)));
     const bh = Math.min(h - by, Math.max(2, Math.round((project.blurHeight / 100) * h)));
     parts.push(`[${label}]split=2[base][toBlur]`);
-    parts.push(`[toBlur]crop=${bw}:${bh}:${bx}:${by},boxblur=${MOVIE_RECAP_BLUR.radius}:${MOVIE_RECAP_BLUR.passes}[blurred]`);
+    parts.push(`[toBlur]crop=${bw}:${bh}:${bx}:${by},boxblur=${movieRecapBlurRadius(MOVIE_RECAP_BLUR.radius, project.aspectRatio)}:${MOVIE_RECAP_BLUR.passes}[blurred]`);
     parts.push(`[base][blurred]overlay=${bx}:${by}[blurred_full]`);
     label = "blurred_full";
   }
@@ -320,6 +325,65 @@ function splitIntoCaptionChunks(text: string): string[] {
     if (current) chunks.push(current);
   }
   return chunks.length ? chunks : [text];
+}
+
+/**
+ * Split a narration line into exactly `count` caption chunks, balanced by
+ * length, at word boundaries.
+ *
+ * Returns FEWER than asked when the line has too few words to divide — Burmese
+ * is written with spaces between phrases rather than every word, so a short
+ * line can be one indivisible token. The caller distributes whatever comes back
+ * across the shots.
+ */
+export function splitIntoNChunks(text: string, count: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (count <= 1 || words.length <= 1) return [text];
+  const wanted = Math.min(count, words.length);
+  const total = words.reduce((sum, word) => sum + word.length, 0);
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let used = 0;
+  for (const [i, word] of words.entries()) {
+    current.push(word);
+    used += word.length;
+    const remainingWords = words.length - i - 1;
+    const remainingChunks = wanted - chunks.length - 1;
+    if (remainingChunks <= 0) continue;
+    // Close this chunk once it holds its share of the characters — or sooner, if
+    // there are only just enough words left to give every remaining chunk one.
+    const share = (total / wanted) * (chunks.length + 1);
+    if (used >= share || remainingWords <= remainingChunks) {
+      chunks.push(current.join(" "));
+      current = [];
+    }
+  }
+  if (current.length) chunks.push(current.join(" "));
+  return chunks;
+}
+
+/**
+ * How many shots each caption chunk is shown across, summing to `shotCount`.
+ *
+ * One cue per shot is the point — a caption that outlives the cut under it is
+ * what made a long beat read as a wall of text. When the line cannot be divided
+ * that finely, the longest chunks take the extra shots rather than the first
+ * ones, so a two-word chunk is not left on screen for three cuts.
+ */
+export function spreadCuesOverShots(chunks: string[], shotCount: number): number[] {
+  const spread = chunks.map(() => 1);
+  let left = shotCount - chunks.length;
+  if (left <= 0) return spread;
+  const order = chunks
+    .map((chunk, index) => ({ index, length: chunk.length }))
+    .sort((a, b) => b.length - a.length || a.index - b.index);
+  let at = 0;
+  while (left > 0) {
+    spread[order[at % order.length].index] += 1;
+    at += 1;
+    left -= 1;
+  }
+  return spread;
 }
 
 // ASS colors are &HAABBGGRR — byte-reversed from CSS hex, and the alpha byte
@@ -506,6 +570,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       .eq("id", project.id);
 
   try {
+    // The aspect ratio IS the format: 9:16 cuts fast for TikTok and Facebook,
+    // 16:9 holds longer for YouTube. Everything about beat length and shot
+    // length below reads from here.
+    const pacing = movieRecapPacing(project.aspectRatio);
+
     await db
       .from("movie_recap_projects")
       .update({ render_status: "running", render_is_mock: mock, render_error: null, render_started_at: new Date().toISOString() })
@@ -521,7 +590,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
     let transcript: TranscriptSegment[] = [];
     let narration: MovieRecapNarrationSegment[];
-    let spareScenes: { sourceStartS: number; sourceEndS: number }[] = [];
+    let spareScenes: SourceWindow[] = [];
     // Both left unset by a mock render, which never runs detection.
     let sourceCuts: number[] = [];
     let sourceMotion: MotionTrack | null = null;
@@ -552,7 +621,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // 1b. What each scene LOOKS like — a transcript cannot see an action
       // beat, and those are most of a recap. One keyframe per scene.
       await setProgress(db, project.id, "describing_scenes", 0, rows.length);
-      const frames = await extractKeyframes(FFMPEG, localSource, rows, workDir, signal);
+      const frames = await extractKeyframes(FFMPEG, localSource, rows, workDir, pacing.keyframesPerScene, signal);
       const visuals = await describeScenes(frames, signal, (done, total) =>
         setProgress(db, project.id, "describing_scenes", done, total)
       );
@@ -579,14 +648,19 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         index,
         startS: Number(row.start.toFixed(2)),
         endS: Number(row.end.toFixed(2)),
-        visual: visuals.get(index) ?? "",
+        visual: visuals.get(index)?.visual ?? "",
         dialogue: dialogueForScene(transcript, row.start, row.end),
       }));
+      // Where inside each scene the description came from, carried separately
+      // because the narration model has no use for it — the SHOT PLANNER does.
+      // With several frames per scene this is the model's chosen peak, so the
+      // cut lands on the action rather than a fixed third of the way in.
+      const keyframeFractionOf = (index: number) => visuals.get(index)?.keyframeFraction;
 
       // 3. Narration script over the scenes (2. copyright-free video transform
       // is applied per-segment below, alongside the render).
       await setProgress(db, project.id, "writing_script");
-      const selected = await generateMovieRecapNarration(scenes, signal);
+      const selected = await generateMovieRecapNarration(scenes, pacing, signal);
       // The model returns scene indexes, not timestamps, so every clip lands on
       // a real cut. Out-of-range indexes are dropped rather than clamped — a
       // wrong index means the model lost track, not that it meant the last scene.
@@ -603,7 +677,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
               usedScenes.add(index);
               return true;
             })
-            .map((index) => ({ sourceStartS: scenes[index].startS, sourceEndS: scenes[index].endS })),
+            .map((index) => ({
+              sourceStartS: scenes[index].startS,
+              sourceEndS: scenes[index].endS,
+              keyframeFraction: keyframeFractionOf(index),
+            })),
         }))
         .filter((line) => line.text && line.shots.length)
         .sort((a, b) => a.shots[0].sourceStartS - b.shots[0].sourceStartS);
@@ -612,7 +690,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // frame for four seconds.
       spareScenes = scenes
         .filter((scene) => !usedScenes.has(scene.index))
-        .map((scene) => ({ sourceStartS: scene.startS, sourceEndS: scene.endS }));
+        .map((scene) => ({
+          sourceStartS: scene.startS,
+          sourceEndS: scene.endS,
+          keyframeFraction: keyframeFractionOf(scene.index),
+        }));
       if (!narration.length) throw new Error("The AI returned no narration segments.");
       console.log(
         `[MovieRecapRender] project=${project.id} ${rows.length} scenes detected from ${detected.cuts.length + 1} cuts` +
@@ -676,8 +758,8 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // total as this beat's target. It is never below MIN_SEGMENT_S.
       const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
       const spokenS = spokenAudio[i]?.durationSeconds ?? estimateSpokenSeconds(segment.text);
-      const timed = timeCaptionChunks(chunks, spokenS);
-      // timeCaptionChunks caps a beat at MAX_SEGMENT_S, which was the right
+      const timed = timeCaptionChunks(chunks, spokenS, pacing.maxSegmentS);
+      // timeCaptionChunks caps a beat at `pacing.maxSegmentS`, which was the right
       // call against an estimate but would now cut real speech off mid-word.
       // Measured audio wins (history/movie-recap.md: "narration audio duration
       // is authoritative"); the cues stretch with it so captions stay on the
@@ -699,6 +781,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         ? (shotIndex: number) => pickShotSpeed(MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds, project.id, i, shotIndex)
         : undefined;
       const plan = planBeat({
+        pacing,
         shots: segment.shots,
         spares: spareScenes,
         targetS,
@@ -809,13 +892,31 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
       await setProgress(db, project.id, "rendering_segments", i + 1, narration.length);
 
-      // Cues were sliced and timed above, before the clip length was chosen —
-      // a mock line is deliberately left whole, so the burned caption is the
-      // same words the step-3 preview shows.
-      for (const [chunkIndex, chunk] of chunks.entries()) {
-        const chunkS = cueDurations[chunkIndex];
-        cues.push({ start: cursor, end: cursor + chunkS, text: chunk });
-        cursor += chunkS;
+      // CAPTIONS ARE CUT WITH THE PICTURE. The chunks above sized the beat, but
+      // their boundaries had nothing to do with the cuts, so one caption could
+      // sit across two or three shots — which is what made a long beat read as a
+      // wall of text rather than as narration moving with the edit.
+      //
+      // So the line is re-divided into as many pieces as the beat has shots, and
+      // each cue is held for exactly its shot. A mock line is deliberately left
+      // whole, so the burned caption is the same words the step-3 preview shows.
+      if (mock) {
+        for (const [chunkIndex, chunk] of chunks.entries()) {
+          const chunkS = cueDurations[chunkIndex];
+          cues.push({ start: cursor, end: cursor + chunkS, text: chunk });
+          cursor += chunkS;
+        }
+      } else {
+        // May come back shorter than `shotCount` — a line with fewer words than
+        // cuts cannot be divided that finely, so the longest pieces take the
+        // extra shots instead.
+        const aligned = splitIntoNChunks(segment.text, shotCount);
+        const spread = spreadCuesOverShots(aligned, shotCount);
+        for (const [chunkIndex, chunk] of aligned.entries()) {
+          const heldS = slotS * spread[chunkIndex];
+          cues.push({ start: cursor, end: cursor + heldS, text: chunk });
+          cursor += heldS;
+        }
       }
     }
 

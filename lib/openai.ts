@@ -9,6 +9,7 @@ import {
   type SceneRegenerationTarget,
 } from "./prompts/storyboard";
 import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
+import type { MovieRecapPacing } from "./constants/movie-recap";
 import {
   MOVIE_RECAP_NARRATION_SCHEMA,
   MOVIE_RECAP_SCENE_VISION_SCHEMA,
@@ -229,13 +230,23 @@ export type RecapScene = {
 // Keyframes are sent at `detail: "low"` — roughly 19 prompt tokens per image,
 // so describing a few hundred scenes costs about as much as one page of text.
 export async function describeMovieRecapScenes(
-  images: { index: number; base64: string }[],
+  scenes: { index: number; frames: string[] }[],
   signal?: AbortSignal
-): Promise<{ sceneIndex: number; visual: string }[]> {
+): Promise<{ sceneIndex: number; visual: string; peakFrame: number }[]> {
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
-  for (const image of images) {
-    content.push({ type: "text", text: `Scene ${image.index}:` });
-    content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${image.base64}`, detail: "low" } });
+  for (const scene of scenes) {
+    // The frame count is stated because `peakFrame` is an index into it — the
+    // model has to know how many it is choosing between.
+    content.push({
+      type: "text",
+      text:
+        scene.frames.length > 1
+          ? `Scene ${scene.index} — ${scene.frames.length} frames in order:`
+          : `Scene ${scene.index}:`,
+    });
+    for (const frame of scene.frames) {
+      content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame}`, detail: "low" } });
+    }
   }
   const res = await openai().chat.completions.create(
     {
@@ -252,7 +263,7 @@ export async function describeMovieRecapScenes(
     { signal }
   );
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string }[] }).scenes ?? [];
+  return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string; peakFrame: number }[] }).scenes ?? [];
 }
 
 // Returns one narration line per BEAT, each naming the scenes it plays over —
@@ -297,13 +308,14 @@ export async function generateMovieRecapHookTitles(
 
 export async function generateMovieRecapNarration(
   scenes: RecapScene[],
+  pacing: MovieRecapPacing,
   signal?: AbortSignal
 ): Promise<{ sceneIndexes: number[]; text: string }[]> {
   const res = await openai().chat.completions.create(
     {
       model: "gpt-5.6-luna",
       messages: [
-        { role: "system", content: movieRecapNarrationSystemPrompt },
+        { role: "system", content: movieRecapNarrationSystemPrompt(pacing) },
         { role: "user", content: JSON.stringify({ scenes }) },
       ],
       response_format: {

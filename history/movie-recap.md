@@ -1007,7 +1007,7 @@ same padded box libass draws.
 **Consequence:** do not re-add a CSS radius or blur to the pill "to make it look
 nicer". Both were tried; both only exist in the preview.
 
-## 2026-09-16 — Output stays 1280×720 for now
+## 2026-09-16 — Output stays 1280×720 for now (9:16 raised to 1080×1920 on 2026-09-18, below; 16:9 unchanged)
 
 Caption edges looking stepped was traced to playback, not the pipeline: the ASS
 box rasterizes on exact integer rows (measured: single-row transition, no
@@ -2292,7 +2292,7 @@ available and declined — it buys only 1.3s more than +15% and costs another cu
 **Unchanged:** the previews are committed files and were regenerated again
 (`scripts/generate-voice-previews.ts`), shrinking a further ~4%.
 
-## 2026-09-17 — Hard rule: no source footage on screen for more than 3.0s
+## 2026-09-17 — Hard rule: no source footage on screen for more than 3.0s (SCOPED to 9:16 on 2026-09-17, below — 16:9 uses 4.0s; the invariant and its three enforcement points are unchanged)
 
 **Requirement, stated by the user as non-negotiable:** no source clip may appear
 for more than 3.0 seconds continuously in the final recap. The pacing targets
@@ -2360,7 +2360,7 @@ freeze-padding it did not have before. That is deliberate — the freeze is boun
 by the slot, which is bounded by 3s, and a held frame with a cut after it beats
 an unbroken 4s of source.
 
-## 2026-09-17 — Speed set narrowed to 0.96-1.07, and the dead zone widened to +-3%
+## 2026-09-17 — Speed set narrowed to 0.96-1.07, and the dead zone widened to +-3% (superseded by the slow-only set 2026-09-17, below; the dead zone and the +-7% bound stand)
 
 **Decision:** `MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds` is `[0.96, 0.97, 1.04, 1.07]`,
 was `[0.94, 0.96, 1.05, 1.07]`. The rule it serves is unchanged and is the point
@@ -2424,7 +2424,7 @@ freeze-padded, so 1s of source can occupy 1.7s of recap — two adjacent 1s scen
 are 3.4s of unbroken footage, not 2s. Counting source seconds silently let that
 through, and the property test caught it on exactly that case.
 
-## 2026-09-17 — Shots land in a 1.5-2.5s band: MIN_SHOT_S 1.5, SHOT_TARGET_S 2.0
+## 2026-09-17 — Shots land in a 1.5-2.5s band: MIN_SHOT_S 1.5, SHOT_TARGET_S 2.0 (SCOPED to 9:16 on 2026-09-17, below — still the measured, authoritative short-form numbers)
 
 **Measured, on the export the complaint came from** (19.7s, 720x1280, detected
 with `detect-adaptive --min-scene-len 0.3s`):
@@ -2864,3 +2864,304 @@ both shots above the beat had one scene and needed one shot, so nothing was
 borrowed and the model's own too-short scene was used as-is. Closing that would
 mean swapping out a scene the narration model chose to save about three frames of
 held picture. Offered and declined.
+
+## 2026-09-17 — The aspect ratio IS the format: pacing is per-ratio, not global
+
+**Decision, the user's:** 9:16 goes to TikTok and Facebook, 16:9 goes to
+YouTube, and **the aspect ratio alone selects between them.** No `format`
+column, no migration, no wizard field. Both formats matter equally — this is not
+a short-form product with a long-form mode, or the reverse.
+
+`MOVIE_RECAP_PACING` in `lib/constants/movie-recap.ts` keys the shot band, the
+continuity limit, the narration line budget, the beat cap and the subtitle
+offset on the ratio:
+
+| | 9:16 short | 16:9 long |
+| --- | --- | --- |
+| `minShotS` | 1.5 | 2 |
+| `shotTargetS` | 2 | 3.5 |
+| `maxShotS` | 2.4 | 4 |
+| `maxContinuousSourceS` | 3 | 4 |
+| `lineChars` | 25-45 (max 50) | 45-80 (max 90) |
+| `maxSegmentS` | 3.5 | 6 |
+| `subtitleOffsetPct` | 18 | 8 |
+
+**Why the ratio and not a separate field:** a separate `format` column would
+always move with the ratio, so it would be a second source of truth for one
+decision. Considered and rejected by the user. The cost is recorded below.
+
+**The four shot numbers stopped being module constants.** They arrive on
+`planBeat` as `pacing`, so `lib/movie-recap-shots.ts` has no opinion about which
+video it is planning. `shotsNeededFor`, `minShotsFor` and `breakContinuity` take
+it too.
+
+**THE INVARIANT any future profile must satisfy:** `floor(t / minShotS) >=
+ceil(t / maxContinuousSourceS)`. It holds at 1.5/3 and at 2/4. It does NOT hold
+at 2/3 — a 3.5s beat asks for 2 cuts and can afford 1 — which is why the
+continuity limit moved to 4 in the same change rather than separately.
+`movie-recap-shots.test.ts` now asserts this over every entry in the table, and
+runs the 540-case continuity grid against both.
+
+**`minShotS` is the split threshold, and it is the number that sets the feel of
+the whole video.** `floor(t / 2)` is 1 until the beat reaches 4s, so a normal
+16:9 line plays as ONE clip and only a long one is cut. `shotTargetS` only
+decides how a beat already past that point is divided.
+
+**Rejected: 3-4s shots on the old 1.5s floor.** Proposed first; the arithmetic
+kills it. `floor(3.0 / 3.0)` = 1 makes EVERY beat one clip, so cutting inside a
+line disappears and the narration prompt's 2-4 scenes per beat all fall through
+to the spare pool unused. `minShotS = 2` is what makes a 3-4s target reachable
+without that collapse.
+
+**Longer 16:9 lines are not the old per-clip coupling coming back.** The prompt
+used to quote shot lengths at the model, which was removed on purpose
+(2026-09-16). `lineChars` bounds the IDEA, not the clip; the planner still fits
+whatever the line turns out to be. But a 45-character line cannot hold a 4s clip
+without the picture stalling, so the budget had to move with the band.
+
+**Consequences a future reader will mistake for bugs:**
+
+- **The 16:9 numbers are reasoned, not measured.** The 9:16 ones came out of real
+  exports and four tuning passes; the 16:9 ones were derived from the arithmetic
+  above and have never been rendered at length. Treat them as a first draft.
+- **The 3.0s limit was recorded as non-negotiable and user-stated.** It still is
+  — for 9:16. The user raised it to 4.0s for 16:9 only.
+- **A 16:9 recap cannot be made to cut fast, and a 9:16 one cannot be made to
+  hold**, without changing its frame shape. That is the accepted cost of keying
+  on the ratio.
+- **`subtitleOffsetPct` is seeded once, at project creation**, next to the
+  framing. Changing the ratio later does NOT move a caption the user has since
+  placed themselves — same rule the framing already follows.
+- **18% for 9:16 is a starting guess, not a measurement.** TikTok and Facebook
+  draw the post caption, the username and the audio ticker over the bottom of
+  the frame, and at the old flat 8% the burned subtitle lands behind their UI.
+  The number still needs eyeballing against a real post. The right-hand action
+  column (`marginH`, a flat 6% both sides) has the same problem and is NOT
+  addressed yet.
+
+**Deferred, to be judged on a test render:** action/reaction shots at 2-3s
+against 3-4s for normal ones. The motion track it needs already exists and
+already places shots inside a scene; what is missing is the threshold that calls
+a scene "action", and that is a number to pick by eye on a real export. Slow
+zoom on a held frame is deferred with it.
+
+## 2026-09-17 — Borrowing answers coverage, not just cut count
+
+**The bug the per-ratio bands exposed:** every rule in `planBeat` sized a beat by
+how many CUTS it needed. Nothing asked whether there was footage behind them. A
+beat holding one scene shorter than its slot satisfies `minShotsFor`,
+`shotsNeededFor` and `minShotS` alike at one shot, and arrives at the render
+short — which the render answers with a held frame, while the spare pool sits
+there untouched. Rare at 1.5-2.5s slots, because scenes are at least
+`MIN_SCENE_S` (2s) and almost always filled them. Common at 2-4s slots.
+
+**Decision: a second borrowing pass, driven by the freeze.** While the plan would
+still hold a frame and the beat can afford another cut without falling under
+`minShotS`, borrow another scene. Each extra shot shrinks the slot AND adds
+footage, so the deficit falls from both ends. This can push the count past
+`shotTargetS`'s `wanted` — deliberately: a cut the viewer did not expect beats a
+picture that stops moving.
+
+**`holdDeficit()` is what it measures, and it is not the padding warning.** It
+counts only what the render would FREEZE, mirroring the four ffmpeg branches:
+inside the speed-ramp band the render slows the clip, the scene still plays
+whole, and there is nothing to buy a cut for. The `warning` below it still
+reports the whole gap including the ramped part. Different questions — one
+decides whether to spend a cut, the other tells a human the beat is thin.
+
+**Sub-splitting cannot serve coverage, and the arithmetic is why:** splitting one
+2.2s scene into two windows halves the slot too, so the deficit is identical
+either way. It adds cuts, never footage. It stays where it was, serving the
+continuity invariant only. This was checked rather than assumed — "prefer
+sub-splitting over freezing" sounds right and does nothing.
+
+**What is left, and is not a bug:** a beat under `minShotS * 2` cannot be split
+at all, so a short scene under a short line still freezes and there is no cut to
+buy. Borrowing cannot help a beat that cannot afford a second shot. The order is
+therefore borrow (real footage) -> slow-fill (small gaps, inside the ramp band)
+-> freeze (last resort), with sub-split outside that chain.
+
+**`SPEED_RAMP_MAX` stays 1.15.** Raising it to 1.25 was proposed, to convert more
+freezes into slow-fill, and declined by the user: 1.25 is ~0.8x playback, which
+reads as deliberate slow motion rather than as nothing in particular. Slow-fill
+is for small timing gaps only.
+
+## 2026-09-17 — The copyright speed set is slow-only: [0.95, 0.96, 0.97] (supersedes)
+
+**Decision:** `MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds` no longer speeds any shot
+up. Was `[0.96, 0.97, 1.04, 1.07]`.
+
+**Why:** a shot running fast fights the slower pacing, and speed decides how much
+source a shot consumes (`slot * speed`), so a slow-only set runs LESS far into
+the footage after each shot — which gives the continuity invariant more room
+rather than less.
+
+**Why not 0.94, which was proposed:** it is the one value in the old set that
+reads as deliberate slow motion rather than as nothing in particular (recorded
+when the set was narrowed earlier today). In a mixed set of four it was an
+outlier; in a slow-only set of three it would land on a third of the shots.
+
+**Rejected, and this is the one worth keeping: "slow a shot only if it needs
+it".** That is DERIVED speed, which is exactly the design the 2026-09-16
+inversion replaced, and for exactly the recorded reason — the trim and
+freeze-pad branches both play at 1.0, so deriving leaves most shots at the
+source's own speed and the transform stops contributing to de-fingerprinting.
+
+What the request was after already exists and is a different mechanism: the
+speed **ramp**, which slows a clip to fill its slot when the gap is small
+(`SPEED_RAMP_MIN/MAX`, 0.85-1.15). The two are named apart now to stop them
+being merged again — **fill-speed** is derived and fills a gap; **transform-speed**
+is an input and de-fingerprints. A ramped shot is not playing at 1.0 either, so
+"no shot ever plays at the source's own speed" survives both.
+
+## 2026-09-17 — Three frames per scene on 9:16, so the vision pass can describe an EVENT
+
+**The limit, and it was never the prompt:** `extractKeyframes` took ONE still per
+scene and the vision prompt asked for one sentence about it. A single frame
+cannot show an event. "Two men argue across a table" is a frame; "he draws and
+she runs for the door" is a change over time, and a fast-cut recap is mostly made
+of the second kind. Wording the prompt harder could only ever get a richer
+description of one moment.
+
+**Decision:** `keyframesPerScene` joins MOVIE_RECAP_PACING — **3 on 9:16, 1 on
+16:9**. The model is shown a scene's frames in order and asked what CHANGES
+across them, not to describe each one.
+
+**9:16 only is the user's call, not a technical boundary.** Nothing about
+describing an event properly is format-specific; if it proves out on a reel it
+should come to 16:9 too. Recorded so the asymmetry is not later mistaken for a
+reasoned one.
+
+**Cost is not tokens.** Frames go at `detail: "low"`, ~19 prompt tokens each, so
+300 scenes x 3 is ~17k tokens. What it actually costs is ffmpeg extraction time
+(three seeks per scene instead of one) and request size — `VISION_BATCH` is
+counted in SCENES now (8) rather than frames (25), which keeps ~24 images per
+request exactly as before.
+
+**The coupling this would have broken, and what was done about it:** a shot plays
+the moment its scene was DESCRIBED from (2026-09-17) — `focusWindow` anchors on
+`KEYFRAME_FRACTION`, a fixed third. That constant only means anything while
+there is exactly one frame. With three, there is no single described moment and
+the anchor would have been silently wrong for every 9:16 shot.
+
+So the model now returns **`peakFrame`** alongside the sentence: which frame
+carries the thing it described. That becomes the scene's `keyframeFraction`,
+which rides on `SourceWindow` through the planner into `focusWindow`. This is
+strictly better than the old fixed third even at one frame, because the moment
+is chosen rather than assumed — the "main part is cut out" bug that produced the
+original rule came from exactly that assumption.
+
+**Fallbacks, both deliberate:**
+
+- A window the planner INVENTED — a sub-split piece, a separated pair — has no
+  described moment and falls back to `KEYFRAME_FRACTION`. It is not a scene the
+  vision pass ever saw, so there is nothing better to use.
+- An out-of-range `peakFrame` falls back to the MIDDLE frame, not the last. It
+  means the model lost count, not that it meant the end — the same reasoning as
+  the out-of-range scene indexes in the narration pass, which are dropped rather
+  than clamped.
+
+**`SINGLE_KEYFRAME_FRACTION` is exported and tested at exactly 1/3.** The even
+spread used for several frames is `(i + 0.5) / count`, which would give 0.5 for
+one — tidier, and wrong. One frame keeps the third, because that value is
+recorded, load-bearing and unchanged for 16:9. The test exists to stop the
+tidying.
+
+**Unchanged, and still for their original reasons:** no names, no mood, no
+guessing at off-screen events. The narration model is the one that interprets; a
+vision pass that speculates feeds it invented plot.
+
+## 2026-09-18 — Longer 9:16 lines, and captions are cut with the picture
+
+**Reported by the user, off a real render:**
+"အဘွားကိုအလုပ်ခေါ်လာတဲ့ကောင်မလေးက အခြေနေကိုရှင်းပြရတယ်တဲ့" — awkward. Diagnosed
+first as grammar (hearsay တဲ့, obligation ရ, a stacked pre-modifier) and
+corrected by the user: **the problem is over-compression, not grammar.**
+
+**Decision 1: 9:16 `lineChars` 25-45 (max 50) -> 40-70 (max 80).** At 40
+characters a line has to carry who someone is, what they did and what they are
+doing now, and the only way to fit that in Burmese is to stack it all into one
+clause before the verb. That IS the awkward phrasing — it is what the budget
+forces, so no amount of register wording fixes it.
+
+**It costs nothing in pacing, which is why this is cheap on 9:16 specifically.**
+A longer beat buys MORE cuts there, because `minShotS` is 1.5: a 45-character
+line is ~3.5s and 2 shots, a 70-character one is ~5.5s and 3. The video gets
+longer overall, which the user has said does not matter — a reel that runs long
+is trimmed by hand.
+
+**No grammar bans were added.** They were drafted (no sentence-final တဲ့, no ရ
+obligation) and dropped once the cause turned out to be the budget. The
+2026-09-16 decision — role framing instead of a grammar checklist — stands
+untouched, and re-adding bans would have "fixed" a symptom while leaving the
+line still trying to say three things in forty characters.
+
+**Decision 2: one caption cue per SHOT.** The chunks that size a beat are split
+on readability (`MAX_CUE_CHARS`) and their boundaries have nothing to do with
+where the picture cuts, so one caption could sit across two or three shots. At
+40-character lines that was survivable; at 70 it reads as a wall of text parked
+over a sequence of cuts.
+
+After planning, the line is re-divided into as many balanced pieces as the beat
+has shots (`splitIntoNChunks`) and each cue is held for exactly its shot.
+`spreadCuesOverShots` handles the case where it cannot divide that finely —
+Burmese is written with spaces between phrases rather than every word, so a
+short line can be one indivisible token. The extra shots go to the LONGEST
+pieces, so a two-word chunk is never left up across three cuts.
+
+**Beat length is still sized by the readability chunks, before planning.** That
+is deliberate and not a leftover: subtitles decide the beat's length
+(2026-09-15), and re-chunking after the fact must not feed back into it or the
+two would chase each other.
+
+**Consequence:** a cue's duration is now its shot's slot rather than its own
+reading time. Slots within a beat are equal and the pieces are balanced by
+length, so these are close — but a cue is no longer individually checked against
+`MAX_CUE_CHARS_PER_SECOND`. The beat as a whole still is, upstream.
+
+**Bug found and fixed on the way: the caption timeline drifted earlier by
+`BEAT_GAP_S` every beat.** `cursor` advanced by the sum of the cue durations
+(`timed.segmentS * stretch`), while the video advanced by `slotS * shotCount`,
+which is `targetS` — and `targetS` includes the 0.15s breath between beats. So
+every beat started its captions 0.15s before its picture, cumulatively: ~4.5s
+out by beat 30 of a real render. The new path advances `cursor` by exactly
+`slotS * shotCount`, so it cannot drift by construction. Mock renders were never
+affected — `gapS` is 0 there.
+
+## 2026-09-18 — 9:16 renders at 1080×1920; 16:9 stays at 720p
+
+**Decision:** `MOVIE_RECAP_TARGET_DIMENSIONS["9:16"]` is `[1080, 1920]`, was
+`[720, 1280]`. 16:9 is untouched at `[1280, 720]`.
+
+**Why now, and only for 9:16:** the user moved from test-rendering reels to
+publishing them. TikTok, Facebook and Reels all re-encode whatever they are
+given, so a 720-wide source means their compression starts from an already-soft
+picture. It shows worst on the burned Burmese captions — the caption-size entry
+already recorded 720p as below the comfortable floor for Burmese, with stacked
+marks closing into the letter and the outline doing most of the separating. 16:9
+has still never been rendered at length and is a draft config; raise it when it
+is actually being published.
+
+**Cost is encode time, ~2.25x the pixels. Nothing else had to change** — every
+size in the pipeline is a percentage of the frame (caption size, logo box and
+margin, blur REGION geometry, subtitle offset), so they all scale by
+construction.
+
+**Except the two blur RADII, which are pixels, and this is the part worth
+reading.** `MOVIE_RECAP_BLUR.radius` (region blur) and
+`backfillBlurRadius` (letterbox fill) are absolute `boxblur` values. A fixed
+radius blurs relatively LESS on a bigger frame, so a region blur that hid a
+watermark at 720 would stop hiding it at 1080. That is a correctness bug, not a
+cosmetic one, which is why they now scale with the output width.
+
+**`BLUR_REFERENCE_WIDTH` is PER RATIO — 1280 for 16:9, 720 for 9:16 — and the
+first attempt got this wrong.** A single shared reference of 720 was written
+first; it scaled the 16:9 backfill from 20 to 36 as a side effect, silently
+changing a ratio this change was supposed to leave alone. The transform test
+caught it. Anchoring each ratio to the width its own radius was tuned at is what
+keeps 16:9 byte-identical while 9:16 moves by 1.5x (20 -> 30, 12 -> 18).
+
+**The preview converts from the RENDER's radius, not the reference one.**
+`movieRecapBlurCssPx` takes the aspect ratio rather than a width now, and calls
+the same scaling function the render does — otherwise the CSS preview and the
+burned output drift apart the next time a resolution moves.

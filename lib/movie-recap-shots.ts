@@ -6,7 +6,19 @@
 // every cut in the video, and because the invariant below is only checkable in
 // a test if nothing around it needs ffmpeg.
 
-export type SourceWindow = { sourceStartS: number; sourceEndS: number };
+import type { MovieRecapPacing } from "./constants/movie-recap";
+
+export type SourceWindow = {
+  sourceStartS: number;
+  sourceEndS: number;
+  /**
+   * Where inside this scene the vision pass described, as a fraction of its
+   * length — the moment a shot has to contain. Absent on windows the planner
+   * invented itself (a borrowed spare keeps its own; a sub-split window has no
+   * described moment of its own), which fall back to KEYFRAME_FRACTION.
+   */
+  keyframeFraction?: number;
+};
 /** Per-bucket picture motion across the source; see lib/movie-recap-scenes.ts. */
 export type MotionTrack = { stepS: number; values: number[] };
 
@@ -14,22 +26,12 @@ export type MotionTrack = { stepS: number; values: number[] };
 // real recaps cut every second or two under a continuous line, and a single
 // held shot is what made the pacing drag.
 //
-// The pair below puts nearly every shot in a 1.5-2.5s band. They were 1.4 and
-// 1.0, which the `ceil` bias pushed onto the floor: a measured export ran 20
-// shots in 19.7s, mean 0.98s, and an action or a line of dialogue does not land
-// in one second.
-export const SHOT_TARGET_S = 2;
-export const MIN_SHOT_S = 1.5;
-// The planning target for borrowing: a beat pulls unused scenes until it can be
-// cut without exceeding this. It is a target, not a guarantee.
-export const MAX_SHOT_S = 2.4;
-
-// THE HARD ONE. No source footage may be on screen for longer than this without
-// a cut, whatever the beat's length and however few scenes it was given. It
-// bounds a run of shots, not just one shot: two scenes that are adjacent in the
-// source and played back to back are one unbroken run of footage, however many
-// "cuts" the plan thinks it made.
-export const MAX_CONTINUOUS_SOURCE_S = 3;
+// The four numbers that decide all of it — the shot band, the borrowing target
+// and the hard continuity limit — are NOT constants any more. They differ per
+// aspect ratio, which is the format: see MOVIE_RECAP_PACING in
+// lib/constants/movie-recap.ts for the values and why they differ. They arrive
+// here as `pacing` on every entry point, so this module has no opinion about
+// which video it is planning.
 // Two windows this close are treated as JOINING, even though a gap exists.
 // Raised from 0.15s, which only covered the rounding of scene boundaries: a real
 // export played three pairs that skipped just 0.29-0.47s of film, and each ran
@@ -128,10 +130,14 @@ export function playedSourceSeconds(windowS: number, slotS: number, speed: numbe
   return slotS / windowS >= SPEED_RAMP_MIN ? windowS : slotS;
 }
 
-// Where a scene's representative frame is taken: a third of the way in
-// (lib/movie-recap-scenes.ts). That frame is what the vision pass described and
-// therefore what the narration model picked the scene FOR, so it is the moment a
-// shot has to contain. Keep the two in step.
+// Fallback for a window with no described moment of its own: a third of the way
+// in, which is where a single keyframe is taken (lib/movie-recap-scenes.ts).
+// That frame is what the vision pass described and therefore what the narration
+// model picked the scene FOR, so it is the moment a shot has to contain.
+//
+// A scene described from SEVERAL frames carries its own `keyframeFraction` — the
+// model's chosen peak — and uses that instead. Keep this value in step with
+// SINGLE_KEYFRAME_FRACTION.
 const KEYFRAME_FRACTION = 1 / 3;
 
 // The stretches of a scene with no cut inside them. A "scene" is detection's
@@ -187,7 +193,7 @@ export function motionMean(track: MotionTrack, fromS: number, toS: number, cuts:
 
 export function focusWindow(scene: SourceWindow, playedS: number, cuts: number[] = [], motion?: MotionTrack | null) {
   const runs = uncutRuns(scene, cuts);
-  const at = scene.sourceStartS + lengthOf(scene) * KEYFRAME_FRACTION;
+  const at = scene.sourceStartS + lengthOf(scene) * (scene.keyframeFraction ?? KEYFRAME_FRACTION);
   const roomy = runs.filter((run) => lengthOf(run) >= playedS - 1e-9);
 
   let room = scene;
@@ -255,16 +261,17 @@ function liveliestStart(
   return best;
 }
 
-// How many scenes a beat needs before any of its shots would exceed MAX_SHOT_S.
-// The beat borrows from unused scenes to reach it.
-export function shotsNeededFor(targetS: number) {
-  return Math.max(1, Math.ceil(targetS / MAX_SHOT_S));
+// How many scenes a beat needs before any of its shots would exceed
+// `maxShotS`. The beat borrows from unused scenes to reach it.
+export function shotsNeededFor(targetS: number, pacing: MovieRecapPacing) {
+  return Math.max(1, Math.ceil(targetS / pacing.maxShotS));
 }
 
-// The floor the invariant puts on a beat's cut count. Never fights MIN_SHOT_S:
-// floor(t / 1) >= ceil(t / 3) for every t >= 1, and a beat is at least 1s.
-export function minShotsFor(targetS: number) {
-  return Math.max(1, Math.ceil(targetS / MAX_CONTINUOUS_SOURCE_S));
+// The floor the invariant puts on a beat's cut count. Must never fight
+// `minShotS` — see MOVIE_RECAP_PACING for the inequality every preset has to
+// satisfy, and the test that enforces it.
+export function minShotsFor(targetS: number, pacing: MovieRecapPacing) {
+  return Math.max(1, Math.ceil(targetS / pacing.maxContinuousSourceS));
 }
 
 // Pick the spares this beat should borrow. Nearest in time to what it already
@@ -292,10 +299,14 @@ function borrow(
   spares: SourceWindow[],
   need: number,
   requiredS: number,
-  motion?: MotionTrack | null
+  motion?: MotionTrack | null,
+  // Spare indexes an earlier call already took. Borrowing runs more than once
+  // per beat — once for the cut count, then again for coverage — and the second
+  // pass has to extend the first rather than re-pick the same windows.
+  alreadyUsed: number[] = []
 ) {
   const picked = [...shots];
-  const used: number[] = [];
+  const used: number[] = [...alreadyUsed];
 
   while (picked.length < need) {
     const remaining = spares
@@ -333,6 +344,22 @@ function borrow(
   }
 
   return { picked, used };
+}
+
+// Seconds this shot would spend on a HELD FRAME — footage the render has none
+// of and fills by cloning. It mirrors the render's branches exactly, which is
+// the point: borrowing another scene is only worth a cut if the alternative was
+// actually a freeze.
+//
+// A small deficit is NOT counted. Inside the speed-ramp band the render slows
+// the clip to fill its slot and the scene still plays whole, so there is nothing
+// to fix and nothing to borrow for. Only the gap past that band is a freeze.
+export function holdDeficit(windowS: number, slotS: number, speed: number | null) {
+  // Copyright-free: the render takes `slot * speed` seconds and plays them at
+  // `speed`, so a scene shorter than that window is padded by the difference.
+  if (speed !== null) return Math.max(0, slotS - Math.min(slotS * speed, windowS) / speed);
+  if (windowS >= slotS) return 0;
+  return slotS / windowS > SPEED_RAMP_MAX ? slotS - windowS : 0;
 }
 
 // Which of a beat's scenes survive when it cannot afford them all. Dropping the
@@ -407,10 +434,10 @@ function subSplit(windows: SourceWindow[], targetS: number, minCount: number) {
 type Planned = { window: SourceWindow; room: SourceWindow };
 
 // Walk the planned shots and pull apart any run of source that would play
-// unbroken for longer than MAX_CONTINUOUS_SOURCE_S. Chronological order is
+// unbroken for longer than `pacing.maxContinuousSourceS`. Chronological order is
 // preserved (see history/movie-recap.md, 2026-09-16): the fix is to move a
 // window INSIDE its own scene, never to reorder the beat.
-function breakContinuity(planned: Planned[], slotS: number) {
+function breakContinuity(planned: Planned[], slotS: number, pacing: MovieRecapPacing) {
   const out = planned.map((shot) => ({ window: { ...shot.window }, room: shot.room }));
   let unresolved = 0;
   // Measured in SCREEN seconds, not source seconds. A scene shorter than its
@@ -429,7 +456,7 @@ function breakContinuity(planned: Planned[], slotS: number) {
     }
 
     runS += slotS;
-    if (runS <= MAX_CONTINUOUS_SOURCE_S + 1e-9) continue;
+    if (runS <= pacing.maxContinuousSourceS + 1e-9) continue;
 
     let needed = MIN_JUMP_S - gap;
 
@@ -495,11 +522,15 @@ export type BeatPlan = {
  * `cuts` is every cut detection found, including the ones merged away when the
  * scene list was built. Without it a shot can be planned across one of the
  * film's own edits and arrive as two.
+ *
+ * `pacing` is the aspect ratio's shot band and continuity limit — 9:16 cuts
+ * fast, 16:9 holds longer. See MOVIE_RECAP_PACING.
  */
 export function planBeat({
   shots,
   spares,
   targetS,
+  pacing,
   speedFor,
   cuts = [],
   motion,
@@ -507,16 +538,18 @@ export function planBeat({
   shots: SourceWindow[];
   spares: SourceWindow[];
   targetS: number;
+  /** The aspect ratio's pacing profile; see MOVIE_RECAP_PACING. */
+  pacing: MovieRecapPacing;
   speedFor?: (shotIndex: number) => number;
   /** Every cut detection found, so a shot is never planned across one. */
   cuts?: number[];
   /** Picture motion across the source, so a shot lands on its liveliest second. */
   motion?: MotionTrack | null;
 }): BeatPlan {
-  const minCount = minShotsFor(targetS);
-  const affordable = Math.max(1, Math.floor(targetS / MIN_SHOT_S));
-  const wanted = Math.max(1, Math.ceil(targetS / SHOT_TARGET_S));
-  const need = Math.max(Math.min(shotsNeededFor(targetS), affordable), minCount);
+  const minCount = minShotsFor(targetS, pacing);
+  const affordable = Math.max(1, Math.floor(targetS / pacing.minShotS));
+  const wanted = Math.max(1, Math.ceil(targetS / pacing.shotTargetS));
+  const need = Math.max(Math.min(shotsNeededFor(targetS, pacing), affordable), minCount);
 
   // How much SOURCE a shot of this length needs, which is not its slot: the
   // copyright-free transform plays `slot * speed` seconds, so at 1.07x a 2.9s
@@ -524,18 +557,55 @@ export function planBeat({
   // through that were 4-7% too short, and the render held a frame for the
   // difference. The fastest speed is used, so the test never under-provisions.
   const footageFor = (slot: number) => slot * topSpeed(speedFor, Math.max(need, 1));
-  const { picked, used } = borrow(shots, spares, need, footageFor(targetS / need), motion);
+  const first = borrow(shots, spares, need, footageFor(targetS / need), motion);
+  let pool = first.picked;
+  let used = first.used;
   // Cuts play in the order they happen in the film, borrowed or not.
-  picked.sort(byStart);
+  pool.sort(byStart);
 
   // `ceil`, not `round`: at 2s of speech rounding gives one 2s hold, which is
-  // the dragging pace the cutting replaced. MIN_SHOT_S stops the bias from
+  // the dragging pace the cutting replaced. `minShotS` stops the bias from
   // producing flicker. Scenes the line is too short to pay for are dropped —
   // the model picks scenes before anything knows how long the line will run.
-  let shotCount = Math.min(picked.length, wanted, affordable);
-  shotCount = Math.max(shotCount, Math.min(minCount, picked.length));
+  let shotCount = Math.min(pool.length, wanted, affordable);
+  shotCount = Math.max(shotCount, Math.min(minCount, pool.length));
 
-  let scenes = keepLiveliest(picked, shotCount, footageFor(targetS / shotCount), motion);
+  let scenes = keepLiveliest(pool, shotCount, footageFor(targetS / shotCount), motion);
+
+  // COVERAGE. Everything above sizes the beat by its CUT COUNT; this asks
+  // whether there is footage behind those cuts, which is a different question
+  // and used not to be asked at all. A 2.2s scene under a 4s slot satisfies
+  // minCount, maxShotS and minShotS alike at one shot, and reaches the render
+  // 1.8s short — which the render answers with a held frame while the spare
+  // pool sits there untouched.
+  //
+  // So: while the plan would still freeze, and the beat can afford another cut
+  // without falling under `minShotS`, borrow another scene. Each extra shot
+  // shrinks the slot AND adds footage, so the deficit falls from both ends.
+  // This can push the count past `wanted` — deliberately. A cut the viewer did
+  // not expect beats a picture that stops moving.
+  //
+  // Sub-splitting cannot serve this, and the arithmetic is why: splitting one
+  // 2.2s scene into two windows halves the slot too, so the deficit is
+  // identical either way. It adds cuts, never footage. It stays below, serving
+  // the continuity invariant only.
+  const deficitOf = (windows: SourceWindow[], count: number) => {
+    const slot = targetS / count;
+    return windows.reduce(
+      (total, window, index) => total + holdDeficit(lengthOf(window), slot, speedFor ? speedFor(index) : null),
+      0
+    );
+  };
+  while (deficitOf(scenes, shotCount) > 1e-9 && shotCount < affordable) {
+    const grown = borrow(pool, spares, shotCount + 1, footageFor(targetS / (shotCount + 1)), motion, used);
+    // Nothing left to borrow — the render will have to hold a frame after all.
+    if (grown.picked.length <= pool.length) break;
+    pool = grown.picked.sort(byStart);
+    used = grown.used;
+    shotCount = Math.min(pool.length, affordable, shotCount + 1);
+    scenes = keepLiveliest(pool, shotCount, footageFor(targetS / shotCount), motion);
+  }
+
   let warning: string | null = null;
 
   if (shotCount < minCount) {
@@ -543,7 +613,7 @@ export function planBeat({
     shotCount = scenes.length;
     if (shotCount < minCount) {
       warning =
-        `cannot hold source under ${MAX_CONTINUOUS_SOURCE_S}s: ${targetS.toFixed(2)}s of narration needs ` +
+        `cannot hold source under ${pacing.maxContinuousSourceS}s: ${targetS.toFixed(2)}s of narration needs ` +
         `${minCount} cuts and the beat has ${shotCount} window(s) of footage, too short to split further.`;
     }
   }
@@ -562,20 +632,26 @@ export function planBeat({
     )
   );
 
-  // Anything the render will have to hold a frame through. Scenes are at least
-  // MIN_SCENE_S and slots at most MAX_CONTINUOUS_SOURCE_S, so this should be
-  // small or zero — it is logged because a silent version of it was shipped
-  // once, as 1.3s of cloned frames at the end of most shots.
+  // Anything the render will have to hold a frame through. The coverage pass
+  // above has already spent every cut it could afford on this, so what is left
+  // is unfixable: a beat under `minShotS * 2` cannot be split, so a short scene
+  // under a long line freezes and there is no cut to buy. Logged because a
+  // silent version of it shipped once, as 1.3s of cloned frames per shot.
+  //
+  // Note this counts the WHOLE gap, including the part the speed ramp absorbs —
+  // unlike holdDeficit, which counts only the freeze. Deliberately the louder
+  // of the two: one decides whether to spend a cut, the other tells a human the
+  // beat is thin.
   const padding = planned.reduce((total, shot) => total + Math.max(0, slotS - lengthOf(shot.window)), 0);
 
-  const broken = breakContinuity(planned, slotS);
+  const broken = breakContinuity(planned, slotS, pacing);
   if (padding > 0.1 && !warning) {
     warning = `${padding.toFixed(2)}s of this beat has no footage behind it and will be held frames.`;
   }
   if (broken.unresolved && !warning) {
     warning =
       `${broken.unresolved} adjacent shot pair(s) could not be separated — that footage plays unbroken for ` +
-      `${(slotS * 2).toFixed(2)}s against a ${MAX_CONTINUOUS_SOURCE_S}s limit.`;
+      `${(slotS * 2).toFixed(2)}s against a ${pacing.maxContinuousSourceS}s limit.`;
   }
 
   return { shots: broken.shots, slotS, shotCount, sparesUsed: used, warning };

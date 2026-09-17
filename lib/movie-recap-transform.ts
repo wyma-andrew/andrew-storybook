@@ -2,6 +2,7 @@ import {
   effectiveMovieRecapZoom,
   MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_TARGET_DIMENSIONS,
+  movieRecapBlurRadius,
 } from "./constants/movie-recap";
 import type { MovieRecapProject } from "./api/types";
 
@@ -76,7 +77,10 @@ function framingFilter(ctx: ShotFilterContext) {
   // contained copy. The background moves with the footage rather than being a
   // still, and the bars stop reading as missing picture. The foreground is fitted
   // and THEN zoomed, so zooming eats into the bars rather than into the picture.
-  const { backfillBlurRadius: radius, backfillBlurPasses: passes } = MOVIE_RECAP_COPYRIGHT_TRANSFORM;
+  const { backfillBlurRadius, backfillBlurPasses: passes } = MOVIE_RECAP_COPYRIGHT_TRANSFORM;
+  // Scaled to the output width: a fixed pixel radius blurs relatively less on a
+  // bigger frame, and the backfill has to stay unreadable, not merely soft.
+  const radius = movieRecapBlurRadius(backfillBlurRadius, ctx.aspectRatio);
   const fg = [`scale=${w}:${h}:force_original_aspect_ratio=decrease`, ...zoomed].join(",");
   return [
     `split[bg][fg]`,

@@ -148,9 +148,17 @@ export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
   // Kept inside +-7%: `setpts` resamples timestamps rather than frames, so at
   // 30fps a few percent is invisible, while past ~15% motion starts to read as
   // wrong. The 1.0 +-3% dead zone is skipped — too close to untouched to count.
-  speeds: [0.96, 0.97, 1.04, 1.07] as readonly number[],
+  //
+  // SLOW-ONLY. The set used to run both ways (0.96, 0.97, 1.04, 1.07); nothing
+  // is sped up now. A fast shot fights the pacing, and a slow one consumes
+  // `slot * speed` LESS source than its slot, so it runs less far into the
+  // footage after it and the continuity invariant has more room. 0.94 is left
+  // out — at 6% it is the one value that reads as deliberate slow motion, and
+  // in a slow-only set it would land on a third of the shots.
+  speeds: [0.95, 0.96, 0.97] as readonly number[],
   // Letterbox fill: the same clip scaled to cover, blurred, and sat behind the
   // contained one, so the bars carry moving picture instead of black.
+  // At BLUR_REFERENCE_WIDTH, like MOVIE_RECAP_BLUR.radius — scaled per output.
   backfillBlurRadius: 20,
   backfillBlurPasses: 2,
 } as const;
@@ -258,9 +266,37 @@ export const MOVIE_RECAP_MOCK_SKIPPED_STEPS = ["download", "scenes", "dialogue",
 export const MOVIE_RECAP_TARGET_FPS = 30;
 
 export const MOVIE_RECAP_TARGET_DIMENSIONS = {
+  // Still 720p. Long form has never been rendered at length and is a draft
+  // config; raise it when it is actually being published to YouTube.
   "16:9": [1280, 720],
-  "9:16": [720, 1280],
+  // 1080x1920, raised from 720x1280 once reels were being published rather than
+  // test-rendered. TikTok, Facebook and Reels all re-encode whatever they are
+  // given, so handing them a 720-wide source means their compression starts
+  // from an already-soft picture — worst on the burned Burmese captions, whose
+  // stacked marks are the first thing to go.
+  "9:16": [1080, 1920],
 } as const satisfies Record<string, readonly [number, number]>;
+
+// The widths the pixel-valued blur radii below were chosen against — PER RATIO,
+// because they were tuned on the frame each ratio had at the time, not on a
+// shared one.
+//
+// Every other size in the pipeline is a percentage of the frame, so raising a
+// resolution changes nothing. These two are the exception: a fixed pixel radius
+// blurs relatively LESS on a bigger frame, so a region blur that hid a watermark
+// at 720 would stop hiding it at 1080. That is a correctness bug, not a
+// cosmetic one — which is why this scales rather than staying constant.
+//
+// Anchoring per ratio is what keeps 16:9 byte-identical while 9:16 moves.
+const BLUR_REFERENCE_WIDTH = {
+  "16:9": 1280,
+  "9:16": 720,
+} as const satisfies Record<MovieRecapAspectRatio, number>;
+
+export function movieRecapBlurRadius(baseRadius: number, aspectRatio: MovieRecapAspectRatio) {
+  const width = MOVIE_RECAP_TARGET_DIMENSIONS[aspectRatio][0];
+  return Math.max(1, Math.round((baseRadius * width) / BLUR_REFERENCE_WIDTH[aspectRatio]));
+}
 
 // Region blur, in OUTPUT pixels: ffmpeg `boxblur=<radius>:<passes>`. The CSS
 // preview cannot use these numbers directly — it draws a frame a few hundred
@@ -269,10 +305,16 @@ export const MOVIE_RECAP_TARGET_DIMENSIONS = {
 // converts: N passes of a box blur of radius r approximate a gaussian of
 // sigma = sqrt(N * ((2r+1)^2 - 1) / 12), which is then scaled by how small the
 // preview frame is drawn.
+// `radius` is the value AT BLUR_REFERENCE_WIDTH; the render scales it with
+// `movieRecapBlurRadius`.
 export const MOVIE_RECAP_BLUR = { radius: 12, passes: 2 } as const;
 
-export function movieRecapBlurCssPx(frameWidthPx: number, outputWidthPx: number) {
-  const { radius, passes } = MOVIE_RECAP_BLUR;
+export function movieRecapBlurCssPx(frameWidthPx: number, aspectRatio: MovieRecapAspectRatio) {
+  const { passes } = MOVIE_RECAP_BLUR;
+  const outputWidthPx = MOVIE_RECAP_TARGET_DIMENSIONS[aspectRatio][0];
+  // The preview converts from the radius the RENDER will actually use, not the
+  // reference one, or the two drift apart the moment a resolution changes.
+  const radius = movieRecapBlurRadius(MOVIE_RECAP_BLUR.radius, aspectRatio);
   const sigma = Math.sqrt((passes * ((2 * radius + 1) ** 2 - 1)) / 12);
   return outputWidthPx > 0 ? (sigma * frameWidthPx) / outputWidthPx : sigma;
 }
@@ -347,6 +389,107 @@ export function movieRecapSubtitleStyle(project: {
     // against `PlayResY`.
     fontSizePct: MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio],
   };
+}
+
+// How fast the picture cuts, how long a narration line runs, and where the
+// caption sits — keyed on the ASPECT RATIO, because the aspect ratio IS the
+// format here (user's decision, 2026-09-17): 9:16 goes to TikTok and Facebook,
+// 16:9 goes to YouTube, and nothing else distinguishes them.
+//
+// This is the only aspect-keyed table that is not about the picture's SHAPE.
+// Caption size, zoom and output dimensions are all consequences of the frame;
+// these are consequences of where the video is posted. Kept together anyway,
+// because splitting them would mean a second field that always moves with this
+// one.
+//
+// THE INVARIANT, for any preset added here: `floor(t / minShotS)` must never be
+// less than `ceil(t / maxContinuousSourceS)`, or the planner is asked for more
+// cuts than the shot floor can pay for. `movie-recap-shots.test.ts` asserts it
+// across every preset — check there before inventing a third.
+export const MOVIE_RECAP_PACING = {
+  // SHORT FORM. Measured, not reasoned: these came out of real exports and four
+  // tuning passes (history/movie-recap.md, 2026-09-16/17). A vertical recap is
+  // watched with a thumb on the screen, and the cutting is what holds it.
+  "9:16": {
+    // Nearly every shot lands in a 1.5-2.5s band. They were 1.4 and 1.0, which
+    // the `ceil` bias pushed onto the floor: a measured export ran 20 shots in
+    // 19.7s, mean 0.98s, and an action does not land in one second.
+    minShotS: 1.5,
+    shotTargetS: 2,
+    // The planning target for borrowing: a beat pulls unused scenes until it can
+    // be cut without exceeding this. A target, not a guarantee.
+    maxShotS: 2.4,
+    // THE HARD ONE. No source footage may be on screen this long without a cut.
+    maxContinuousSourceS: 3,
+    // One idea per line. The line's length decides how long its beat holds, so
+    // this is the pacing control the narration model actually has.
+    // Raised from 25-45 (max 50). At 40 characters a line had to carry who
+    // someone is, what they did and what they are doing now, and the only way
+    // to fit that is to stack it all into one clause before the verb —
+    // "အဘွားကိုအလုပ်ခေါ်လာတဲ့ကောင်မလေးက..." reported by the user as awkward, and
+    // it is over-compression, not bad grammar. Costs nothing in pacing: on 9:16
+    // a longer beat buys MORE cuts, since `minShotS` is 1.5.
+    lineChars: [40, 70],
+    lineMaxChars: 80,
+    // A beat's timed length before measured audio stretches it.
+    maxSegmentS: 3.5,
+    // Percent of frame height the caption sits above the bottom edge. Higher on
+    // 9:16 than on 16:9 because TikTok and Facebook draw the post caption, the
+    // username and the audio ticker over the bottom of the frame — at 8% the
+    // burned subtitle lands behind their UI. NOT yet checked against a real
+    // post; it is a starting value to eyeball, not a measured one.
+    subtitleOffsetPct: 18,
+    // How many frames the vision pass sees per scene. THREE, because one still
+    // cannot show an EVENT: "two men argue" is a frame, "he draws and she runs"
+    // is a change over time, and a fast-cut recap lives on the second kind. The
+    // model describes what changes across them and says which frame is the peak.
+    // Frames go at `detail: "low"` (~19 prompt tokens each), so this is a
+    // request-size and ffmpeg-time cost, not really a token one.
+    keyframesPerScene: 3,
+  },
+  // LONG FORM. Reasoned, NOT measured — derived from the arithmetic below and
+  // never rendered at length. Treat as a first draft to test.
+  "16:9": {
+    // 2-4s. The short-form band cut a typical beat in half: a 25-45 character
+    // line is 2.5-3.5s of speech, and `floor(t / 1.5)` made that two ~1.5s
+    // shots. On a laptop or a TV that reads as churn rather than pace.
+    //
+    // `minShotS` is also the SPLIT THRESHOLD, and it is the number that decides
+    // the feel of the whole video: `floor(t / 2)` is 1 until the beat reaches
+    // 4s, so a normal line plays as ONE clip and only a long one is cut.
+    minShotS: 2,
+    shotTargetS: 3.5,
+    maxShotS: 4,
+    // Moved WITH minShotS, not separately: at 2/3 the invariant above fails (a
+    // 3.5s beat asks for 2 cuts and can afford 1).
+    maxContinuousSourceS: 4,
+    // Longer lines are what make 3-4s shots reachable at all — a 45-character
+    // line cannot hold a 4s clip without the picture stalling.
+    lineChars: [45, 80],
+    lineMaxChars: 90,
+    maxSegmentS: 6,
+    subtitleOffsetPct: 8,
+    // ONE, unchanged. Multi-frame description is a 9:16-only experiment for now
+    // (user's call). If it proves out on a reel it should come here too — there
+    // is nothing format-specific about describing an event properly.
+    keyframesPerScene: 1,
+  },
+} as const satisfies Record<MovieRecapAspectRatio, MovieRecapPacing>;
+
+export type MovieRecapPacing = {
+  minShotS: number;
+  shotTargetS: number;
+  maxShotS: number;
+  maxContinuousSourceS: number;
+  lineChars: readonly [number, number];
+  lineMaxChars: number;
+  maxSegmentS: number;
+  subtitleOffsetPct: number;
+  keyframesPerScene: number;
+};
+
+export function movieRecapPacing(aspectRatio: MovieRecapAspectRatio): MovieRecapPacing {
+  return MOVIE_RECAP_PACING[aspectRatio];
 }
 
 export function isMovieRecapSubtitlePreset(value: unknown): value is MovieRecapSubtitlePreset {

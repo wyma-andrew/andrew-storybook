@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { captionsLookUsable, cleanCueText, ffprobeFor, parseSrt, pickCaptionStream } from "./movie-recap-captions";
+import { splitIntoNChunks, spreadCuesOverShots } from "./movie-recap-render";
 
 const stream = (over: Record<string, unknown> = {}) => ({
   index: 2,
@@ -111,5 +112,57 @@ describe("ffprobeFor", () => {
 
   it("stays a bare command when ffmpeg is one", () => {
     expect(ffprobeFor("ffmpeg")).toBe("ffprobe");
+  });
+});
+
+describe("splitIntoNChunks", () => {
+  it("divides a line into exactly as many pieces as the beat has shots", () => {
+    const chunks = splitIntoNChunks("aaa bbb ccc ddd eee fff", 3);
+    expect(chunks).toHaveLength(3);
+    expect(chunks.join(" ")).toBe("aaa bbb ccc ddd eee fff");
+  });
+
+  it("keeps the pieces balanced by length, not by word count", () => {
+    const chunks = splitIntoNChunks("a b cccccccccc dddddddddd", 2);
+    expect(chunks).toHaveLength(2);
+    const lengths = chunks.map((chunk) => chunk.length);
+    expect(Math.abs(lengths[0] - lengths[1])).toBeLessThanOrEqual(6);
+  });
+
+  it("returns fewer pieces than asked when the line has too few words", () => {
+    // Burmese is written with spaces between phrases, not every word, so a short
+    // line can be one indivisible token. The caller spreads what it gets.
+    expect(splitIntoNChunks("တစ်ကြောင်းတည်း", 3)).toEqual(["တစ်ကြောင်းတည်း"]);
+    expect(splitIntoNChunks("aaa bbb", 4)).toHaveLength(2);
+  });
+
+  it("never drops or reorders words", () => {
+    const text = "one two three four five six seven";
+    for (const count of [1, 2, 3, 4, 7, 9]) {
+      expect(splitIntoNChunks(text, count).join(" ")).toBe(text);
+    }
+  });
+});
+
+describe("spreadCuesOverShots", () => {
+  it("gives one shot per cue when they match", () => {
+    expect(spreadCuesOverShots(["a", "b", "c"], 3)).toEqual([1, 1, 1]);
+  });
+
+  it("gives the spare shots to the longest cues", () => {
+    // A two-word chunk should not sit on screen for three cuts while a long one
+    // flashes past.
+    expect(spreadCuesOverShots(["short", "much much longer"], 3)).toEqual([1, 2]);
+  });
+
+  it("always sums to the shot count", () => {
+    for (const cueCount of [1, 2, 3, 5]) {
+      for (const shotCount of [1, 2, 3, 4, 7, 11]) {
+        if (shotCount < cueCount) continue;
+        const chunks = Array.from({ length: cueCount }, (_, i) => "x".repeat(i + 1));
+        const spread = spreadCuesOverShots(chunks, shotCount);
+        expect(spread.reduce((sum, value) => sum + value, 0)).toBe(shotCount);
+      }
+    }
   });
 });

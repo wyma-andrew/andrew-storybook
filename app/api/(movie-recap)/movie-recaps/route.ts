@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api/auth-guard";
 import { mapMovieRecapProject } from "@/lib/api/map";
+import { movieRecapPacing } from "@/lib/constants/movie-recap";
 import { suggestMovieRecapFraming } from "@/lib/movie-recap";
 import { createMultipartUpload, isVideoContentType, movieRecapObjectKey, r2Configured } from "@/lib/r2";
 import { supabaseRoute } from "@/lib/supabase/route";
@@ -61,7 +62,18 @@ export async function POST(req: NextRequest) {
       source_duration_seconds: durationSeconds,
       source_last_modified: lastModified,
       ...(hasDimensions ? { source_width: Math.round(width), source_height: Math.round(height) } : {}),
-      ...(framing ? { aspect_ratio: framing.aspectRatio, fit_mode: framing.fitMode } : {}),
+      // Seeded WITH the aspect ratio, because the ratio is the format and the
+      // two platforms want the caption in different places: 9:16 has to clear
+      // the TikTok/Facebook UI along the bottom. Seeded once, like the framing —
+      // changing the ratio later does NOT move a caption the user has since
+      // placed themselves.
+      ...(framing
+        ? {
+            aspect_ratio: framing.aspectRatio,
+            fit_mode: framing.fitMode,
+            subtitle_offset: movieRecapPacing(framing.aspectRatio).subtitleOffsetPct,
+          }
+        : {}),
     })
     .select("*")
     .single();

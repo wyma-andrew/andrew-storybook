@@ -28,8 +28,10 @@ const RAW_MIN_SCENE_S = 0.8;
 // plot, quick cutaways rarely do).
 const MAX_SCENES = 300;
 // Frames go to the model at `detail: "low"` (~19 prompt tokens each), so the
-// batch size here is about request size, not cost.
-const VISION_BATCH = 25;
+// batch size here is about request size, not cost. Counted in SCENES, not
+// frames, because a scene may now carry several: at 3 frames it is the same ~24
+// images per request that 25 single-frame scenes used to be.
+const VISION_BATCH_SCENES = 8;
 const KEYFRAME_WIDTH = 512;
 // Resolution of the motion track, in seconds per sample. Fine enough to tell a
 // dead stretch from a moving one inside a 2s scene, coarse enough that a
@@ -164,41 +166,85 @@ export async function detectScenes(videoPath: string, workDir: string, signal?: 
   return { scenes, cuts, motion };
 }
 
-// One representative frame per scene, taken a third of the way in — far enough
-// past the cut to miss fades and motion blur, early enough to still be that
-// scene's subject.
-export async function extractKeyframes(ffmpeg: string, videoPath: string, rows: Row[], workDir: string, signal?: AbortSignal) {
-  const frames: { index: number; file: string }[] = [];
-  for (const [index, row] of rows.entries()) {
-    const at = row.start + (row.end - row.start) / 3;
-    const file = path.join(workDir, `scene-${index}.jpg`);
-    // -ss before -i seeks by keyframe without decoding the file up to that
-    // point; at hundreds of frames that difference is minutes, not seconds.
-    await execFileAsync(
-      ffmpeg,
-      ["-y", "-ss", at.toFixed(3), "-i", videoPath, "-frames:v", "1", "-vf", `scale=${KEYFRAME_WIDTH}:-1`, "-q:v", "6", file],
-      { maxBuffer: 1024 * 1024 * 16, signal }
-    );
-    frames.push({ index, file });
-  }
-  return frames;
+// Where a scene's frames are taken, as fractions of its length.
+//
+// ONE frame keeps the historical third-of-the-way-in position exactly: far
+// enough past the cut to miss fades and motion blur, early enough to still be
+// that scene's subject, and — because `focusWindow` anchors a shot on the
+// described moment — a value that is recorded and load-bearing. Do not "tidy"
+// it to 0.5.
+//
+// SEVERAL are spread evenly with a half-step inset at each end, so the first
+// still clears the cut and the last stops short of the next one.
+export const SINGLE_KEYFRAME_FRACTION = 1 / 3;
+export function keyframeFractions(count: number) {
+  if (count <= 1) return [SINGLE_KEYFRAME_FRACTION];
+  return Array.from({ length: count }, (_, i) => (i + 0.5) / count);
 }
 
+// The frames the vision pass sees, per scene. `perScene` comes from the aspect
+// ratio's pacing profile: 9:16 takes several so the model can describe an
+// EVENT rather than a single moment, 16:9 takes one.
+export async function extractKeyframes(
+  ffmpeg: string,
+  videoPath: string,
+  rows: Row[],
+  workDir: string,
+  perScene = 1,
+  signal?: AbortSignal
+) {
+  const fractions = keyframeFractions(perScene);
+  const scenes: { index: number; files: string[]; fractions: number[] }[] = [];
+  for (const [index, row] of rows.entries()) {
+    const files: string[] = [];
+    for (const [step, fraction] of fractions.entries()) {
+      const at = row.start + (row.end - row.start) * fraction;
+      const file = path.join(workDir, `scene-${index}-${step}.jpg`);
+      // -ss before -i seeks by keyframe without decoding the file up to that
+      // point; at hundreds of frames that difference is minutes, not seconds.
+      await execFileAsync(
+        ffmpeg,
+        ["-y", "-ss", at.toFixed(3), "-i", videoPath, "-frames:v", "1", "-vf", `scale=${KEYFRAME_WIDTH}:-1`, "-q:v", "6", file],
+        { maxBuffer: 1024 * 1024 * 16, signal }
+      );
+      files.push(file);
+    }
+    scenes.push({ index, files, fractions });
+  }
+  return scenes;
+}
+
+/**
+ * What each scene looks like, and WHICH MOMENT of it matters.
+ *
+ * `keyframeFraction` is the second half and it is not cosmetic: `focusWindow`
+ * plays the part of a scene the description came from, so with several frames
+ * the model's own choice of peak decides where the shot sits. With one frame it
+ * is the fixed third, exactly as before.
+ */
 export async function describeScenes(
-  frames: { index: number; file: string }[],
+  scenes: { index: number; files: string[]; fractions: number[] }[],
   signal: AbortSignal | undefined,
   onProgress?: (done: number, total: number) => PromiseLike<unknown>
-): Promise<Map<number, string>> {
-  const described = new Map<number, string>();
-  for (let start = 0; start < frames.length; start += VISION_BATCH) {
-    const batch = frames.slice(start, start + VISION_BATCH);
+): Promise<Map<number, { visual: string; keyframeFraction: number }>> {
+  const described = new Map<number, { visual: string; keyframeFraction: number }>();
+  for (let start = 0; start < scenes.length; start += VISION_BATCH_SCENES) {
+    const batch = scenes.slice(start, start + VISION_BATCH_SCENES);
     const images = await Promise.all(
-      batch.map(async (frame) => ({ index: frame.index, base64: (await readFile(frame.file)).toString("base64") }))
+      batch.map(async (scene) => ({
+        index: scene.index,
+        frames: await Promise.all(scene.files.map(async (file) => (await readFile(file)).toString("base64"))),
+      }))
     );
     for (const entry of await describeMovieRecapScenes(images, signal)) {
-      described.set(entry.sceneIndex, entry.visual);
+      const source = batch.find((scene) => scene.index === entry.sceneIndex);
+      if (!source) continue;
+      // An out-of-range peak means the model lost count, not that it meant the
+      // last frame — fall back to the middle of what it was shown.
+      const peak = source.fractions[entry.peakFrame] ?? source.fractions[Math.floor(source.fractions.length / 2)];
+      described.set(entry.sceneIndex, { visual: entry.visual, keyframeFraction: peak });
     }
-    await onProgress?.(Math.min(start + VISION_BATCH, frames.length), frames.length);
+    await onProgress?.(Math.min(start + VISION_BATCH_SCENES, scenes.length), scenes.length);
   }
   return described;
 }

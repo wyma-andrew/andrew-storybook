@@ -8,7 +8,6 @@ import {
   MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_SUBTITLE_SAMPLE,
-  MOVIE_RECAP_TARGET_DIMENSIONS,
   movieRecapBlurCssPx,
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect } from "@/lib/movie-recap";
@@ -67,7 +66,7 @@ export function MovieRecapPreview({
   const frameWidth = useFrameWidth(frameRef);
   // The export blurs in output pixels; the preview frame is drawn a few hundred
   // pixels wide, so the same radius here would blur far harder than the render.
-  const blurPx = movieRecapBlurCssPx(frameWidth, MOVIE_RECAP_TARGET_DIMENSIONS[project.aspectRatio][0]);
+  const blurPx = movieRecapBlurCssPx(frameWidth, project.aspectRatio);
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   function move(event: React.PointerEvent<HTMLDivElement>) {

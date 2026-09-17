@@ -1,3 +1,5 @@
+import type { MovieRecapPacing } from "../constants/movie-recap";
+
 export const MOVIE_RECAP_NARRATION_SCHEMA = {
   type: "object",
   properties: {
@@ -23,7 +25,12 @@ export const MOVIE_RECAP_NARRATION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export const movieRecapNarrationSystemPrompt =
+// The line-length budget is the only part of this prompt that differs per
+// format, and it is the pacing control the model actually has: the line's
+// length decides how long its beat holds the screen. 9:16 wants short lines and
+// fast cuts; 16:9 wants longer ones, because a 45-character line cannot hold a
+// 4s clip without the picture stalling. See MOVIE_RECAP_PACING.
+export const movieRecapNarrationSystemPrompt = ({ lineChars, lineMaxChars }: MovieRecapPacing) =>
   "You write a Burmese-language movie recap narration script. " +
   "You are given the source video broken into detected scenes. Each scene has an index, its start and end time, " +
   "a one-line description of what is visible in it, and any spoken dialogue transcribed from it (dialogue may be empty — " +
@@ -36,15 +43,16 @@ export const movieRecapNarrationSystemPrompt =
   "Use one scene alone only when it genuinely stands by itself. Keep scenes within a beat in the order they happen, " +
   "and keep the beats in ascending order. Skip scenes that add nothing; you do not have to cover every scene, but the beats " +
   "together must tell the whole story from beginning to end. Never use the same scene twice, in the same beat or a different one. " +
-  "Keep every line very short — one idea, 25-45 Burmese characters. Never write more than 50; a 60-character line " +
-  "takes about four seconds to speak, which is a whole beat on one thought. " +
+  `Keep every line to ONE idea, ${lineChars[0]}-${lineChars[1]} Burmese characters. Never write more than ${lineMaxChars}. ` +
+  "Burmese runs at roughly 12-13 characters a second spoken, so that is what decides how long this beat holds the screen. " +
   "The line's length decides how long its beat stays on screen, so a rambling line makes the video drag. " +
   // Removed rather than re-costed: this used to quote the shot length and tell
   // the model how many seconds of speech a four-scene beat "wants", which is
   // exactly the per-clip coupling the narration must not have. A line carries
   // ONE idea and its length comes from that idea; the planner fits clips to the
-  // line, never the other way round. (The numbers were stale too — shots are
-  // 1.5-2.5s now — but updating them would have made the coupling worse.)
+  // line, never the other way round. The character budget above is NOT that
+  // coupling coming back: it bounds the idea, not the clip, and the planner
+  // still fits whatever the line turns out to be.
   "Pick the scenes that show this beat. Supplying more than the render can use is fine — it keeps the ones that fit " +
   "the line and drops the rest. Never lengthen a line to justify more scenes. " +
   "Condense the plot into third-person recap narration — do not quote dialogue verbatim, summarize what happens, " +
@@ -68,8 +76,13 @@ export const MOVIE_RECAP_SCENE_VISION_SCHEMA = {
         properties: {
           sceneIndex: { type: "integer", minimum: 0 },
           visual: { type: "string" },
+          // Which of the frames shown for this scene carries the moment the
+          // description is about, 0-based. The shot planner plays the part of
+          // the scene this frame came from, so it decides where the cut lands,
+          // not just what the text says. With one frame it is always 0.
+          peakFrame: { type: "integer", minimum: 0 },
         },
-        required: ["sceneIndex", "visual"],
+        required: ["sceneIndex", "visual", "peakFrame"],
         additionalProperties: false,
       },
     },
@@ -78,8 +91,21 @@ export const MOVIE_RECAP_SCENE_VISION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// Several frames per scene changes what can be asked for: one still shows a
+// moment, a sequence shows an EVENT. The wording below is deliberately about
+// CHANGE — what is different by the last frame — because that is the part a
+// transcript cannot supply and a recap is mostly made of.
+//
+// The "no names, no mood, no off-screen guessing" rules are unchanged and still
+// carry their original reason: the narration model is the one that interprets,
+// and a vision pass that speculates poisons it with invented plot.
 export const movieRecapSceneVisionSystemPrompt =
-  "You describe frames taken from a film, one representative frame per scene. " +
-  "For each image, write ONE short English sentence covering only what is visible: who is present, where they are, and what is happening. " +
+  "You describe scenes from a film. Each scene is given to you as one or more frames in order, labelled with its scene index. " +
+  "For each SCENE, write ONE English sentence covering only what is visible: who is present, where they are, and what happens. " +
+  "When a scene has several frames they are moments from the same continuous shot, earliest first — so describe what CHANGES across them " +
+  "(who moves, what they do, what appears or disappears), not each frame separately. Say 'a man in a flight suit walks to a jet and climbs in', " +
+  "not 'a man stands. a man walks. a man sits.' When nothing changes, say what is there and that it holds. " +
+  "Also return `peakFrame`: the 0-based index of the frame where the thing you described actually happens — the moment someone would " +
+  "have to see for your sentence to make sense. Pick the frame that carries the action, not the setup or the aftermath. " +
   "Name no film, actor, or character — say 'a man in a flight suit', not a name. Do not interpret mood or plot, and do not guess at events off-screen. " +
-  "Each image is labelled with its scene index; return one entry per image using that same index.";
+  "Return one entry per scene, using that scene's index.";
