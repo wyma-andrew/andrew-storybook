@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
-import { Captions, Check, ChevronLeft, ChevronRight, Copy, Crop, Droplet, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Sparkles, Stamp, Trash2, Upload } from "lucide-react";
-import { Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
+import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Stamp, Trash2, Upload } from "lucide-react";
+import { ConfirmDialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
@@ -21,13 +21,13 @@ import {
   MOVIE_RECAP_SUBTITLE_POSITIONS,
   MOVIE_RECAP_VOICES,
 } from "@/lib/constants/movie-recap";
-import { copyText } from "@/lib/copy";
 import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
+import { MovieRecapScript } from "./MovieRecapScript";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 import MovieRecapRenderHistory from "./MovieRecapRenderHistory";
 import { MovieRecapSource } from "./MovieRecapSource";
@@ -200,30 +200,26 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     void setStep(target);
   }
 
-  async function generate() {
-    if (!project) return;
+  async function saveRenderScript(texts: string[]) {
+    if (!project?.renderScript) return;
     const result = await updateProject({
       params: { id: project.id },
-      body: { status: "ready_for_generation", currentStep: 4 },
+      body: { renderScript: project.renderScript.map((beat, index) => ({ ...beat, text: texts[index] })) },
     });
-    if (result.error || !result.data) toast.error(result.error?.error ?? "Could not mark the project ready.");
+    if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save the script.");
     else {
       setProject(result.data);
-      toast.success("Configuration saved. Recap processing will be added in phase 2.");
+      toast.success("Script saved. Re-render to hear it.");
     }
   }
 
-  // Phase-two-a render preview: real pipeline (Whisper transcript, AI
-  // narration, hybrid duration-matched video), TTS step logged not synthesized
-  // — see history/movie-recap.md. Separate from "Generate Recap Video" below,
-  // which still just marks the config ready_for_generation.
-  async function renderRecapPreview(mock = false) {
+  async function renderRecapPreview(mock = false, reuse = false) {
     if (!project) return;
     // Optimistic: the POST below doesn't resolve until the whole pipeline
     // finishes, so flip local status to "running" now — that's what starts
     // the progress-polling effect (it reads local state, not the request).
     merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
-    const result = await renderPreview({ params: { id: project.id }, body: { mock } });
+    const result = await renderPreview({ params: { id: project.id }, body: { mock, reuse } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not render the preview.");
       return;
@@ -232,7 +228,15 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     // The shot log is not stored server-side, so it has to be kept now or lost:
     // this response is the only time the browser ever sees it.
     if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
-    if (result.data.renderStatus === "done") toast.success(mock ? "Mock preview rendered — no AI calls were made." : "Preview rendered (video only, narration audio not synthesized yet).");
+    if (result.data.renderStatus === "done") {
+      toast.success(
+        mock
+          ? "Mock preview rendered — no AI calls were made."
+          : reuse
+            ? "Re-rendered from your script — the source was not read again."
+            : "Preview rendered (video only, narration audio not synthesized yet)."
+      );
+    }
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
   }
 
@@ -289,22 +293,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   // One <audio> for the whole list: playing a different voice re-points it.
-  // Picking a hook title saves immediately: step 4 has no "Save & Continue" to
-  // carry it, and the choice does not demote the project the way the render
-  // settings do.
-  async function chooseHookTitle(title: string) {
-    if (!project) return;
-    const previous = project.hookTitle;
-    const next = previous === title ? null : title;
-    merge({ hookTitle: next });
-    const result = await updateProject({ params: { id: project.id }, body: { hookTitle: next } });
-    if (result.error || !result.data) {
-      merge({ hookTitle: previous });
-      toast.error(result.error?.error ?? "Could not save the hook title.");
-      return;
-    }
-    setProject(result.data);
-  }
 
   // A voice with no previewUrl has no button at all, so this is never called
   // without a clip to play.
@@ -518,10 +506,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           {step === 4 && project && (
             <Review
               project={project}
-              onGenerate={generate}
-              onChooseHookTitle={chooseHookTitle}
               saving={saving}
               onRenderPreview={renderRecapPreview}
+              onSaveScript={saveRenderScript}
+              onReRenderScript={() => renderRecapPreview(false, true)}
               rendering={rendering}
               onCancelRender={cancelRecapRender}
               cancelling={cancelling}
@@ -540,21 +528,34 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   );
 }
 
+function confirmFullRender(project: MovieRecapProject, run: () => void) {
+  const hasRender = project.renderStatus === "done";
+  ConfirmDialog.show({
+    title: "Render AI Preview",
+    content: hasRender
+      ? "This reads the source again and writes a NEW narration script, replacing the one below and any edits you made to it. The current video is replaced too. Scene detection, the vision pass, transcription, narration audio and the video are all regenerated, so this costs the full render."
+      : "This runs the full pipeline: scene detection, the vision pass, transcription, the narration script, narration audio and the video. It costs AI usage and takes several minutes.",
+    confirmButtonLabel: "Render",
+    cancelButtonLabel: "Cancel",
+    onConfirm: run,
+  });
+}
+
 function Review({
   project,
-  onGenerate,
-  onChooseHookTitle,
   saving,
   onRenderPreview,
+  onSaveScript,
+  onReRenderScript,
   rendering,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
-  onGenerate: () => void;
-  onChooseHookTitle: (title: string) => void;
   saving: boolean;
   onRenderPreview: (mock?: boolean) => void;
+  onSaveScript: (texts: string[]) => void;
+  onReRenderScript: () => void;
   rendering: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
@@ -582,14 +583,12 @@ function Review({
         concatenating: "Combining segments",
         applying_overlays: "Applying blur/logo",
         uploading: "Uploading result",
-        writing_hook_titles: "Writing hook titles",
       }[project.renderStage]
     : null;
   const mockTag = project.renderIsMock && project.renderStatus !== "idle" ? " (mock)" : "";
   const statusLabel = project.renderStatus === "running" ? stageLabel ?? "Starting…" : { idle: "Not rendered yet", running: "Rendering…", done: "Done", failed: "Failed" }[project.renderStatus];
   return <div><h2 className="mb-1 text-lg font-semibold">Review Configuration</h2><p className="mb-6 text-sm text-fg-2">Confirm the settings that phase 2 will use.</p>
     <div className="overflow-hidden rounded-xl border border-line bg-panel-2"><table className="w-full border-collapse"><tbody>{rows.map(([label, value]) => <tr key={label} className="border-b border-line last:border-0"><th className="w-1/3 px-4 py-3 text-left text-xs font-medium text-fg-3">{label}</th><td className="px-4 py-3 text-sm text-fg">{value}</td></tr>)}</tbody></table></div>
-    <div className="mt-6 flex flex-wrap items-center gap-3"><LoadingButton variant="primary" loading={saving} onClick={onGenerate}>Generate Recap Video</LoadingButton>{project.status === "ready_for_generation" && <span className="flex items-center gap-1.5 text-sm text-ok"><Check size={16} /> Ready for phase 2</span>}</div>
 
     <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
       <div className="mb-1 flex items-center justify-between">
@@ -610,41 +609,15 @@ function Review({
       {project.renderStatus === "failed" && project.renderError && <p className="mb-4 text-sm text-danger">{project.renderError}</p>}
       <div className="flex flex-wrap items-center gap-3">
         <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
-        <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(false)}>Render AI Preview</LoadingButton>
+        <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running"} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render AI Preview</LoadingButton>
         {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
       </div>
       {project.renderStatus === "done" && project.renderOutputUrl && <MovieRecapRenderPlayer project={project} />}
     </div>
 
+    <MovieRecapScript project={project} onSave={onSaveScript} onReRender={onReRenderScript} saving={saving} rendering={rendering} />
+
     <MovieRecapRenderHistory projectId={project.id} />
 
-    {project.hookTitles.length > 0 && (
-      <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
-        <div className="mb-1 flex items-center gap-2">
-          <Sparkles size={16} className="text-fg-3" />
-          <span className="text-sm font-medium">Hook titles</span>
-        </div>
-        <p className="mb-4 text-xs text-fg-2">
-          Written from this render&apos;s narration, each taking a different angle. Pick the one to publish with — click it again to unpick. Regenerating means rendering again, so the set stays until then.
-        </p>
-        <ul className="flex flex-col gap-2">
-          {project.hookTitles.map((title) => {
-            const selected = project.hookTitle === title;
-            return (
-              <li key={title} className="flex items-center gap-2">
-                <Button
-                  onClick={() => onChooseHookTitle(title)}
-                  className={`!h-auto min-w-0 flex-1 !justify-start !py-2.5 !text-left ${selected ? "!border-accent !bg-accent-dim !text-fg" : ""}`}
-                >
-                  {selected ? <Check size={16} className="shrink-0" /> : <span className="w-4 shrink-0" />}
-                  <span className="whitespace-normal">{title}</span>
-                </Button>
-                <Button aria-label="Copy title" onClick={() => void copyText(title, "Title")}><Copy size={16} /></Button>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    )}
   </div>;
 }

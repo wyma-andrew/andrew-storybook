@@ -170,12 +170,19 @@ a run of source is never on screen past the continuity limit — is decided in
 is the format: `MOVIE_RECAP_PACING` in `lib/constants/movie-recap.ts` gives 9:16
 (TikTok, Facebook) a fast 1.5-2.5s shot band and 16:9 (YouTube) a 2-4s one, and
 also sets each one's narration line budget and subtitle offset. A mock render skips every paid step, including TTS, and
-comes out silent. As a final stage the render writes five Burmese hook-title
-options from the narration it just produced (`lib/prompts/movie-recap-hook-title.ts`);
-the Review step lists them and stores the user's pick on the project. Each render
+comes out silent. Each render
 also returns a per-shot log (slot, source range, held-frame seconds), which the
 Review step keeps per project in the browser's localStorage
 (`lib/movie-recap-render-history.ts`) — it is not stored server-side.
+
+A finished render leaves its script on the row (`render_script`) and everything
+the planner derived from the source — spare scenes, cuts, motion — in R2
+(`render_analysis_key`). The Review step lists the script line by line
+(`components/movie-recap/MovieRecapScript.tsx`); editing a line and re-rendering
+(`POST movie-recaps/:id/render` with `reuse`) skips detection, the vision pass,
+transcription and the script model, and runs TTS and ffmpeg on the words as
+written. Only the text is patchable — the shots under a beat are the planner's
+own output.
 
 ### Burmese Voice Lab
 

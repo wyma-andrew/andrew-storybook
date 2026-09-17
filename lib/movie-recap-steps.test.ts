@@ -72,7 +72,7 @@ describe("movieRecapRenderStepStates", () => {
     const all = [
       "downloading_source", "detecting_scenes", "describing_scenes", "reading_captions",
       "extracting_audio", "transcribing", "writing_script", "synthesizing_narration",
-      "rendering_segments", "concatenating", "applying_overlays", "uploading", "writing_hook_titles",
+      "rendering_segments", "concatenating", "applying_overlays", "uploading",
     ];
     expect(all.filter((stage) => !grouped.has(stage as never))).toEqual([]);
   });

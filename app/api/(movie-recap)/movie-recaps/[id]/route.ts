@@ -10,6 +10,7 @@ import {
 import { abortMultipartUpload, deleteObject } from "@/lib/r2";
 import { getVoice } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
+import type { MovieRecapNarrationSegment } from "@/lib/api/types";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -118,17 +119,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     Object.assign(patch, { blur_x: blur.x, blur_y: blur.y, blur_width: blur.width, blur_height: blur.height });
     changesConfiguration = true;
   }
-  // Deliberately does NOT set changesConfiguration: picking a hook title does
-  // not alter what the render would produce, so it must not demote an approved
-  // project back to draft the way the framing and subtitle settings do.
-  if (body?.hookTitle !== undefined) {
-    if (body.hookTitle === null) {
-      patch.hook_title = null;
-    } else if (typeof body.hookTitle === "string" && body.hookTitle.trim()) {
-      patch.hook_title = body.hookTitle.trim().slice(0, 300);
-    } else {
-      return NextResponse.json({ error: "Invalid hook title." }, { status: 400 });
+  // The script is editable so an awkward line can be fixed without rerolling the
+  // whole recap. Only the TEXT is taken: the shot list is the render's own
+  // planning output, timed against the source, and a browser has no business
+  // rewriting it. Deliberately does NOT set changesConfiguration: re-rendering
+  // the script is the point, not a reason to demote an approved project.
+  if (body?.renderScript !== undefined) {
+    const current_script = (current.render_script ?? null) as MovieRecapNarrationSegment[] | null;
+    if (!Array.isArray(body.renderScript) || !current_script) {
+      return NextResponse.json({ error: "There is no rendered script to edit." }, { status: 400 });
     }
+    if (body.renderScript.length !== current_script.length) {
+      return NextResponse.json({ error: "The edited script must keep every beat." }, { status: 400 });
+    }
+    const edited: MovieRecapNarrationSegment[] = [];
+    for (const [index, beat] of (body.renderScript as { text?: unknown }[]).entries()) {
+      const text = typeof beat?.text === "string" ? beat.text.trim() : "";
+      if (!text) return NextResponse.json({ error: `Beat ${index + 1} is empty.` }, { status: 400 });
+      edited.push({ ...current_script[index], text: text.slice(0, 600) });
+    }
+    patch.render_script = edited;
   }
   if (body?.currentStep !== undefined) {
     const step = Number(body.currentStep);

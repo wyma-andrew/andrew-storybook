@@ -3,6 +3,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -92,7 +93,7 @@ function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
 }
 
-export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle", fileName: string) {
+export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
   return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
@@ -152,6 +153,19 @@ export async function deleteObject(objectKey: string) {
 export async function putObject(objectKey: string, body: Buffer, contentType: string) {
   await r2().send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, Body: body, ContentType: contentType }));
   return publicUrlFor(objectKey);
+}
+
+// Reads a server-written object back as text. Only used for the render
+// analysis blob, which is JSON the pipeline wrote itself — a missing or
+// unreadable object returns null so the caller can fall back to a full run
+// rather than failing the render.
+export async function getObjectText(objectKey: string) {
+  try {
+    const result = await r2().send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+    return (await result.Body?.transformToString()) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function createMultipartUpload(objectKey: string, contentType: string) {

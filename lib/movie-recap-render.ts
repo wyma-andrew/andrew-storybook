@@ -4,10 +4,10 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { generateMovieRecapHookTitles, generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
+import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
 import { describeScenes, detectScenes, extractKeyframes, type MotionTrack } from "./movie-recap-scenes";
-import { readSourceCaptions } from "./movie-recap-captions";
-import { movieRecapObjectKey, putObject } from "./r2";
+import { ffprobeFor, readSourceCaptions } from "./movie-recap-captions";
+import { getObjectText, movieRecapObjectKey, putObject } from "./r2";
 import { pickShotSpeed } from "./movie-recap";
 import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
 import { planBeat, type SourceWindow, SPEED_RAMP_MAX, SPEED_RAMP_MIN } from "./movie-recap-shots";
@@ -17,7 +17,6 @@ import {
   movieRecapSubtitleStyle,
   MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
-  MOVIE_RECAP_MOCK_HOOK_TITLES,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
@@ -26,7 +25,7 @@ import {
   movieRecapPacing,
   MOVIE_RECAP_TARGET_FPS,
 } from "./constants/movie-recap";
-import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
+import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
 
 const execFileAsync = promisify(execFile);
@@ -169,6 +168,20 @@ async function run(cmd: string, args: string[], signal?: AbortSignal) {
   await execFileAsync(cmd, args, { maxBuffer: 1024 * 1024 * 64, signal });
 }
 
+// What a file ACTUALLY came out as, which is not what it was asked for: every
+// segment is cut to `-t slot` and then resampled to a constant frame grid, so
+// its real length is a whole number of frames — up to 1/MOVIE_RECAP_TARGET_FPS
+// short of its slot. Unreadable duration means "do not compensate".
+async function probeDurationS(file: string, signal?: AbortSignal) {
+  const { stdout } = await execFileAsync(
+    ffprobeFor(FFMPEG),
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file],
+    { maxBuffer: 1024 * 1024, signal }
+  );
+  const value = Number(stdout.trim());
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 // Real progress: the client polls the project row while render_status is
 // "running" (see history/movie-recap.md) — cheap, since these are plain row
 // updates between ffmpeg/OpenAI calls that already take real wall-clock time,
@@ -248,10 +261,22 @@ async function trimToSpeech(inputPath: string, outputPath: string, durationSecon
 // Blur/logo apply once, on the whole concatenated video, not per-segment —
 // both are fixed positions/regions for the entire recap, so a single final
 // pass is equivalent to per-segment and far simpler.
-function buildOverlayFilter(project: MovieRecapProject, assPath: string | null) {
+//
+// `tailPadS` holds the last frame for that many seconds. It exists because the
+// concatenated picture comes out slightly SHORTER than the beats it was built
+// from (see probeDurationS), while the narration track is padded to those beats
+// exactly — so without it `-shortest` below cuts the audio, and the loss lands
+// on the final words of the last beat. Padding goes on first so the held frame
+// gets the same blur and logo as the rest.
+function buildOverlayFilter(project: MovieRecapProject, assPath: string | null, tailPadS = 0) {
   const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
   const parts: string[] = [];
   let label = "0:v";
+
+  if (tailPadS > 0) {
+    parts.push(`[${label}]tpad=stop_mode=clone:stop_duration=${tailPadS.toFixed(3)}[padded]`);
+    label = "padded";
+  }
 
   if (project.blurEnabled) {
     const bx = Math.round((project.blurX / 100) * w);
@@ -538,6 +563,39 @@ function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS:
     .trim();
 }
 
+// The analysis blob goes to R2 rather than a column: the motion track alone is
+// one value per 0.25s of source, and the project row is re-read every two
+// seconds while a render runs. Values are rounded — the planner compares them to
+// each other to find the liveliest scene, so two decimals is well past what it
+// can act on, and it roughly halves the blob.
+async function saveRenderAnalysis(db: Db, project: MovieRecapProject, analysis: MovieRecapRenderAnalysis) {
+  const key = movieRecapObjectKey(project.id, "analysis", "analysis.json");
+  const compact: MovieRecapRenderAnalysis = {
+    spares: analysis.spares,
+    cuts: analysis.cuts.map((value) => round2(value)),
+    motion: analysis.motion ? { stepS: analysis.motion.stepS, values: analysis.motion.values.map((value) => round2(value)) } : null,
+  };
+  await putObject(key, Buffer.from(JSON.stringify(compact)), "application/json");
+  await db.from("movie_recap_projects").update({ render_analysis_key: key }).eq("id", project.id);
+  return key;
+}
+
+// Null on anything unreadable — a missing object, a bucket change, a half-written
+// blob. The caller turns that into "render again from the source" rather than a
+// render that silently plans against nothing.
+async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieRecapRenderAnalysis | null> {
+  if (!project.renderAnalysisKey) return null;
+  const text = await getObjectText(project.renderAnalysisKey);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as MovieRecapRenderAnalysis;
+    if (!Array.isArray(parsed.spares) || !Array.isArray(parsed.cuts)) return null;
+    return { spares: parsed.spares, cuts: parsed.cuts, motion: parsed.motion ?? null };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Runs the whole pipeline and writes its own status/result onto the project row,
  * so the caller just re-reads the row afterwards.
@@ -547,7 +605,7 @@ function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS:
  * useful for comparing runs, and it lives in the browser's localStorage rather
  * than the database (see history/movie-recap.md). Null when the render failed.
  */
-export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { mock = false } = {}) {
+export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { mock = false, reuse = false } = {}) {
   const controller = new AbortController();
   activeRenders.set(project.id, controller);
   const signal = controller.signal;
@@ -601,6 +659,26 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // framing/logo/subtitle design can be checked for free (see history).
       narration = mockNarration(project);
       console.log(`[MovieRecapRender] project=${project.id} MOCK render — scene detection, vision, transcription and narration skipped.`);
+    } else if (reuse) {
+      // Re-render from the stored script. The source still has to come down —
+      // ffmpeg cuts every shot from it — but nothing that READS the source for
+      // meaning runs again: no detection, no vision pass, no transcription, no
+      // narration model. That is the whole cost of a render bar TTS, and it is
+      // paid to produce a script the user has already edited by hand.
+      const analysis = await loadRenderAnalysis(project);
+      if (!analysis) throw new Error("The saved analysis for this script is missing. Render again from the source.");
+      narration = project.renderScript ?? [];
+      if (!narration.length) throw new Error("There is no saved script to render.");
+      spareScenes = analysis.spares;
+      sourceCuts = analysis.cuts;
+      sourceMotion = analysis.motion;
+
+      await setProgress(db, project.id, "downloading_source");
+      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", path.join(workDir, "source.mp4")], signal);
+      console.log(
+        `[MovieRecapRender] project=${project.id} RE-RENDER from the saved script — ${narration.length} beats, ` +
+          `${spareScenes.length} spare scenes, detection/vision/transcription/script skipped.`
+      );
     } else {
       // 0. Pull the source down once. Scene detection decodes the whole file,
       // and every later ffmpeg seek would otherwise re-fetch over the network.
@@ -696,6 +774,18 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
           keyframeFraction: keyframeFractionOf(scene.index),
         }));
       if (!narration.length) throw new Error("The AI returned no narration segments.");
+      // Everything the planner reads that came out of the SOURCE, kept so an
+      // edited script can be re-rendered without paying for any of it again.
+      // Written before the render rather than after: a render that fails while
+      // cutting still leaves a script and an analysis worth re-running.
+      await saveRenderAnalysis(db, project, { spares: spareScenes, cuts: sourceCuts, motion: sourceMotion });
+      // The script lands on the row here too, not only on success. A render that
+      // dies while cutting has already spent the vision pass and the script
+      // model; losing the words it bought would mean buying them twice.
+      await db
+        .from("movie_recap_projects")
+        .update({ render_script: narration satisfies MovieRecapNarrationSegment[] })
+        .eq("id", project.id);
       console.log(
         `[MovieRecapRender] project=${project.id} ${rows.length} scenes detected from ${detected.cuts.length + 1} cuts` +
           `${detected.motion ? "" : " (no motion track)"}, ` +
@@ -790,7 +880,14 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         motion: sourceMotion,
       });
       spareScenes = spareScenes.filter((_, index) => !plan.sparesUsed.includes(index));
-      const { shots, slotS, shotCount } = plan;
+      const { shots, shotCount } = plan;
+      // QUANTIZE THE SLOT TO THE FRAME GRID. A segment is cut to `-t slot` and
+      // then resampled to MOVIE_RECAP_TARGET_FPS, so its real length is a whole
+      // number of frames — an arbitrary float slot silently loses the remainder,
+      // every shot, in the same direction. Captions and the narration track are
+      // both laid out on this same number, so rounding it here is what keeps all
+      // three on one timeline instead of drifting apart over a long recap.
+      const slotS = Math.round(plan.slotS * MOVIE_RECAP_TARGET_FPS) / MOVIE_RECAP_TARGET_FPS;
       if (plan.warning) console.warn(`[MovieRecapRender] project=${project.id} beat=${i + 1} ${plan.warning}`);
       console.log(
         `[MovieRecapRender] project=${project.id} beat=${i + 1} ${targetS.toFixed(2)}s -> ${shotCount} shot(s) of ${slotS.toFixed(2)}s ` +
@@ -973,7 +1070,19 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
         narrationIndex === null
           ? ["-an"]
           : ["-map", `${narrationIndex}:a`, "-c:a", "aac", "-b:a", "128k", "-shortest"];
-      await run(FFMPEG, ["-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath), "-map", "[vout]", ...audioArgs, "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath], signal);
+      // Frame rounding leaves the picture a little short of the narration it was
+      // planned against. Hold the last frame to cover it, then `-shortest` cuts
+      // the pad back off at the last spoken sample — so the recap still ends on
+      // the final word rather than on dead air, and no longer ends before it.
+      let tailPadS = 0;
+      if (narrationPath) {
+        const [videoS, audioS] = await Promise.all([probeDurationS(concatPath, signal), probeDurationS(narrationPath, signal)]);
+        if (videoS !== null && audioS !== null && audioS > videoS) {
+          tailPadS = audioS - videoS;
+          console.log(`[MovieRecapRender] project=${project.id} picture ${videoS.toFixed(2)}s vs narration ${audioS.toFixed(2)}s — holding the last frame for ${tailPadS.toFixed(2)}s.`);
+        }
+      }
+      await run(FFMPEG, ["-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath, tailPadS), "-map", "[vout]", ...audioArgs, "-c:v", "libx264", "-pix_fmt", "yuv420p", outputPath], signal);
     }
 
     await setProgress(db, project.id, "uploading");
@@ -981,37 +1090,17 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     const outputKey = movieRecapObjectKey(project.id, "render", `recap-${project.id}.mp4`);
     const outputUrl = await putObject(outputKey, outputBuffer, "video/mp4");
 
-    // Hook titles last, from the narration this render just wrote. It runs after
-    // the upload on purpose: the video is the deliverable, and a GPT call that
-    // fails must not cost the user a render that already succeeded. A mock
-    // render uses canned titles, like its canned narration, so it spends nothing.
-    await setProgress(db, project.id, "writing_hook_titles");
-    // null means "leave the column alone" — a failed call must not blank the
-    // titles a previous render produced, since the only way to get titles is to
-    // render again.
-    let hookTitles: string[] | null = null;
-    if (mock) {
-      hookTitles = [...MOVIE_RECAP_MOCK_HOOK_TITLES];
-    } else {
-      try {
-        hookTitles = await generateMovieRecapHookTitles(narration, signal);
-      } catch (error) {
-        // A cancel is not a title failure — let it fail the render like any
-        // other aborted step, or "Cancel" would report a finished video.
-        if (signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
-      }
-    }
-
     await db
       .from("movie_recap_projects")
       .update({
         render_status: "done",
         render_error: null,
-        render_transcript: mock ? null : transcript,
+        // A re-render never re-reads the source, so it has no transcript to
+        // write — leaving the column alone keeps the one the full render found.
+        ...(mock ? { render_transcript: null } : reuse ? {} : { render_transcript: transcript }),
         render_script: narration satisfies MovieRecapNarrationSegment[],
         render_output_url: outputUrl,
         render_output_object_key: outputKey,
-        ...(hookTitles ? { hook_titles: hookTitles } : {}),
         render_stage: null,
         render_progress_current: null,
         render_progress_total: null,

@@ -100,7 +100,9 @@ export type ApiSchema = {
     // `renderLog` is how every shot actually came out. It rides on the response
     // instead of being stored: the browser keeps a per-project history of it in
     // localStorage. Null when the render failed.
-    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean } };
+    // reuse: render the saved script instead of writing a new one — skips
+    // detection, the vision pass, transcription and the script model.
+    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean; reuse?: boolean } };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

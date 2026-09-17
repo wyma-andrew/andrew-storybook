@@ -7,7 +7,7 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 migrations.
 
-## 2026-09-14 — Phase one is a resumable configuration project, not a render job
+## 2026-09-14 — Phase one is a resumable configuration project, not a render job (SUPERSEDED 2026-09-18 — the Generate button is removed; phase two shipped)
 
 **Decision:** Movie Recap starts with a project dashboard and a persisted
 four-step editor: source, settings, customization, and review. Clicking
@@ -1915,7 +1915,7 @@ would repeat frames after any failed press.
 - The columns are server-written and deliberately absent from
   `MovieRecapProjectPatch`.
 
-## 2026-09-17 — Hook titles replace the thumbnail, generated at the end of a render
+## 2026-09-17 — Hook titles replace the thumbnail, generated at the end of a render (SUPERSEDED 2026-09-18 — hook titles removed entirely; the thumbnail removal stands)
 
 **Decision:** the source-frame thumbnail is removed — code, route, UI and
 columns — and replaced by generated Burmese hook titles. At the end of a
@@ -3165,3 +3165,146 @@ keeps 16:9 byte-identical while 9:16 moves by 1.5x (20 -> 30, 12 -> 18).
 `movieRecapBlurCssPx` takes the aspect ratio rather than a width now, and calls
 the same scaling function the render does — otherwise the CSS preview and the
 burned output drift apart the next time a resolution moves.
+
+## 2026-09-18 — The last words were being cut off: frame rounding, then `-shortest`
+
+**Bug:** a finished recap ended one or two words early. Everything up to the
+final clip was fine; the picture ran out while the voice-over was still talking.
+
+**Cause, in two parts.** Each shot is cut with `-t slot` and then resampled to
+`MOVIE_RECAP_TARGET_FPS`, so what comes out is a whole number of frames — up to
+33ms short of its slot, always short, never long. The narration track is padded
+to `beatDurations`, which are those same slots as exact floats. So the audio was
+genuinely longer than the picture, by roughly a frame per shot: about a second
+over sixty shots. The final mux then passed `-shortest`, which resolved that
+mismatch by truncating the audio. The last beat deliberately gets no
+`BEAT_GAP_S` (a recap should not end on dead air — 2026-09-16), so it had no
+slack to absorb the loss and the cut landed on its closing words.
+
+**Fix, also two parts.**
+
+- `slotS` is rounded onto the frame grid before anything uses it. The cut, the
+  caption cues and the narration padding all read that one number, so the three
+  stay on a single timeline instead of drifting apart. This is the part that
+  matters: without it the captions drifted off the cuts by the same amount, in
+  the same direction, whether or not the tail was fixed.
+- The final pass probes the concatenated picture and the narration track and
+  holds the last frame for the difference (`tpad` at the head of the overlay
+  chain, so the held frame gets the same blur and logo). `-shortest` then trims
+  that pad back off at the last spoken sample.
+
+**Why the pad stays even with the rounding fix.** The rounding is what ffmpeg
+*should* do with an on-grid `-t`, not a guarantee; a boundary frame either way
+would put us back to silently truncating speech. The pad costs one ffprobe of a
+local file and makes "the audio is never cut" true by construction rather than
+by arithmetic.
+
+**Consequence worth knowing:** the output is now exactly as long as the
+narration, not as long as the sum of the beats. A render log line reports the
+gap it covered — a large one there means the segment cutting has drifted for
+some other reason and is worth chasing.
+
+## 2026-09-18 — An edited script can be re-rendered without re-reading the source
+
+**Problem:** the only way to fix one awkward narration line was to render the
+whole project again — and a full render calls the script model again, so it came
+back with a *different* script. The lines that were fine were rerolled along
+with the one that was not. `render_script` was already written to the row, but
+nothing ever read it back: no route, no UI.
+
+**Decision: the script is the editable artefact of a render.** Step 4 lists the
+beats, each line editable, with "Re-render this script". A re-render skips scene
+detection, the vision pass, subtitle-reading/Whisper and the script model, and
+runs TTS and ffmpeg on the words as written.
+
+**Only the TEXT is editable.** The shot list under a beat is the planner's
+output, timed against the source, and the browser has no way to judge it. PATCH
+takes the text and keeps the stored shots, and rejects a script with a different
+number of beats — dropping a beat would strand its footage with nothing to say
+over it. Like `hookTitle`, this does not set `changesConfiguration`: re-rendering
+the script is the point, not a reason to demote an approved project to draft.
+
+**The analysis goes to R2, not a column.** The planner needs three things the
+script does not carry: the spare scenes it may borrow from, the source's own
+cuts, and the motion track. The motion track alone is one value per 0.25s of
+source — hundreds of kilobytes for a feature — and the project row is re-read
+every two seconds while a render runs, so a jsonb column would ride along on
+every poll. The row stores `render_analysis_key`; values are rounded to two
+decimals, which is far past what the planner can act on and roughly halves it.
+
+**Written before the cut, not after.** The analysis and the script both land on
+the row as soon as the script exists. A render that dies while cutting has
+already paid for the vision pass and the script model; losing the words it
+bought would mean buying them twice.
+
+**Rejected: caching the transcript and scene descriptions too.** Nothing
+downstream of the script reads them — they exist to write the script, and a
+re-render does not write one. Storing them would be for a per-beat re-roll,
+which is not built. Revisit when it is.
+
+**Consequence:** a re-render still downloads the source (ffmpeg cuts every shot
+from it) and still pays for TTS (the words changed). It is not free, just free
+of the analysis. A missing or unreadable analysis blob fails the re-render with
+"render again from the source" rather than planning against nothing.
+
+**Deferred (2026-09-18): rebuilding a missing analysis from detection alone.**
+Projects rendered before this existed have no analysis, so their stored script
+cannot be re-rendered until one full render runs — which writes a new script and
+discards the wording the user may have wanted to keep. A re-render could instead
+re-run scene detection only (cuts and motion come straight from it, and spares
+are the detected scenes no beat overlaps), costing one detection pass and no AI.
+Not built: it only helps projects that predate the feature, and those spares
+would carry no `keyframeFraction`, so borrowed footage would fall back to the
+fixed one-third cut point. Build it if pre-existing projects turn out to matter.
+
+## 2026-09-18 — Hook titles removed entirely
+
+**Decision (user, overriding the 2026-09-17 entry above): hook titles are gone
+— prompt, model call, render stage, columns and UI.** They were not useful in
+practice. Nothing downstream consumed them: they were five strings shown in the
+Review tab and copied out by hand, which is work the user was already doing
+somewhere else with better context than the narration alone gives.
+
+**What survives from the superseded entry:** the thumbnail removal. The
+source-frame thumbnail is still gone and is not coming back — hook titles were
+its replacement, not its justification.
+
+**Columns dropped, not orphaned.** `hook_titles` and `hook_title` are gone from
+the schema. Keeping them would have left two columns nothing writes and nothing
+reads, and the only data in them was regenerable by rendering — which the render
+no longer does.
+
+**Consequence:** the `writing_hook_titles` render stage is gone with them, so
+the Publish step of the progress stepper is now `uploading` alone, and a render
+ends at the upload. One fewer GPT call per render.
+
+## 2026-09-18 — The "Generate Recap Video" button is removed
+
+**Decision:** it is gone, with its `ready_for_generation` toast. Phase two
+shipped: the render buttons below it do the work, and a button promising a video
+that only flipped a status column was a lie the UI told on every visit.
+
+Its one visible effect was the green "Ready" badge on the project list card.
+That badge now reads `renderStatus === "done"` and says "Rendered" — a project is
+worth flagging when it has a video, not when its settings were approved by a
+button nothing downstream consults.
+
+**Kept:** the `status` column, its PATCH validation, and the `changesConfiguration`
+demotion. Nothing sets `ready_for_generation` any more, so the demotion is inert,
+but dropping a column is not undoable and this one costs nothing to leave. Drop
+it if a later change needs the space.
+
+## 2026-09-18 — "Render AI Preview" asks before it spends
+
+**Decision:** the full render is behind a `ConfirmDialog`. It is the one button
+here that both costs real money (vision pass, transcription, the script model,
+TTS) and destroys work: it writes a NEW narration script over `render_script`,
+so any hand edits go with it, and it replaces the output video.
+
+The wording changes with the project: a first render is described as cost and
+time, a re-render leads with what it overwrites.
+
+"Re-render this script" confirms too, for the two things that are not obvious
+from the button: TTS is re-synthesized for every beat, not just the edited ones,
+and the current video is replaced. The mock stays unconfirmed — it spends
+nothing.

@@ -95,12 +95,13 @@ export type MovieRecapProject = {
   renderStage: MovieRecapRenderStage | null;
   renderProgressCurrent: number | null;
   renderProgressTotal: number | null;
+  // The script the last full render wrote, and the only part of a render the
+  // user can edit and re-run. Patchable: fixing one awkward line must not cost
+  // a fresh analysis of the source or reroll the lines that were fine.
   renderScript: MovieRecapNarrationSegment[] | null;
-  // Generated after a render, from that render's narration. `hookTitles` is the
-  // server-written set of options; `hookTitle` is the one the user picked and is
-  // the only patchable half, so regenerating never discards a choice.
-  hookTitles: string[];
-  hookTitle: string | null;
+  // R2 key for the analysis that goes with `renderScript`. Null means no full
+  // render has finished yet, so re-rendering from the script is not offered.
+  renderAnalysisKey: string | null;
   renderOutputUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
@@ -122,8 +123,7 @@ export type MovieRecapRenderStage =
   | "rendering_segments"
   | "concatenating"
   | "applying_overlays"
-  | "uploading"
-  | "writing_hook_titles";
+  | "uploading";
 
 // One narration line from the render pipeline's script-generation step, timed
 // against the ORIGINAL source video (sourceStartS/sourceEndS). The synthesized
@@ -132,8 +132,22 @@ export type MovieRecapRenderStage =
 export type MovieRecapNarrationSegment = {
   // The shots this beat cuts between while its line is spoken, in order. One
   // entry is a beat that holds a single shot; several is the normal case.
-  shots: { sourceStartS: number; sourceEndS: number }[];
+  // `keyframeFraction` is where inside the shot the vision pass found the moment
+  // it described, so a re-render cuts on the same action the first one did.
+  shots: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
   text: string;
+};
+
+// What the shot planner needs that is NOT in the script: everything derived from
+// the source itself. Stored in R2 at the end of a full render (see
+// `renderAnalysisKey`) so an edited script can be re-rendered without paying for
+// scene detection, the vision pass and transcription again.
+export type MovieRecapRenderAnalysis = {
+  // Scenes the narration model passed over, which a beat can borrow from.
+  spares: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
+  // The source's own edits, in seconds — a shot is never laid across one.
+  cuts: number[];
+  motion: { stepS: number; values: number[] } | null;
 };
 
 export type MovieRecapProjectPatch = Partial<{
@@ -155,7 +169,7 @@ export type MovieRecapProjectPatch = Partial<{
   blurY: number;
   blurWidth: number;
   blurHeight: number;
-  hookTitle: string | null;
+  renderScript: MovieRecapNarrationSegment[];
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];
 }>;

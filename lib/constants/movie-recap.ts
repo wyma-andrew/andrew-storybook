@@ -245,7 +245,7 @@ export const MOVIE_RECAP_RENDER_STEPS = [
   { id: "script", label: "Script", stages: ["writing_script"] },
   { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
   { id: "video", label: "Video", stages: ["rendering_segments", "concatenating", "applying_overlays"] },
-  { id: "publish", label: "Publish", stages: ["uploading", "writing_hook_titles"] },
+  { id: "publish", label: "Publish", stages: ["uploading"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapRenderStage[] }[];
 
 // A mock render produces its narration from canned text and never touches the
@@ -339,16 +339,6 @@ export const MOVIE_RECAP_MOCK_NARRATION = [
   "မမျှော်လင့်ဘဲ တွေ့ဆုံမှုတစ်ခုက အရာအားလုံးကို ပြောင်းလဲစေတယ်။",
   "လျှို့ဝှက်ချက်တွေ တစ်ခုပြီးတစ်ခု ပေါ်ထွက်လာပါတယ်။",
   "နောက်ဆုံးမှာတော့ သူဟာ အဖြေတစ်ခုကို ရှာတွေ့ခဲ့ပါတယ်။",
-] as const;
-// Canned hook titles for a MOCK render, which never calls GPT — same contract
-// as MOVIE_RECAP_MOCK_NARRATION above, so the Review panel can be checked
-// without spending anything.
-export const MOVIE_RECAP_MOCK_HOOK_TITLES = [
-  "သူ့အတိတ်က ပြန်လိုက်လာပြီ",
-  "တစ်ညတည်းနဲ့ ဘဝတစ်ခုလုံး ပြောင်းသွားတယ်",
-  "ဒီလျှို့ဝှက်ချက်ကို ဘယ်သူမှ မသိခဲ့ဘူး",
-  "မမျှော်လင့်တဲ့ တွေ့ဆုံမှုတစ်ခု",
-  "အဖြေရှာဖို့ သူ ဘာတွေ ပေးဆပ်ခဲ့လဲ",
 ] as const;
 
 // Only this much of the source is used for a mock render — it exists to check

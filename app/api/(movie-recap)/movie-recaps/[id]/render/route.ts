@@ -10,6 +10,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const body = await req.json().catch(() => null);
   const mock = body?.mock === true;
+  // Re-render the stored script instead of writing a new one. The expensive
+  // half of the pipeline — detection, the vision pass, transcription and the
+  // script model — is skipped; TTS and ffmpeg still run, because the words may
+  // have changed. See history/movie-recap.md.
+  const reuse = body?.reuse === true && !mock;
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -21,10 +26,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (project.renderStatus === "running") {
     return NextResponse.json({ error: "A render is already in progress." }, { status: 409 });
   }
+  if (reuse && !(project.renderScript?.length && project.renderAnalysisKey)) {
+    return NextResponse.json({ error: "There is no saved script to re-render. Run a full render first." }, { status: 400 });
+  }
 
   // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
   // its own status/result onto the row rather than throwing.
-  const renderLog = await runMovieRecapRender(db, project, { mock });
+  const renderLog = await runMovieRecapRender(db, project, { mock, reuse });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });
