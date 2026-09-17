@@ -21,6 +21,7 @@ import {
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
   MOVIE_RECAP_TARGET_DIMENSIONS,
+  MOVIE_RECAP_TARGET_FPS,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
@@ -156,6 +157,16 @@ export function cancelMovieRecapRender(projectId: string) {
   if (!controller) return false;
   controller.abort();
   return true;
+}
+
+// The filter chain for one segment, always ending in the frame-rate resample.
+//
+// `fps` must come LAST, after `setpts` and `tpad`: it resamples whatever timing
+// those produced onto a constant grid. Every branch below goes through here
+// because a single segment that skips it re-introduces the stutter for the whole
+// video — `concat -c copy` cannot reconcile two frame rates.
+export function segmentFilters(...parts: string[]) {
+  return [...parts, `fps=${MOVIE_RECAP_TARGET_FPS}`].join(",");
 }
 
 async function run(cmd: string, args: string[], signal?: AbortSignal) {
@@ -507,7 +518,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       .update({
         render_status: "failed",
         render_error: error,
-        render_stage: null,
+        // The stage is deliberately NOT cleared here. It is the only record of
+        // WHERE the render failed, and the Review tab's progress bar marks that
+        // step red — clearing it would leave a failed render with a bar showing
+        // nothing started. The progress counters do go, since "scene 12 of 40"
+        // is meaningless once the run is over.
         render_progress_current: null,
         render_progress_total: null,
         render_completed_at: new Date().toISOString(),
@@ -729,11 +744,11 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
           // the window and the frame of rounding a speed change leaves — and the
           // output-side `-t` cuts back to exactly the slot. Belt and braces, but
           // the alternative is audio drifting away from the picture.
-          const filters = [vf, `setpts=PTS/${speed.toFixed(4)}`, `tpad=stop_mode=clone:stop_duration=${(slotS + 0.2).toFixed(3)}`];
+          const filters = segmentFilters(vf, `setpts=PTS/${speed.toFixed(4)}`, `tpad=stop_mode=clone:stop_duration=${(slotS + 0.2).toFixed(3)}`);
           await run(
             FFMPEG,
             ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", takenS.toFixed(3), "-i", sourceForClips, "-an",
-             "-vf", filters.join(","), "-t", slotS.toFixed(3), "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
+             "-vf", filters, "-t", slotS.toFixed(3), "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
             signal
           );
           segmentPaths.push(segPath);
@@ -744,15 +759,15 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
         if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {
           // Speed-ramp: stretch/compress playback so the clip's own length becomes its slot.
-          args.push("-to", String(shot.sourceEndS), "-vf", `${vf},setpts=PTS*${ratio.toFixed(4)}`);
+          args.push("-to", String(shot.sourceEndS), "-vf", segmentFilters(vf, `setpts=PTS*${ratio.toFixed(4)}`));
         } else if (slotS < sourceDurationS) {
           // Trim: the scene runs longer than its slot, so cut it down. The slot
           // is never below MIN_SHOT_S, so a trim cannot produce a flash frame.
-          args.push("-to", String(shot.sourceStartS + slotS), "-vf", vf);
+          args.push("-to", String(shot.sourceStartS + slotS), "-vf", segmentFilters(vf));
         } else {
           // Freeze-pad: the slot outlasts the scene, hold the last frame.
           const padS = slotS - sourceDurationS;
-          args.push("-to", String(shot.sourceEndS), "-vf", `${vf},tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`);
+          args.push("-to", String(shot.sourceEndS), "-vf", segmentFilters(vf, `tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`));
         }
         args.push(segPath);
         await run(FFMPEG, args, signal);

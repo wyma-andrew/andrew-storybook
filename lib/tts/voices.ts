@@ -8,6 +8,25 @@ import type { TtsSurface, Voice } from "./types";
 // (`movie_recap_projects.voice_profile_id`); the provider behind it is a code
 // decision, so moving a voice to a different service later is an edit here and
 // not a migration — same reasoning as visual styles living in lib/constants.
+// Both Azure voices speak at this rate. Azure's default reads slow for a recap
+// — measured at 16.5 Burmese characters per second — and the narration's pace is
+// what makes the finished video drag (history/movie-recap.md).
+//
+// Shared rather than per-voice so the two cannot drift apart: a project that
+// switches from Thiha to Nilar must not change length as a side effect, since
+// beat durations are measured from the synthesized audio.
+//
+// Raising this changes the EXPORT, not just the sound. It never drops narration
+// WORDS — every line is still spoken in full — but shot count is
+// ceil(beatDuration / SHOT_TARGET_S), so a shorter beat affords fewer visual
+// cuts and holds each shot longer. Measured over ten real beats: +10% keeps all
+// 27 shots, +15% gives 25, +20% gives 24, +30% gives 22. +15% is a deliberate
+// choice to spend two cuts on a faster read — see history/movie-recap.md for the
+// table and the method for re-deciding it.
+// After changing it, run scripts/generate-voice-previews.ts — the previews are
+// committed files and will otherwise play the old reading.
+const AZURE_NARRATION_RATE = "+15%";
+
 export const VOICES: readonly Voice[] = [
   {
     id: "azure-thiha",
@@ -17,7 +36,7 @@ export const VOICES: readonly Voice[] = [
     previewUrl: "/movie-recap/voices/azure-thiha.mp3",
     surfaces: ["movie-recap", "voice-lab"],
     providerId: "azure",
-    params: { voiceName: "my-MM-ThihaNeural" },
+    params: { voiceName: "my-MM-ThihaNeural", rate: AZURE_NARRATION_RATE },
   },
   {
     id: "azure-nilar",
@@ -27,7 +46,7 @@ export const VOICES: readonly Voice[] = [
     previewUrl: "/movie-recap/voices/azure-nilar.mp3",
     surfaces: ["movie-recap", "voice-lab"],
     providerId: "azure",
-    params: { voiceName: "my-MM-NilarNeural" },
+    params: { voiceName: "my-MM-NilarNeural", rate: AZURE_NARRATION_RATE },
   },
   // Self-hosted, lab-only: kept out of Movie Recap while CPU inference takes
   // tens of seconds per clip (see history/voice-lab.md). Flip `surfaces` to add

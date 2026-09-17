@@ -27,6 +27,7 @@ import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
+import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 import { MovieRecapSource } from "./MovieRecapSource";
 
 const STEP_NAMES = ["Add Source", "Project Settings", "Customize Video", "Review"];
@@ -593,6 +594,14 @@ function Review({
       <p className="mb-4 text-xs text-fg-2">
         <span className="font-medium text-fg">Mock</span> uses canned narration over the first 40s of the source — no Whisper, no GPT, no API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">AI</span> runs the real read → copyright-free transform → narration-script → narration-audio pipeline, and the exported file carries the spoken narration. Mock stays silent, because synthesizing costs the same as a real run. Styled subtitles are burned into the exported file by libass, exactly as designed in step 3.
       </p>
+      {/* The stepper replaces watching one line of text change for minutes.
+          It is hidden while idle, where seven grey dots would say nothing the
+          "Not rendered yet" label does not already say. */}
+      {project.renderStatus !== "idle" && (
+        <div className="mb-4 rounded-lg border border-line bg-panel p-3">
+          <MovieRecapRenderProgress project={project} />
+        </div>
+      )}
       {project.renderStatus === "failed" && project.renderError && <p className="mb-4 text-sm text-danger">{project.renderError}</p>}
       <div className="flex flex-wrap items-center gap-3">
         <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>

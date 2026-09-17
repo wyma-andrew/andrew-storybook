@@ -1,3 +1,6 @@
+import { MOVIE_RECAP_MOCK_SKIPPED_STEPS, MOVIE_RECAP_RENDER_STEPS } from "./constants/movie-recap";
+import type { MovieRecapProject, MovieRecapRenderStage } from "./api/types";
+
 const MIB = 1024 * 1024;
 const MIN_PART_SIZE = 16 * MIB;
 const MAX_PARTS = 10_000;
@@ -84,4 +87,56 @@ export function pickShotSpeed(speeds: readonly number[], projectId: string, beat
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return speeds[hash % speeds.length];
+}
+
+
+// What a step in the render progress bar should show.
+//
+// Derived from the row rather than tracked separately: `render_status` and
+// `render_stage` are already what the client polls, so the bar cannot disagree
+// with the status text beside it.
+export type MovieRecapStepState = "pending" | "active" | "done" | "skipped" | "failed";
+
+export function movieRecapRenderStepStates({
+  status,
+  stage,
+  isMock,
+}: {
+  status: MovieRecapProject["renderStatus"];
+  stage: MovieRecapRenderStage | null;
+  isMock: boolean;
+}): Record<string, MovieRecapStepState> {
+  const skipped = new Set<string>(isMock ? MOVIE_RECAP_MOCK_SKIPPED_STEPS : []);
+  const currentIndex = stage
+    ? MOVIE_RECAP_RENDER_STEPS.findIndex((step) => (step.stages as readonly string[]).includes(stage))
+    : -1;
+
+  const states: Record<string, MovieRecapStepState> = {};
+  for (const [index, step] of MOVIE_RECAP_RENDER_STEPS.entries()) {
+    if (skipped.has(step.id)) {
+      // A skipped step stays skipped even once the render finishes — a mock did
+      // not do it, and a finished bar claiming otherwise would be a lie.
+      states[step.id] = "skipped";
+      continue;
+    }
+    if (status === "idle") {
+      states[step.id] = "pending";
+      continue;
+    }
+    if (status === "done") {
+      states[step.id] = "done";
+      continue;
+    }
+    // Running or failed. An unknown stage (null, or one not in any group) leaves
+    // currentIndex at -1, which marks everything pending rather than guessing —
+    // better a bar that has not started than one claiming finished work.
+    if (currentIndex === -1) {
+      states[step.id] = "pending";
+      continue;
+    }
+    if (index < currentIndex) states[step.id] = "done";
+    else if (index > currentIndex) states[step.id] = "pending";
+    else states[step.id] = status === "failed" ? "failed" : "active";
+  }
+  return states;
 }

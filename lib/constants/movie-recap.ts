@@ -1,4 +1,7 @@
 import { listVoices } from "../tts/voices";
+// Type-only, so it is erased at build time and creates no import cycle with
+// api/types.ts, which imports the value types from this file.
+import type { MovieRecapRenderStage } from "../api/types";
 
 export const MOVIE_RECAP_LANGUAGES = [{ id: "my", name: "Burmese" }] as const;
 // The voices the Settings tab offers, taken from the TTS catalog so the picker
@@ -214,6 +217,46 @@ export function effectiveMovieRecapZoom(project: {
 
 // Output frame size, shared by the ffmpeg render and anything in the UI that
 // has to express a size in OUTPUT pixels (the blur radius below).
+// The render's stages, grouped into the steps the Review tab shows as a
+// progress bar.
+//
+// Grouped rather than listed one-per-stage for two reasons, both of which would
+// otherwise put steps on screen that never happen:
+//   - `reading_captions` and `extracting_audio`/`transcribing` are alternatives,
+//     not a sequence. A source with subtitles never transcribes, and one without
+//     never reads captions. As one "Dialogue" step, either path fills it.
+//   - thirteen stages is a wall of text, not a progress bar.
+//
+// The ORDER here is the order the render runs them in, and it is what decides
+// which steps are already done — so a stage added to the pipeline must be added
+// to the right group here, or it will read as "not started" while it runs.
+export const MOVIE_RECAP_RENDER_STEPS = [
+  { id: "download", label: "Source", stages: ["downloading_source"] },
+  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "describing_scenes"] },
+  { id: "dialogue", label: "Dialogue", stages: ["reading_captions", "extracting_audio", "transcribing"] },
+  { id: "script", label: "Script", stages: ["writing_script"] },
+  { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
+  { id: "video", label: "Video", stages: ["rendering_segments", "concatenating", "applying_overlays"] },
+  { id: "publish", label: "Publish", stages: ["uploading", "writing_hook_titles"] },
+] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapRenderStage[] }[];
+
+// A mock render produces its narration from canned text and never touches the
+// source's pictures, audio or any model, so these steps genuinely do not run.
+// They are shown as skipped rather than done — claiming a mock "transcribed the
+// dialogue" would be a lie told by a progress bar.
+export const MOVIE_RECAP_MOCK_SKIPPED_STEPS = ["download", "scenes", "dialogue", "script", "narration"] as const;
+
+// Every segment is resampled to this before the parts are concatenated.
+//
+// Not cosmetic: `setpts` re-times frames without resampling them, so a shot
+// played at 0.94 comes out with FEWER frames spread over the same slot (measured:
+// 40 frames in 1.4s, an average 28.57fps). Concatenating that with a 30fps
+// segment using `-c copy` holds single frames for two frame periods, which reads
+// as a stutter — see history/movie-recap.md. Forcing one frame rate on every
+// segment also makes `concat -c copy` correct for sources that are not 30fps to
+// begin with.
+export const MOVIE_RECAP_TARGET_FPS = 30;
+
 export const MOVIE_RECAP_TARGET_DIMENSIONS = {
   "16:9": [1280, 720],
   "9:16": [720, 1280],

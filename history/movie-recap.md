@@ -1969,6 +1969,9 @@ index into the array would break the moment the array changed.
 
 ## 2026-09-17 — Reverted: the +10% speech rate and the 30fps segment resample
 
+**PARTLY UNDONE the same day — the 30fps resample was re-applied, see "Re-applied"
+below. Only the +10% speech rate is still reverted.**
+
 **Decision:** `c18d550` (Azure narration at `+10%`) and `cf79207` (resample every
 segment to 30fps before concat) were both reverted at the user's request, as
 `git revert`, so they remain in history and can be re-applied. The reason for the
@@ -1986,7 +1989,8 @@ describes a bug that is now present again:**
   multiplier, not a duration one. Changing the rate requires re-running
   `scripts/generate-voice-previews.ts`; the previews are committed files.
 
-- **Stutter — STILL PRESENT ON THIS BRANCH.** `setpts` re-times frames without
+- **Stutter — re-fixed, see below; this described the branch between the revert
+  and the re-apply.** `setpts` re-times frames without
   resampling them, so a shot played at 0.94 carries about 40 frames across a
   1.4s slot where a full-rate shot carries 42 (an average 28.57fps against 30).
   `concat -c copy` cannot reconcile two frame rates, so those frames are held for
@@ -2087,3 +2091,203 @@ listen to it.
 **Consequence:** caption timings are the distributor's, not measured from the
 audio, and some tracks run a little ahead or behind the speech. That is well
 inside the tolerance here, since cues are only matched to scene ranges.
+
+## 2026-09-17 — Re-applied: the 30fps segment resample, confirmed against a real export
+
+**Decision:** `cf79207` is back (cherry-picked onto the caption work). The +10%
+speech rate stays reverted; the two were reverted together but only this half was
+wanted back.
+
+**What settled it:** a rendered export from the app, measured rather than
+watched. 1,987 frames over 33.9s with the gap histogram
+`[(0.01667, 1936), (0.03333, 50)]` — **50 held frames**, every one exactly 2.0x a
+frame period. That is the same defect the original entry describes, in real
+output rather than a reconstruction.
+
+**New information the export added:** the source was **60fps**, not 30. The
+original diagnosis was made on a 30fps source, so this confirms the problem is
+not tied to a particular source rate — any source whose frames do not survive
+`setpts`/`tpad` at a constant rate produces it, and the output had inherited
+59.98fps (`avg_frame_rate` 39740/679) where `r_frame_rate` claimed a flat 60.
+
+**Also established, and worth not re-investigating:** everything else in that
+export measured clean, so the stutter was the whole of the reported "glitching".
+Narration silence was 2.33s of 33.95s (6.9%) in eight even 0.27s beat gaps;
+median shot length 1.21s against 26 planned shots in 33.95s; subtitles, colour
+grade, zoom and the region blur all correct.
+
+**Method warning — scene detection on the OUTPUT is not a measurement.** At
+`gt(scene,0.35)` it reported a 0.47s median shot and dozens of sub-0.1s "cuts",
+which read as a second defect and is not one: sampling the frames around one
+such "cut" showed a smooth continuous shot, the detector firing on fast motion.
+At 0.6 it under-detects instead, missing real cuts between shots taken from
+adjacent source. The trustworthy source of shot structure is the project's own
+`render_script` column, which states the beats and their source spans outright.
+
+**Consequence noticed while measuring, not a bug:** shots within a beat are cut
+from ADJACENT source (beat 1 starts at 0s, 2.3s and 5.0s), so several cuts do not
+read as cuts and the export shows 4-5s stretches that look continuous despite
+three cuts. Each shot still takes only ~1.3s of continuous source, far inside the
+5s ceiling, but the footage reads as less cut-up than the shot count implies.
+
+## 2026-09-17 — REJECTED: shortening the narration lines in code
+
+**Built, measured, and removed the same day at the user's direction: "prev beat
+is more correct. we just only need to speed up the narrative speaking."** The
+longer lines are the wanted content; the pace is a DELIVERY problem, not a script
+problem. Do not rebuild this without asking.
+
+The measurements below stand and are why the rate change exists, so they are kept
+rather than deleted. The implementation is in git (a `shortenLongNarrationLines`
+pass with two bounded rounds); it worked — 643 characters to 480, nine lines over
+the cap down to two, speech 36.1s to 26.9s — it was simply not what was wanted,
+because it bought that speed by throwing away narration.
+
+## 2026-09-17 — (superseded) The narration length cap measurements
+
+**Problem:** the finished recap still felt slow. Measured on a real ten-beat
+export, the cause was the SCRIPT, not the delivery:
+
+- Delivery was **17.83 characters a second** at Azure's default rate, against the
+  16.5 recorded earlier as the baseline — if anything slightly fast, and that
+  figure includes intra-line pauses, so the true articulation rate is higher.
+- Line length was **49, 64, 58, 65, 65, 62, 68, 69, 72, 71** — mean 64.3 against
+  a stated cap of 50. Nine of ten lines broke it.
+
+Line length is what decides how long a beat stays on screen, so those lines were
+the whole of the slowness: at 17.83 chars/sec, 64 characters is 3.6s against 2.8s
+for 50.
+
+**Why the prompt was not the fix:** it already said the right number. Asked for
+60 the model wrote 63-70; the cap was lowered to 50 (2026-09-16) and it wrote
+58-72. Two attempts at asking more firmly had already failed, so a third was not
+tried.
+
+**Decision:** `shortenLongNarrationLines()` runs after generation and sends back
+only the lines that break the cap, asking for them shorter. The cap itself is one
+exported constant the prompt interpolates and the check reads, so the two cannot
+drift — which is how the cap quietly stopped meaning anything in the first place.
+
+**Two rounds, because one is measurably not enough.** Measured on the real
+script: one pass took nine over-long lines to five still over (643 to 536
+characters); two passes reached **480 characters with only two lines over**, and
+speech from **36.1s to 26.9s — a 25% cut**. It is bounded rather than looped to
+convergence because the model plateaus, and spending calls to chase the last few
+characters is worse than accepting a line that is close.
+
+**For comparison:** the +10% Azure rate that was reverted was worth 9%. This is
+worth 25%, and costs nothing in delivery quality. They compose if both are wanted.
+
+**Guards, each protecting against a specific way the pass could make things
+worse:**
+- A rewrite is kept only if it is actually SHORTER. One that came back longer,
+  empty, or unchanged is discarded — it has lost wording to no purpose.
+- An index the model invented, or was never given, is ignored rather than
+  clamped. Writing a shortened line onto the wrong beat would put narration over
+  someone else's shots.
+- A compliant script costs nothing: with no line over the cap, no call is made.
+- The shorten prompt is told not to merge lines, drop them, or add information —
+  a "shortened" line that loses the event its beat exists to narrate leaves those
+  shots playing over something else.
+
+**Unchanged and deliberately so:** the mock render still uses canned narration and
+never calls this, so mock remains free.
+
+## 2026-09-17 — Render progress is a stepper, and the failing stage is kept
+
+**Decision:** the Review tab shows the render's progress as a seven-step bar
+(`MovieRecapRenderProgress`) instead of one line of changing text. Steps fill
+green as they complete, the running one spins, and a failed one turns red. The
+detailed sub-label ("Describing scene 12/40") stays underneath, since the bar
+shows WHERE the render is and the label shows how far through that step.
+
+**Why the thirteen stages are grouped into seven steps** — both reasons would
+otherwise put steps on screen that never happen:
+- `reading_captions` and `extracting_audio`/`transcribing` are ALTERNATIVES, not
+  a sequence: a source with subtitles never transcribes, one without never reads
+  captions. As a single "Dialogue" step, either path fills it.
+- Thirteen dots is a wall of text, not a progress bar.
+
+`MOVIE_RECAP_RENDER_STEPS` is the single source of order, and a test asserts
+every stage the pipeline can report belongs to a group — an ungrouped new stage
+would silently read as "not started" while it ran.
+
+**A mock render's skipped steps are shown as SKIPPED, not done.** A mock uses
+canned narration and touches no model, so Source/Scenes/Dialogue/Script/Narration
+genuinely do not run. They stay struck through even once the render finishes:
+a bar claiming a mock "transcribed the dialogue" would be a lie told by a
+progress bar.
+
+**Consequence — `markFailed` no longer clears `render_stage`.** It is the only
+record of where a render failed, and the bar marks that step red. Clearing it
+left a failed render showing a bar where nothing had started. The progress
+COUNTERS are still cleared, because "scene 12 of 40" is meaningless once the run
+is over.
+
+**An unrecognised stage marks everything pending rather than guessing.** A bar
+that has not started is better than one claiming work that never happened.
+
+**Not verified in a browser:** the Chrome extension was not connected, so the
+layout was checked by build and unit tests only. The state logic is pure and
+tested (`lib/movie-recap-steps.test.ts`); the visual arrangement was not.
+
+## 2026-09-17 — Re-applied: +10% narration rate, and why not more
+
+**Raised to +15% the same day — see the entry below. The table here is still the
+method; only the chosen row changed.**
+
+**Decision:** `AZURE_NARRATION_RATE = "+10%"` is back (the half of `c18d550`
+that was reverted in `d7ab62d`). The narration lines are left exactly as the
+model writes them — the recap is paced by speaking faster, not by saying less.
+
+**Why +10% and not more, measured rather than guessed.** Running the real
+`planBeatShots()` over the ten beat durations from the last export shows where
+raising the rate starts costing scenes:
+
+| rate | speech | shots | scenes dropped |
+|------|--------|-------|----------------|
+| +0%  | 36.1s  | 27    | 2 |
+| +10% | 32.8s  | 27    | 2 |
+| +15% | 31.4s  | 25    | 4 |
+| +20% | 30.1s  | 24    | 5 |
+| +30% | 27.7s  | 22    | 7 |
+
+**+10% is free.** It is the last rate that changes nothing about the edit: the
+same 27 shots, the same 2 scenes dropped as at Azure's default. Past it, shot
+count is `ceil(beatDuration / SHOT_TARGET_S)` and shorter beats buy their speed
+by discarding scenes the narration model deliberately chose — +15% buys only
+1.4s more than +10% and costs two of them.
+
+This supersedes the earlier "+10% and not more" reasoning, which guessed at
+"around +15% that starts biting". The guess was roughly right; this is the
+measurement, and it also gives the method for re-deciding if `SHOT_TARGET_S`,
+`MIN_SHOT_S` or typical line length ever change.
+
+**Still true from the first attempt:** Azure treats the percentage as a rate
+multiplier, so `+10%` is a 9.1% duration cut (measured 6.825s against 6.204s on
+the same line), and the committed voice previews must be regenerated with
+`scripts/generate-voice-previews.ts` or the play button demonstrates a delivery
+the render no longer produces.
+
+## 2026-09-17 — Narration rate raised to +15%, spending two cuts for the pace
+
+**Decision:** `AZURE_NARRATION_RATE = "+15%"`, chosen over the "free" +10% after
+being shown what the extra costs. Measured on the same line: 6.825s at Azure's
+default, 6.204s at +10%, **5.933s at +15%** — a 13.1% cut, exactly `1/1.15`.
+
+**What it costs, from the table in the entry above:** shots over ten real beats
+go from 27 to 25. Two beats hold one scene fewer.
+
+**What it does NOT cost, which is the distinction that made the choice easy:**
+no narration is lost. Every line is still spoken in full — that was the whole
+point of rejecting the line-shortening pass. Raising the rate only reduces how
+many visual cuts a beat can afford, because shot count is
+`ceil(beatDuration / SHOT_TARGET_S)` and the beat is shorter.
+
+**So the trade is picture, not script:** a faster read against slightly longer
+holds per shot. +10% was the last rate that changed nothing about the edit; +15%
+is the first that spends something, and it was judged worth it. +20% was
+available and declined — it buys only 1.3s more than +15% and costs another cut.
+
+**Unchanged:** the previews are committed files and were regenerated again
+(`scripts/generate-voice-previews.ts`), shrinking a further ~4%.
