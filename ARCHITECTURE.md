@@ -161,10 +161,15 @@ its own subtitle track when it has a usable one (`lib/movie-recap-captions.ts`),
 otherwise transcribed with Whisper — then the narration script and narration
 audio through `lib/tts/` (Azure Speech). Each beat's
 measured audio duration sizes its video segment; the padded narration track is
-muxed into the export. A mock render skips every paid step, including TTS, and
+muxed into the export. Which footage each beat cuts between — borrowing unused
+scenes, the cut count, and the hard rule that no source footage plays for more
+than 3s unbroken — is decided in `lib/movie-recap-shots.ts`. A mock render skips every paid step, including TTS, and
 comes out silent. As a final stage the render writes five Burmese hook-title
 options from the narration it just produced (`lib/prompts/movie-recap-hook-title.ts`);
-the Review step lists them and stores the user's pick on the project.
+the Review step lists them and stores the user's pick on the project. Each render
+also returns a per-shot log (slot, source range, held-frame seconds), which the
+Review step keeps per project in the browser's localStorage
+(`lib/movie-recap-render-history.ts`) — it is not stored server-side.
 
 ### Burmese Voice Lab
 

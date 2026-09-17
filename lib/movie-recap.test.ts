@@ -42,7 +42,7 @@ describe("suggestMovieRecapFraming", () => {
 });
 
 describe("pickShotSpeed", () => {
-  const speeds = [0.94, 0.96, 1.05, 1.07];
+  const speeds = [0.96, 0.97, 1.04, 1.07];
 
   it("never returns original speed", () => {
     for (let beat = 0; beat < 12; beat++) {

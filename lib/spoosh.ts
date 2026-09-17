@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 
 export type ApiSchema = {
@@ -97,7 +97,10 @@ export type ApiSchema = {
   "movie-recaps/:id/render": {
     // mock: skip the paid AI steps (Whisper + narration) and render canned
     // narration instead — for iterating on overlay/subtitle design.
-    POST: { data: MovieRecapProject; body: { mock?: boolean } };
+    // `renderLog` is how every shot actually came out. It rides on the response
+    // instead of being stored: the browser keeps a per-project history of it in
+    // localStorage. Null when the render failed.
+    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean } };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

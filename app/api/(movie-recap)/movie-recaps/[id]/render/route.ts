@@ -24,9 +24,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
   // its own status/result onto the row rather than throwing.
-  await runMovieRecapRender(db, project, { mock });
+  const renderLog = await runMovieRecapRender(db, project, { mock });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });
-  return NextResponse.json(mapMovieRecapProject(data));
+  // `renderLog` rides along with the project rather than being stored: it is a
+  // per-generation record the browser keeps in localStorage, not project data.
+  return NextResponse.json({ ...mapMovieRecapProject(data), renderLog });
 }

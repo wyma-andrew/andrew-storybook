@@ -24,10 +24,12 @@ import {
 import { copyText } from "@/lib/copy";
 import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
+import { appendRenderHistory } from "@/lib/movie-recap-render-history";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
+import MovieRecapRenderHistory from "./MovieRecapRenderHistory";
 import { MovieRecapSource } from "./MovieRecapSource";
 
 const STEP_NAMES = ["Add Source", "Project Settings", "Customize Video", "Review"];
@@ -227,6 +229,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       return;
     }
     setProject(result.data);
+    // The shot log is not stored server-side, so it has to be kept now or lost:
+    // this response is the only time the browser ever sees it.
+    if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
     if (result.data.renderStatus === "done") toast.success(mock ? "Mock preview rendered — no AI calls were made." : "Preview rendered (video only, narration audio not synthesized yet).");
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
   }
@@ -610,6 +615,8 @@ function Review({
       </div>
       {project.renderStatus === "done" && project.renderOutputUrl && <MovieRecapRenderPlayer project={project} />}
     </div>
+
+    <MovieRecapRenderHistory projectId={project.id} />
 
     {project.hookTitles.length > 0 && (
       <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">

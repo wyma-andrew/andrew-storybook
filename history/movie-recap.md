@@ -2291,3 +2291,480 @@ available and declined — it buys only 1.3s more than +15% and costs another cu
 
 **Unchanged:** the previews are committed files and were regenerated again
 (`scripts/generate-voice-previews.ts`), shrinking a further ~4%.
+
+## 2026-09-17 — Hard rule: no source footage on screen for more than 3.0s
+
+**Requirement, stated by the user as non-negotiable:** no source clip may appear
+for more than 3.0 seconds continuously in the final recap. The pacing targets
+(`SHOT_TARGET_S` 1.4, `MIN_SHOT_S` 1.0, `MAX_SHOT_S` 2.4) are explicitly NOT the
+lever and are unchanged — so the measured `+15%` narration-rate table in the
+entry above still stands.
+
+**The old planner had a target, not a rule, and two things got past it:**
+
+1. **Supply ran out.** `planBeatShots` capped its count at `shots.length`, and
+   the borrowing pass topped a beat up only while `spareScenes` had entries. An
+   empty pool meant one scene carried the whole beat — the previous tests
+   asserted a 6s and a 7s hold as correct behaviour.
+2. **Source-contiguous shots played back to back**, which no per-shot cap can
+   see. Borrowing took the spare NEAREST in time, which is usually the
+   immediately adjacent scene; shots then sort chronologically, so scene A
+   played to its end and scene B started exactly there. Two "cuts", one
+   unbroken run of footage. The user confirmed this counts as continuous.
+
+**Decision: `MAX_CONTINUOUS_SOURCE_S = 3` is an invariant on a RUN of shots**, not
+on one shot, and it lives with the planner in the new `lib/movie-recap-shots.ts`
+(extracted from the render, which is why `movie-recap-shots.test.ts` had that
+name already). Enforced in three places:
+
+- **Borrowing prefers a non-adjacent spare.** Nearest-in-time still decides, but
+  a spare that butts up against footage the beat already holds is skipped while
+  a non-touching one exists.
+- **Cut count is floored** at `ceil(targetS / MAX_CONTINUOUS_SOURCE_S)`.
+  `MIN_SHOT_S` never fights it: `floor(t/1) >= ceil(t/3)` for every `t >= 1`.
+- **A continuous run is pulled apart** by moving a window INSIDE its own scene —
+  start the later shot further in, or end the earlier one sooner — never by
+  reordering. This preserves "cuts play in the order they happen in the film"
+  (2026-09-16), which was the alternative and was rejected again here.
+
+**Continuity is measured on played source, not on the slot.** A trimmed shot
+shows less of its scene than the slot suggests, a freeze-padded or speed-ramped
+one shows all of it, and the copyright-free transform takes `slot * speed`.
+`playedSourceSeconds()` mirrors the render's four ffmpeg branches, and
+`SPEED_RAMP_MIN/MAX` moved into the planner so the two cannot disagree. Getting
+this wrong in either direction is invisible: too strict and it cuts footage
+apart that already had a jump in it; too loose and the invariant silently fails.
+It is also why the planner takes the speed callback rather than assuming 1.0.
+
+**Supersedes:** *"If the pool is empty the hold stands: repeating footage inside
+one beat looks worse than a long shot"* (2026-09-16). The hold no longer stands.
+But the reason it was written still holds, so the fallback is NOT reuse:
+
+**Fallback is sub-splitting one scene into non-contiguous windows.** A scene of
+length D yields k windows of one slot each, spread evenly with at least
+`MIN_JUMP_S` (0.5s) skipped between them — different footage each time, so
+nothing is shown twice, and it reads as a jump cut rather than a hold. Reusing a
+scene from elsewhere in the film was offered and declined for the recorded
+reason.
+
+**When it is arithmetically impossible** — one short scene under a long line,
+nothing to borrow, nothing long enough to split — the plan carries a `warning`
+and the render logs it per beat. It does not pretend. Measured over a 540-case
+grid this is ~5% of synthetic combinations and all of them are 1-second scenes;
+with `detectScenes` keeping up to 300 scenes and a recap using ~30, it should not
+occur on a real source.
+
+**Consequence a future reader will mistake for a bug:** breaking a run by ending
+the earlier shot sooner shortens its window below its slot, so that shot gains
+freeze-padding it did not have before. That is deliberate — the freeze is bounded
+by the slot, which is bounded by 3s, and a held frame with a cut after it beats
+an unbroken 4s of source.
+
+## 2026-09-17 — Speed set narrowed to 0.96-1.07, and the dead zone widened to +-3%
+
+**Decision:** `MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds` is `[0.96, 0.97, 1.04, 1.07]`,
+was `[0.94, 0.96, 1.05, 1.07]`. The rule it serves is unchanged and is the point
+of the whole list: **no shot ever plays at the source's own speed** (2026-09-16,
+"Speed is an input").
+
+**Why narrower:** 0.94 is a 6% slowdown, which is the most visible value in the
+old set and the one most likely to read as a slow-motion shot rather than as
+nothing in particular. The range now sits inside 0.96-1.07 — still nowhere near
+1.0, still invisible per shot.
+
+**Why not 0.98, which was proposed:** it is inside the dead zone. 2% at 30fps is
+under one frame of drift a second, so it is "not 1.0" on paper and untouched in
+the picture — it spends a slot in the list without doing the job the list exists
+for. The dead zone is recorded as +-3% now rather than +-2% for the same reason,
+so the next edit does not re-argue it.
+
+**Unchanged:** `pickShotSpeed()` and its hashing, the +-7% outer bound, and the
+reasoning for both. This is a values change, not a behaviour one.
+
+**Consequence:** speed decides how much source a shot consumes
+(`slot * speed`), so it also feeds the continuity check in
+`lib/movie-recap-shots.ts`. Narrowing the set slightly reduces how far a shot
+runs into the footage after it. Nothing to tune — the planner reads the same
+constant.
+
+## 2026-09-17 — A shot plays the moment its scene was DESCRIBED from, not the head
+
+**Problem, reported off a render:** "main part is cut out" — the shot is the
+right scene but the wrong moment of it. The action the line is about happens
+after what is on screen.
+
+**Cause, and it predates the 3s work:** the render's trim branch took the HEAD of
+a scene — `-to sourceStartS + slot`. Scene detection keeps scenes of at least 2s
+and many run much longer, so a 6s scene under a 1.4s slot showed 0-1.4s. But
+`extractKeyframes()` takes each scene's representative frame **a third of the way
+in**, the vision pass describes THAT frame, and the narration model picks the
+scene from that description. The pipeline was choosing scenes by one moment and
+playing a different one.
+
+**Decision:** the planner narrows each scene to the piece that will actually play
+(`focusWindow()`), centred on the described moment and clamped inside the scene.
+Everything downstream — the continuity check and all four ffmpeg branches — works
+on that piece. `KEYFRAME_FRACTION` in the planner and the `/ 3` in
+`lib/movie-recap-scenes.ts` are the same number and have to move together; a
+comment on each says so.
+
+**Consequences a future reader would otherwise read as bugs:**
+- A window is now usually exactly its slot long, so `ratio` is 1 and the render
+  takes the speed-ramp branch with `setpts=PTS*1.0000` where it used to trim.
+  Same output.
+- The "extreme duration mismatch" warning effectively only fires now for a scene
+  SHORTER than its slot. The long-scene half of it was the case this fixed.
+- Breaking a continuous run now prefers SLIDING a window inside its scene (it is
+  only a slot-sized view of a longer scene, so sliding costs nothing) over
+  shortening one, which was the previous first move.
+
+**Bug caught while writing this, worth keeping:** a run's length is counted in
+SCREEN seconds, not source seconds. A scene shorter than its slot is
+freeze-padded, so 1s of source can occupy 1.7s of recap — two adjacent 1s scenes
+are 3.4s of unbroken footage, not 2s. Counting source seconds silently let that
+through, and the property test caught it on exactly that case.
+
+## 2026-09-17 — Shots land in a 1.5-2.5s band: MIN_SHOT_S 1.5, SHOT_TARGET_S 2.0
+
+**Measured, on the export the complaint came from** (19.7s, 720x1280, detected
+with `detect-adaptive --min-scene-len 0.3s`):
+
+```
+20 shots, mean 0.98s, max 1.27s, nothing over 3s
+[0.97, 0.97, 1.27, 1.03, 1.0, 1.0, 1.13, 1.13, 0.93, 1.17,
+ 1.0, 1.0, 1.17, 1.27, 1.23, 0.83, 0.3, 1.17, 0.93, 0.2]
+```
+
+So the file never had a hold problem — it had the opposite one. Almost every
+shot sat on the `MIN_SHOT_S` floor, and an action or a line of dialogue does not
+land in one second. (The 0.3 and 0.2 entries are cuts inside the source that
+detection missed, per 2026-09-16 — not ours.)
+
+**Cause of the clustering at 1.0s:** `shotCount = ceil(targetS / SHOT_TARGET_S)`
+clamped by `floor(targetS / MIN_SHOT_S)`. At 1.4 and 1.0 the ceiling almost
+always asked for one more cut than the beat could pay for, so the floor decided
+the length and every beat came out at 1.0s.
+
+**Decision, user's call:** `MIN_SHOT_S` 1.0 -> **1.5**, `SHOT_TARGET_S` 1.4 ->
+**2.0**. Every beat length now lands in 1.5-2.5s:
+
+| beat | shots | slot | | beat | shots | slot |
+|------|-------|------|-|------|-------|------|
+| 2.0s | 1 | 2.00s | | 4.5s | 3 | 1.50s |
+| 2.5s | 1 | 2.50s | | 5.0s | 3 | 1.67s |
+| 3.0s | 2 | 1.50s | | 6.0s | 3 | 2.00s |
+| 3.5s | 2 | 1.75s | | 7.0s | 4 | 1.75s |
+| 4.0s | 2 | 2.00s | | 9.0s | 5 | 1.80s |
+
+**`MAX_SHOT_S` (2.4) is unchanged and is now only a borrowing target.** With the
+floor at 1.5 it no longer binds the slot — a 2.5s beat gets one 2.5s shot,
+because `floor(2.5 / 1.5) = 1`. The cap that actually binds is
+`MAX_CONTINUOUS_SOURCE_S`, and the test that used to assert 2.4 now asserts 3.0.
+
+**Supersedes** the 2026-09-16 "Left at 1.0s" reasoning. That entry was answering
+"raise the minimum to 0.8 because the output has sub-second cuts" and was right
+that the floor was not the cause of those. It did not consider raising the floor
+to make shots longer, which is what was actually wanted.
+
+**Invalidates the +15% narration-rate table** (2026-09-17, two entries up). That
+table measured how many shots each rate costs, and its own text says to re-run it
+if `SHOT_TARGET_S` or `MIN_SHOT_S` change — both did. The rate is left at +15%:
+its trade was about narration delivery, not about cut count, and shot count is
+now set by this band rather than by how long the speech runs. Re-measure before
+moving the rate again.
+
+**Consequence:** fewer shots per beat, so more of the scenes the narration model
+picked get dropped (they are dropped from the END of the beat, chronologically).
+That is the price of the longer hold and was accepted knowingly.
+
+## 2026-09-17 — A shot never plays across one of the film's own cuts
+
+**Measured, on the export rendered with the 1.5-2.5s band in place** (20.57s):
+detection found **21 cuts in a video the planner cut 11 times**. Merging the
+detections back up to the 1.5s floor recovers the planner's own structure
+exactly — `1.64, 1.63, 1.70, 1.70, 1.80, 1.80, 2.07, 2.07, 2.70, 1.83, 1.63` —
+so the band was working. The other ~10 cuts came from the source: nearly half the
+shots contained an edit from the original film, and a planned 1.7s hold arrived
+as two pieces of ~0.85s. That is what still read as "too fast, the action is cut
+out" after the pacing change.
+
+**Cause:** `detectScenes` asked PySceneDetect for `--min-scene-len 2s` and
+`condense()` merged anything shorter into the preceding scene. Both were right
+for the CONSUMER of that list — one keyframe and one vision description per
+scene, and a recap beat is never half a second long — but the merge threw the
+cut list away, and the shot planner was handed 2s+ "scenes" that were not
+unbroken footage.
+
+**Decision: detect fine, merge for the model, keep the cuts for the planner.**
+`detectScenes` now runs at `RAW_MIN_SCENE_S` (0.8s) and returns
+`{ scenes, cuts }`: `scenes` is the same merged, `MAX_SCENES`-capped list the
+vision pass and the narration model always got, and `cuts` is every boundary
+detection found. Nothing about the scene list's shape changed — only that the
+information thrown away is now also returned.
+
+**`focusWindow()` splits its scene into uncut runs and plays inside ONE of them.**
+It prefers the run holding the described frame — the same `/ 3` point
+`extractKeyframes` samples, so the shot shows the moment the scene was chosen
+for — and otherwise the nearest run long enough for the slot. The run is also
+what `breakContinuity` may slide the window within, so opening a gap cannot push
+a shot across a cut either.
+
+**When no run is long enough, the shot plays across a cut anyway.** The
+alternative was a shorter window freeze-padded out to its slot, and an original
+edit inside a shot still looks like film while a held frame looks like a bug.
+The described moment wins in that case.
+
+**Not done:** `subSplit()` (the dry-spare-pool fallback) still ignores cuts, so
+its sub-windows can straddle one. It is the rare path and its windows are short;
+worth fixing if that path ever becomes common.
+
+**How to re-measure this**, since the number only shows up in the finished file:
+
+```bash
+.venv-scenedetect/bin/scenedetect -i recap.mp4 -o /tmp/check \
+  detect-adaptive --min-scene-len 0.3s list-scenes -f cuts.csv
+```
+
+Detected cuts materially above what the render logged (`beat=N ... -> K shot(s)`)
+means source edits are leaking into shots again.
+
+## 2026-09-17 — A shot lands on its liveliest second, and what "freeze" turned out to be
+
+**False alarm first, because the method matters.** A render was reported as
+freezing at 0:10 and 0:11. Measuring duplicate frames on a 64x48 greyscale
+downscale found 9 frozen spans totalling 6.17s — 29% of the file. **All of it was
+an artefact.** At 240x180 the same file has **zero** duplicate frames: no
+`tpad` freeze-padding happened at all. A coarse downscale turns near-static
+FOOTAGE into identical bytes. Measure freezes at 240x180 or finer, and treat a
+scattering of single duplicate frames as the `fps=30` resample of 24fps source,
+which is what it is.
+
+**What was actually wrong:** motion, not freezing. Per-shot mean frame difference
+on that export ran 10.6 and 12.1 for the opening two shots and 2.1-3.9 for the
+rest. A 1.8s shot at a third of the opening's motion reads as frozen next to it.
+The scenes were not static throughout — the window had simply been centred on the
+described moment, which landed on a dead stretch of an otherwise moving scene.
+
+**Decision:** the planner places a shot on the liveliest window inside its uncut
+run. `focusWindow()` scores every candidate start on mean motion relative to the
+RUN's own average, minus `MOTION_DRIFT_PENALTY` (0.15) per second of drift from
+the described moment. Relative, so a quiet scene uses its own best second rather
+than being written off against a loud one; penalised, so a marginal gain a long
+way off is not worth leaving the described action for.
+
+**The motion track is free.** PySceneDetect already decodes every frame to find
+cuts; `-s stats.csv` makes it write the per-frame `content_val` it computed on
+the way, and `parseMotionCsv()` averages that into 0.25s buckets. A separate
+ffmpeg pass would have meant decoding a feature film a second time. It fails
+soft: no stats file means no motion-aware framing, not a failed render, and the
+scene log says `(no motion track)` when that happens.
+
+**Order of authority, unchanged by this:** the uncut run is chosen first (by the
+described moment, see the entry above), and motion only decides where to sit
+INSIDE it. Motion can never pull a shot across one of the film's own cuts.
+
+**Rejected:** shortening the slot for low-motion shots. It would have fought the
+1.5-2.5s band chosen the same day, and the problem was where the window sat, not
+how long it was.
+
+## 2026-09-17 — Motion picks which scene, not just where inside it
+
+**Correction to the entry above, and to how these files get measured.** The
+"freeze" reports were real observations with three wrong diagnoses in a row:
+
+- 64x48 greyscale, exact-duplicate test: 9 spans, 6.17s. Artefact.
+- 240x180, exact-duplicate test: zero spans. Also wrong — `tpad` clones go
+  through libx264 and do not decode back byte-identical, so an exact test misses
+  real padding.
+- 240x180 with a threshold: 9 spans, 7.47s, and the SAME answer at thresholds
+  from 0.05 to 0.6. Still an artefact.
+
+**The test that actually distinguishes them is full-resolution mean frame
+difference.** Inside those spans it reads 2.4-5.8 against 9.6 for moving
+footage; a real `tpad` clone reads ~0 even at full resolution. Downscaling
+averages low-motion detail away, so slow footage and frozen footage become the
+same number. **Do not measure freezing on a downscale.**
+
+So nothing was being freeze-padded. The shots carried 25-60% of the opening's
+motion and were held for a full 1.5-2s slot, which is what "not moving, then it
+switches" was.
+
+**Decision, two changes, both using the motion track:**
+
+- **Borrowing picks the liveliest of the nearest spares.** The nearest
+  `BORROW_CANDIDATES` (6) are taken by proximity — borrowed footage still has to
+  belong to this stretch of the film (2026-09-16) — and motion only chooses
+  between those. A lively scene an hour away can never be pulled in, and there
+  is a test for that.
+- **A beat that cannot afford all its scenes drops the deadest**, not the last
+  one. `slice(0, shotCount)` dropped chronologically from the end, which meant
+  the beat always lost the end of its own line — usually the payoff.
+
+**Why this and not window placement alone:** the previous entry moves the window
+to the liveliest second INSIDE a scene, which cannot help when the whole scene is
+static. Choosing the scene is the lever that can.
+
+**Not done, offered and declined for now:** rejecting a scene outright when its
+motion falls below a fraction of the film's average. It is the strongest version
+of this and also the one that can silently discard a scene the narration is
+about.
+
+**Both fail soft:** with no motion track (a mock render, or an unreadable stats
+file) borrowing is nearest-first and dropping is last-first, exactly as before.
+
+## 2026-09-17 — Bug fixed: motion-aware placement was hunting for cuts
+
+**Reported:** "the freeze on shot is still happening, and the video got longer —
+the worst generation since all the changes". Measured on that export (36.17s):
+
+- **No freezing.** Zero clone frames at full resolution, and per-shot motion ran
+  2.7-17.2 with one shot under 3.0. Nothing static enough to explain it.
+- **Length is narration, not planning.** Beats are sized by measured TTS and the
+  model writes a fresh script every render; 36.17s against the previous 20.97s is
+  script variance. Nothing in the planner changes total length.
+- **Source-cut leakage roughly tripled**: ~11 film cuts inside shots, against ~4
+  the render before. That one was real, and mine.
+
+**Cause:** the motion track is PySceneDetect's `content_val` — the metric it
+THRESHOLDS TO FIND CUTS. It peaks hardest exactly at an edit. Inside a clean
+uncut run that is harmless, but on the fallback path, where `room` is a whole
+scene because no run was long enough, the candidate search could see cuts and was
+drawn straight onto them. The scorer was rewarding the thing the rest of the
+module exists to avoid.
+
+**Fix, two parts:**
+- `motionMean()` skips any bucket containing a cut. A cut is not movement.
+- A candidate window pays `CUT_PENALTY` per cut inside it, so a cut-free
+  placement always wins; when none is cut-free the penalty is what makes the
+  search take the placement with the FEWEST cuts rather than the loudest one.
+
+**Worth keeping in mind for any future use of this signal:** anything derived
+from a cut detector's own metric carries cut spikes, and they will dominate any
+average taken over a span that contains one.
+
+## 2026-09-17 — "Freeze" means the picture holds still, and how to measure that
+
+**What the word meant, after several wrong readings on my part:** not duplicate
+frames, not `tpad` padding — the shot simply does not move. Both are worth being
+able to measure, and they need OPPOSITE methods:
+
+- **Freeze-padding (cloned frames):** full-resolution mean frame difference. A
+  clone reads ~0; slow footage reads 2.4-5.8. Downscaling collapses the two.
+- **"Nothing visibly moves":** DOWNSCALED difference (160x120 or so). Grain and
+  compression noise average away and only gross motion survives. At full
+  resolution grain keeps every frame "different" and hides it.
+
+Measured the reported export both ways: **zero cloned frames, and 11.0s of 36.1s
+(30%) with no visible motion**, in runs up to 1.30s — several whole shots still
+for their entire length. The complaint was right; the first three measurements
+were not.
+
+**`content_val` can see it.** Cross-checked against the pixels on that export:
+stretches the pixels call still read 0.08-3.8, moving ones 5.6-11.5, against a
+film median around 4.2. Well separated, so the signal was fine and the scorer was
+not.
+
+**Cause: the window score was a MEAN.** A window that sat still for 1.5s and
+twitched once for 0.3s scored the same as one that moved throughout. Fixed by
+scoring `movingFraction()` — the share of a window's buckets at or above
+`STILL_FLOOR_FRACTION` (0.8) of the film's median — with mean motion kept at
+`MEAN_MOTION_WEIGHT` (0.25) only to break ties between windows that move for
+equally long.
+
+**Why the floor is relative to the film's own median** rather than absolute: a
+grainy print and a clean one sit at different absolute levels, and an all-quiet
+scene should still get its best second rather than being written off against the
+rest of the film. There is a test for exactly that.
+
+**Still open, and it is the ceiling on all of this:** placement can only move a
+shot WITHIN its scene. When the scene the narration model picked is static end to
+end, nothing here helps — that needs rejecting the scene and swapping in a spare,
+which was offered and declined earlier because it can discard a scene the line is
+about.
+
+## 2026-09-17 — ROOT CAUSE: condense() never guaranteed a scene was long enough
+
+**Symptom, reported precisely enough to find it:** "almost every shot becomes
+frozen just before it switches." That is the signature of `tpad=stop_mode=clone`,
+which pads the TAIL of a shot when its window is shorter than its slot.
+
+**Proof, on the reported export.** The shot at 18.07-19.97 is 58 frames: 18 of
+them move (cumulative difference from the first frame rises 0 -> 16.6), then 39
+frames sit at exactly 16.6 — **1.30s of one held frame** — then the cut. 0.6s of
+footage stretched across a 1.9s slot.
+
+**Root cause, in `condense()`:**
+
+```ts
+if (previous && row.end - previous.start < MIN_SCENE_S) previous.end = row.end;
+```
+
+That measures the span from the PREVIOUS SCENE'S START, not the scene's own
+length, so it never guaranteed what its name and comment claimed. It was
+harmless for as long as detection ran at `--min-scene-len 2s`, because every raw
+row already cleared the bar and the branch never fired. **Lowering
+`RAW_MIN_SCENE_S` to 0.8s for cut-awareness turned a latent bug into a live one**:
+raw rows became 0.8s, and merged scenes came out at 0.8-2.0s. Reproduced from the
+rule alone — raw rows of 0.8s produce scenes of 0.9s, 1.4s and 1.6s.
+
+**Fix:** test the merged scene's own length, and fold a short final scene back
+into the one before it, since nothing follows it to merge in. Every scene is now
+at least `MIN_SCENE_S`.
+
+**Guards added, because this shipped silently:**
+- Borrowing prefers a spare that can fill the slot before motion gets a say.
+- A beat that cannot afford all its scenes drops the ones too short to fill the
+  slot first, whatever their motion — a held frame is worse than a quiet one.
+- `planBeat` totals how much of a beat has no footage behind it and returns a
+  warning, which the render logs per beat.
+
+**How the measurement went wrong four times, and what to trust.** Freezing was
+measured as duplicate frames, first on a 64x48 downscale, then 240x180, then at
+"full resolution" with `crop=iw:ih*0.72` — 1280 * 0.72 = 921.6, ffmpeg emits 921
+or 922 rows, and the reader assumed 920. **Every frame was byte-misaligned, so
+everything looked like motion and the conclusion was "no freezing at all."** Use
+a crop whose height is an exact even integer, or scale to an explicit size, and
+verify the frame count against the duration before believing any of it. The
+`cumulative difference from the first frame of the shot` view is what finally
+made the hold obvious, because a held frame shows as a dead flat line.
+
+## 2026-09-17 — Render history is per-shot, and lives in localStorage
+
+**Want:** a record, per generation, of how long each shot ran and how it compares
+to the original — kept per project, listed under the rendered video, newest
+first, deletable.
+
+**Decision: the browser stores it, not the database.** A table was started and
+stopped at the user's direction. This is a record of how one RUN turned out,
+used to compare against the last one while iterating on settings; it is not
+project data, nobody else needs to read it, and keeping it local means no
+migration, no RLS policy, and no rows to clean up when a project is deleted.
+
+**Consequence, stated because it will surprise someone:** the history is per
+browser. It does not follow the user to another machine and clearing site data
+clears it. Capped at 20 entries per project.
+
+**So the shot log has to ride back on the render response.** `runMovieRecapRender`
+now RETURNS it and the render route sends `{ ...project, renderLog }`. That
+response is the only time the browser ever sees this data — nothing on the row
+holds it, so a missed append is gone for good.
+
+**What each shot records, and why these fields:** `slotS` (time on screen),
+`sourceStartS`/`sourceEndS`/`sourceS` (which part of the original, and how much
+of it), `speed`, `skipS` (source seconds jumped since the previous shot), and
+**`padS` — seconds with no footage behind them, filled by holding a frame.**
+`padS` is the reason the feature is worth having: the bug fixed earlier today
+held a frame for 1.3s at the end of most shots and nothing in the product said
+so. It is red in the table when above 0.1s.
+
+**`useSyncExternalStore`, not an effect.** Reading localStorage into state in a
+`useEffect` is what the lint rule `react-hooks/set-state-in-effect` exists to
+stop, and it would have needed prop-drilling through `Review` as well. The store
+in `lib/movie-recap-render-history.ts` keeps a cache keyed by project id — a
+stable snapshot reference is what stops `getSnapshot` re-rendering forever — and
+publishes to subscribers on append/delete/clear. `getServerSnapshot` returns a
+shared empty array, since the store does not exist on the server.
+
+**Every storage access is wrapped**, because `localStorage` throws in a private
+window and returns nothing with site data blocked. A history that cannot be read
+or written degrades to empty; it must never take a render down with it.

@@ -11,6 +11,41 @@ import type {
   MovieRecapVoiceId,
 } from "@/lib/constants/movie-recap";
 
+/**
+ * One shot as it was actually cut, reported back by a render so the browser can
+ * keep a history of them. NOT stored server-side: the client puts these in
+ * localStorage, because it is a debugging record of how a generation turned out,
+ * not project data (see history/movie-recap.md).
+ */
+export type MovieRecapRenderShot = {
+  /** 1-based, so it reads like the render log. */
+  beat: number;
+  shot: number;
+  /** How long this shot is on screen. */
+  slotS: number;
+  sourceStartS: number;
+  sourceEndS: number;
+  /** Seconds of ORIGINAL footage behind it. */
+  sourceS: number;
+  /** Seconds with no footage behind them — a held frame. Should be 0. */
+  padS: number;
+  /** Copyright-free playback speed, or null when the transform is off. */
+  speed: number | null;
+  /** Source seconds jumped since the previous shot ended. Null for the first. */
+  skipS: number | null;
+};
+
+export type MovieRecapRenderLog = {
+  createdAt: string;
+  mock: boolean;
+  /** Total recap length: the sum of every slot. */
+  durationS: number;
+  beats: number;
+  shots: MovieRecapRenderShot[];
+  /** Total held-frame seconds across the render. */
+  padS: number;
+};
+
 export type MovieRecapProject = {
   id: string;
   name: string;

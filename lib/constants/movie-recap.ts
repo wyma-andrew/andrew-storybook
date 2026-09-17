@@ -147,8 +147,8 @@ export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
   //
   // Kept inside +-7%: `setpts` resamples timestamps rather than frames, so at
   // 30fps a few percent is invisible, while past ~15% motion starts to read as
-  // wrong. The 1.0 +-2% dead zone is skipped — too close to untouched to count.
-  speeds: [0.94, 0.96, 1.05, 1.07] as readonly number[],
+  // wrong. The 1.0 +-3% dead zone is skipped — too close to untouched to count.
+  speeds: [0.96, 0.97, 1.04, 1.07] as readonly number[],
   // Letterbox fill: the same clip scaled to cover, blurred, and sat behind the
   // contained one, so the bars carry moving picture instead of black.
   backfillBlurRadius: 20,
