@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, Film, Upload } from "lucide-react";
 import { toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
@@ -85,10 +85,6 @@ export function MovieRecapSource({
   const [uploading, setUploading] = useState(false);
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  useEffect(() => () => {
-    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
 
   async function begin(file: File) {
     uploadLog("file-selected", {
@@ -249,8 +245,8 @@ export function MovieRecapSource({
       if (file) void begin(file);
     },
   });
-  const source = previewUrl ?? project?.sourceUrl ?? null;
   const ready = project?.sourceUploadStatus === "ready";
+  const source = ready ? previewUrl ?? project?.sourceUrl ?? null : null;
   const details = useMemo(() => project ? [
     ["Filename", project.sourceFileName],
     ["File size", formatBytes(project.sourceSizeBytes)],
@@ -267,6 +263,12 @@ export function MovieRecapSource({
       {source ? (
         <div className="overflow-hidden rounded-xl border border-line bg-sunken">
           <video className="max-h-[520px] w-full bg-sunken" src={source} controls preload="metadata" />
+        </div>
+      ) : project ? (
+        <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-line bg-sunken p-8 text-center">
+          <Film className="mb-3 text-fg-3" size={30} />
+          <p className="mb-1 font-medium">{project.sourceFileName}</p>
+          <p className="text-sm text-fg-3">{uploading ? "The preview appears once the upload finishes." : "This upload did not finish, so there is nothing to play yet."}</p>
         </div>
       ) : (
         <div

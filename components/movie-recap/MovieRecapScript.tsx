@@ -105,7 +105,7 @@ export function MovieRecapScript({
                 "The script above is used as written — no new script is generated. Narration audio is synthesized again for every beat, which costs TTS, and the current video is replaced. Timing follows your words, so the cuts will move.",
               confirmButtonLabel: "Re-render",
               cancelButtonLabel: "Cancel",
-              onConfirm: onReRender,
+              onConfirm: () => { onReRender(); },
             })
           }
         >

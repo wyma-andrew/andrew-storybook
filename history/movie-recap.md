@@ -3308,3 +3308,92 @@ time, a re-render leads with what it overwrites.
 from the button: TTS is re-synthesized for every beat, not just the edited ones,
 and the current video is replaced. The mock stays unconfirmed — it spends
 nothing.
+
+**Trap:** both handlers are written `() => { run(); }` rather than `run`, which
+looks like pointless indirection and is not. GeckoUI keeps the dialog open with
+a loading button for as long as `onConfirm` returns a promise, and the render
+request stays open for the whole pipeline — that would put a modal over the
+progress bar for minutes. The render button does its own loading state, so the
+dialog closes the moment it is confirmed.
+
+## 2026-09-18 — The customize preview's controls move outside the picture
+
+**Superseded:** the note that the native control bar was hidden because it sits
+along the bottom of the frame, exactly where the subtitle renders, leaving a
+corner play/pause badge as all a design preview needs. The badge had the same
+problem in miniature — it was chrome drawn over the thing being designed — and a
+design preview does need to reach a specific moment in the source, which
+play/pause alone cannot do.
+
+**Decision:** the frame holds the picture and the design layers only — video,
+subtitle sample, logo, blur rectangle. Play/pause, a seek slider and a time
+readout sit in a row underneath it, inside the same bordered box. The frame is
+wrapped in a shrink-to-fit column so the control row is exactly as wide as the
+frame: narrow under 9:16, 620px under 16:9.
+
+**Rejected: a player library** (Plyr, Video.js, Vidstack). They wrap the video in
+a container they own and draw their chrome inside it, which is the one place
+nothing may be drawn here — and the CSS transform and filter that mirror the
+ffmpeg chain have to stay on the video element itself, under three overlay
+layers. Stripping their UI and pulling the scrubber out of their container is
+more work than the state this needs. `media-chrome` is the one that would fit if
+richer playback is ever wanted, since its parts can be composed outside the
+picture; the finished-render player in step 4 is where it would earn its keep.
+
+**Trap:** `timeupdate` fights the slider while it is being dragged. A ref
+suppresses the update between pointer down and pointer up, so the thumb follows
+the pointer rather than snapping back to where playback has reached.
+
+## 2026-09-18 — The source preview waits for the upload to finish
+
+**Decision:** step 1 plays the video only when `sourceUploadStatus` is `ready`.
+While an upload is running, or after one that did not finish, the panel shows the
+filename and says why there is nothing to play.
+
+**Why:** it used to play the local blob the moment a file was chosen, which reads
+as "done" while a multi-gigabyte multipart upload is still climbing. The progress
+bar underneath said otherwise, and the picture won.
+
+**The blob is still what plays.** It is preferred over the R2 URL once the upload
+is ready, so the preview is instant and costs no download. Only the moment it
+appears changed.
+
+**Consequence:** reopening a project whose upload was interrupted shows the
+placeholder rather than a player, next to the existing "Reselect the same local
+file to continue this upload" prompt. That is the honest state — R2 holds parts,
+not a playable object.
+
+**Bug fixed with it (2026-09-18):** step 3 showed a black frame until the page
+was reloaded. `MovieRecapSource` revoked the local blob URL on its own unmount,
+which is exactly when step 1 is left — so the URL it had just handed up to the
+wizard was dead before step 3 rendered it. A reload cleared the wizard's copy,
+fell back to the R2 URL, and the picture came back, which is what made it look
+like a loading problem rather than a lifetime one. The wizard owns the URL now
+and revokes it when it is replaced or when the wizard itself unmounts.
+
+## 2026-09-18 — Deleting a project deletes everything under its prefix
+
+**Bug:** deleting a project removed the source object and the logo, and left
+everything the renders had written. The finished video, its subtitles, the
+analysis blob, and — worse — every SUPERSEDED render output, since each render
+writes a new UUID key and only re-points the row. A project rendered ten times
+left ten videos in the bucket, nine of them already unreachable before the
+delete.
+
+**Cause:** the cleanup deleted the keys the ROW holds. Most of a project's
+objects are not in any column.
+
+**Fix:** delete by prefix. Every object a project can own lives under
+`movie-recaps/<id>/`, so `deletePrefix()` lists and removes the lot, paginated,
+and cannot miss a kind of object added later — a new `kind` in
+`movieRecapObjectKey` is cleaned up without touching this code.
+
+**Order is unchanged and deliberate:** storage first, row second. A storage
+failure returns 502 with the row intact, so the project can be deleted again.
+The reverse would drop the row and strand the files with nothing left pointing
+at them.
+
+**Not fixed here:** a render still leaves its predecessor in the bucket while the
+project lives. Deleting the old output on each successful render is the obvious
+follow-up and is the real cost driver now that re-rendering from an edited
+script is cheap.

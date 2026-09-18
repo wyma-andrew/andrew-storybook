@@ -7,7 +7,7 @@ import {
   isMovieRecapSubtitlePosition,
   isMovieRecapSubtitlePreset,
 } from "@/lib/constants/movie-recap";
-import { abortMultipartUpload, deleteObject } from "@/lib/r2";
+import { abortMultipartUpload, deletePrefix, movieRecapProjectPrefix } from "@/lib/r2";
 import { getVoice } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
 import type { MovieRecapNarrationSegment } from "@/lib/api/types";
@@ -171,8 +171,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
   try {
     if (project.source_upload_id) await abortMultipartUpload(project.source_object_key, project.source_upload_id);
-    if (project.source_url) await deleteObject(project.source_object_key);
-    if (project.logo_object_key) await deleteObject(project.logo_object_key);
+    // Everything under the project's prefix, not the keys the row happens to
+    // hold: every superseded render output and its subtitles are objects no
+    // column tracks, and deleting key by key leaks exactly those.
+    await deletePrefix(movieRecapProjectPrefix(id));
   } catch (storageError) {
     return NextResponse.json({ error: storageError instanceof Error ? storageError.message : "Could not remove stored files." }, { status: 502 });
   }

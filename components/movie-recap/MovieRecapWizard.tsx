@@ -134,6 +134,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const step = Math.min(requestedStep, maxStep) as StepNumber;
   const setStep = (target: StepNumber) => setStepSlug(STEP_SLUGS[target - 1]);
   const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
+  // Owned here, not in MovieRecapSource: that component unmounts when step 1 is
+  // left, and revoking on its unmount killed the URL step 3 had just been handed.
+  useEffect(() => () => {
+    if (localVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(localVideoUrl);
+  }, [localVideoUrl]);
   const [logoBusy, setLogoBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   // The voice id whose preview is currently playing, or is being synthesized.
@@ -537,7 +542,11 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
       : "This runs the full pipeline: scene detection, the vision pass, transcription, the narration script, narration audio and the video. It costs AI usage and takes several minutes.",
     confirmButtonLabel: "Render",
     cancelButtonLabel: "Cancel",
-    onConfirm: run,
+    // Swallow the promise on purpose. Handing it to ConfirmDialog holds the
+    // dialog open until it resolves, and the render request stays open for the
+    // whole pipeline — minutes behind a modal, with the progress it should be
+    // watching underneath it.
+    onConfirm: () => { run(); },
   });
 }
 

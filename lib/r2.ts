@@ -3,7 +3,9 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -93,8 +95,12 @@ function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
 }
 
+export function movieRecapProjectPrefix(projectId: string) {
+  return `movie-recaps/${projectId}/`;
+}
+
 export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
-  return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+  return `${movieRecapProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
 function splitName(basename: string) {
@@ -142,6 +148,26 @@ export function presignPut(objectKey: string, contentType: string) {
     new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, ContentType: contentType }),
     { expiresIn: 900 }
   );
+}
+
+// Deletes everything under a prefix, not a list of keys held in columns. A
+// project accumulates objects nothing tracks — every superseded render output,
+// its subtitles — and a key-by-key cleanup leaks exactly those.
+export async function deletePrefix(prefix: string) {
+  let token: string | undefined;
+  let deleted = 0;
+  do {
+    const listed = await r2().send(
+      new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token })
+    );
+    const keys = (listed.Contents ?? []).map((object) => object.Key).filter((key): key is string => !!key);
+    if (keys.length) {
+      await r2().send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys.map((Key) => ({ Key })) } }));
+      deleted += keys.length;
+    }
+    token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (token);
+  return deleted;
 }
 
 export async function deleteObject(objectKey: string) {

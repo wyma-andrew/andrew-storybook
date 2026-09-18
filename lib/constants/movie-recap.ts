@@ -327,7 +327,7 @@ export const MOVIE_RECAP_LOGO_BOX = { widthPct: 18, heightPct: 12, marginPct: 4 
 // The stand-in caption the step-3 preview draws. It is also the mock render's
 // first line, so a mock render puts the EXACT same words on screen as the
 // preview — the only honest way to compare the two designs.
-export const MOVIE_RECAP_SUBTITLE_SAMPLE = "ဒီဇာတ်လမ်းရဲ့ စာတန်းထိုးက ဒီနေရာမှာ ပေါ်ပါမယ်။";
+export const MOVIE_RECAP_SUBTITLE_SAMPLE = "စာတန်းထိုးဒီနေရာမှာပေါ်ပါမယ်";
 
 // Canned narration for the mock render: no Whisper, no GPT, no API spend —
 // used to iterate on overlay/subtitle design without paying per attempt. Each
