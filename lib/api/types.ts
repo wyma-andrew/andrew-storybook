@@ -1,3 +1,4 @@
+import type { UserFeatures } from "@/lib/constants/features";
 import type { Region } from "@/lib/constants/regions";
 import type { ShotScale } from "@/lib/constants/shot-scales";
 import type { MotionMode } from "@/lib/constants/motion-styles";
@@ -344,4 +345,14 @@ export type Me = {
   id: string;
   email: string;
   isAdmin: boolean;
+  features: UserFeatures;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  isAdmin: boolean;
+  createdAt: string;
+  lastSignInAt: string | null;
+  features: UserFeatures;
 };

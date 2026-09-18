@@ -3,32 +3,45 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Beaker, BookOpen, Clapperboard, Menu } from "lucide-react";
+import { Beaker, BookOpen, Clapperboard, Menu, Shield } from "lucide-react";
 import { Drawer } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { AccountMenu } from "@/components/AccountMenu";
 import { useMobileNav } from "@/components/MobileNav";
+import { useRead } from "@/lib/spoosh";
+import type { FeatureKey } from "@/lib/constants/features";
 
 // `hidden` keeps an unfinished feature out of the nav without deleting its
 // entry — the route still works if you type it, so it can be worked on and
 // shared by URL. Flip the flag to put it back.
+//
+// `feature` ties an entry to the per-user access flag that gates it. An entry
+// the account cannot use is left out entirely rather than shown disabled —
+// nothing about it is actionable, and the route redirects anyway.
 const NAV_ITEMS = [
-  { href: "/stories", label: "Stories", icon: BookOpen, hidden: false },
-  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false },
-  { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: false },
-] as const;
+  { href: "/stories", label: "Stories", icon: BookOpen, hidden: false, feature: "stories" },
+  { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false, feature: "movie_recap" },
+  { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: false, feature: "voice_lab" },
+] as const satisfies readonly { href: string; label: string; icon: typeof BookOpen; hidden: boolean; feature: FeatureKey }[];
 
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
+
+const ADMIN_ITEM = { href: "/admin", label: "Admin", icon: Shield } as const;
 
 const STORAGE_KEY = "sidebar-collapsed";
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { data: me } = useRead((api) => api("auth/me").GET());
+  const items = [
+    ...VISIBLE_NAV_ITEMS.filter((item) => me?.features[item.feature]),
+    ...(me?.isAdmin ? [ADMIN_ITEM] : []),
+  ];
 
   return (
     <>
-      {VISIBLE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+      {items.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link

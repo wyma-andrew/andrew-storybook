@@ -35,6 +35,7 @@ defaults at story level and can be overridden by a chapter.
 app/
   api/                         Next Route Handlers; browser data boundary
     auth/                      Email/password session operations
+    admin/users/               Admin-only: list/create accounts, set feature flags, delete
     (story)/stories/           Story list, detail, trash, bible, chapters (URL: /api/stories)
     (story)/stories/:id/export  One story as a portable JSON bundle
     (story)/stories/import      Rebuilds a bundle as a new story owned by the caller
@@ -55,6 +56,8 @@ app/
     (movie-recap)/
       movie-recap/             Recap project list + four-step editor (URL: /movie-recap)
     account/                   Email display and password change
+    admin/                     User manager: accounts and per-user feature access
+    no-access/                 Shown when a feature is not enabled for the account
     labs/voice/                Burmese narration generation test bench
     settings/                  Read-only styles and system prompts
   sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
@@ -115,6 +118,24 @@ rows therefore generally surface as not found or database errors.
 `proxy.ts` refreshes the Supabase session on every request. Signed-out page
 requests redirect to `/sign-in`; `/api/*` remains reachable so handlers can
 return normal API authentication errors.
+
+### Feature access
+
+Stories, Movie Recap, and Voice Lab are granted per user. The flags live on
+`profiles` (one row per auth user, created by trigger) and are enforced by the
+`has_feature()` SQL function, applied as a restrictive policy on every gated
+table — `movie_recap_projects`, and `stories` with each story-scoped child.
+`requireFeature()` in `lib/api/auth-guard.ts` adds a 403 that names the feature,
+and is the only boundary for Voice Lab, which owns no table. A
+`layout.tsx` per feature route group redirects to `/no-access`, and the sidebar
+lists only the features the account has.
+
+The admin routes under `app/api/admin/` are the one place that touches other
+users' rows: they use `supabaseAdmin()` and are gated by `requireAdmin()` in
+application code, against `profiles.is_admin` — with the `ADMIN_EMAILS` env
+allowlist kept as break-glass, so the last admin cannot be locked out. Nothing
+is granted by default, including to accounts that predate the feature — see
+`history/admin-users.md`.
 
 ### API to AI
 
@@ -338,6 +359,7 @@ exterior presets from `space_kind`.
 
 ```text
 auth.users
+  -> profiles.id (1:1, per-user feature access)
   -> stories.owner_id
        -> chapters.story_id
             -> chapter_assets.chapter_id
@@ -357,6 +379,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 
 | Table | Responsibility |
 |---|---|
+| `profiles` | Mirrored email, admin flag, and one feature-access boolean per gated feature |
 | `stories` | Ownership, title, description, style slug, motion style slug, region, aspect, soft delete |
 | `chapters` | Episode order, Tiptap script, workflow status, aspect override, storyboard site map |
 | `chapter_assets` | Chapter-local extracted asset and bible match state |
@@ -398,6 +421,12 @@ Movie Recap phase one is implemented as owner-scoped projects with resumable
 R2 source upload, playable preview, persisted settings/customization, and a
 ready-for-generation handoff. Recap processing and output are not implemented.
 
+Accounts are created and deleted by an administrator at `/admin`, which also
+grants each account its Stories, Movie Recap, and Voice Lab access; deleting an
+account removes its R2 objects before the account itself. Admin is
+`profiles.is_admin`, granted from the same page; `ADMIN_EMAILS` remains as a
+break-glass override.
+
 Current intentional limits: no OAuth, magic link, password-reset flow,
 database style editor, or character/prop reference images. Uploaded chapter
 images go to Cloudflare R2 (presigned PUT straight from the browser); the
@@ -419,6 +448,7 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Shot prompts holding the location reference | `history/shot-location-consistency.md` |
 | Chapter image gallery and R2 uploads | `history/chapter-images.md` |
 | Movie Recap phase-one projects and uploads | `history/movie-recap.md` |
+| Per-user feature access and the admin user manager | `history/admin-users.md` |
 | Story export/import bundle format | `history/story-transfer.md` |
 | Burmese self-hosted narration experiments | `history/voice-lab.md` |
 | Light/dark theming and color tokens | `history/theming.md` |

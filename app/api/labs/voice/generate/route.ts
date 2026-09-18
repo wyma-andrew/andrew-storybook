@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/api/auth-guard";
+import { requireFeature } from "@/lib/api/auth-guard";
 import { getVoiceLabProfile, validateVoiceLabText } from "@/lib/voice-lab";
 import { synthesize, TtsError } from "@/lib/tts/synthesize";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
-  const { unauthorized } = await requireUser();
+  const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
   const body = await request.json().catch(() => null);

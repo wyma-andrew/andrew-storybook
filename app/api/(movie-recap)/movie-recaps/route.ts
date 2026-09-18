@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/lib/api/auth-guard";
+import { requireFeature } from "@/lib/api/auth-guard";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import { movieRecapPacing } from "@/lib/constants/movie-recap";
 import { suggestMovieRecapFraming } from "@/lib/movie-recap";
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (!r2Configured()) {
     return NextResponse.json({ error: "Movie storage is not configured — set R2_* in .env." }, { status: 503 });
   }
-  const { user, unauthorized } = await requireUser();
+  const { user, unauthorized } = await requireFeature("movie_recap");
   if (unauthorized) return unauthorized;
   const body = await req.json().catch(() => null);
   const fileName = typeof body?.fileName === "string" ? body.fileName.trim().slice(0, 300) : "";

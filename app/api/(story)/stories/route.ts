@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
-import { requireUser } from "@/lib/api/auth-guard";
+import { requireFeature } from "@/lib/api/auth-guard";
 import { mapStory } from "@/lib/api/map";
 import { resolveVisualStyle, resolveVisualStyles } from "@/lib/visual-styles";
 
@@ -22,7 +22,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { user, unauthorized } = await requireUser();
+  const { user, unauthorized } = await requireFeature("stories");
   if (unauthorized) return unauthorized;
   const body = await req.json();
   const db = await supabaseRoute();

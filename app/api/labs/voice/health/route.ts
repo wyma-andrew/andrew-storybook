@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/api/auth-guard";
+import { requireFeature } from "@/lib/api/auth-guard";
 import { voiceWorkerHeaders, voiceWorkerSignal, voiceWorkerUrl } from "@/lib/voice-worker";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const { unauthorized } = await requireUser();
+  const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
   const url = voiceWorkerUrl("health");

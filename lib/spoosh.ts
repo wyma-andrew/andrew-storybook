@@ -5,8 +5,9 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
+import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 
 export type ApiSchema = {
@@ -122,6 +123,14 @@ export type ApiSchema = {
   };
   "auth/password": {
     PATCH: { data: null; body: { password: string } };
+  };
+  "admin/users": {
+    GET: { data: AdminUser[] };
+    POST: { data: AdminUser; body: { email: string; password: string; isAdmin?: boolean; features?: Partial<UserFeatures> } };
+  };
+  "admin/users/:id": {
+    PATCH: { data: AdminUser; body: { isAdmin?: boolean; features?: Partial<UserFeatures> } };
+    DELETE: { data: null };
   };
   "stories": {
     GET: { data: StoryListItem[] };
