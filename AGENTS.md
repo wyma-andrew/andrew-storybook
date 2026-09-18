@@ -45,6 +45,23 @@ cost a day to reach.
 - Approved contradictions replace the old entry; keep the old reasoning as
   superseded so the same ground isn't re-argued.
 
+## Comments — MANDATORY
+
+**Do not comment unless it is really necessary.** Code that reads clearly needs
+no narration, and a comment restating what the next line does is noise that goes
+stale.
+
+Write one only when the code cannot carry the information:
+
+- a non-obvious *why* — an ordering that looks arbitrary, a constant that came
+  from a measurement, a workaround for someone else's bug
+- a trap — something a later reader would "fix" and break
+- a pointer to the `history/` entry that holds the reasoning
+
+Never: restating the statement below it, section banners, narrating the obvious
+steps of a function, or explaining what a well-named symbol already says. If the
+comment is needed because the code is unclear, rename or restructure instead.
+
 ## Product
 
 Three-step flow, one story project:

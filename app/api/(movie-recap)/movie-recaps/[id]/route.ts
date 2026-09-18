@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import {
-  isHexColor,
   isMovieRecapAspectRatio,
   isMovieRecapFitMode,
   isMovieRecapLogoPlacement,
   isMovieRecapSubtitlePosition,
+  isMovieRecapSubtitlePreset,
 } from "@/lib/constants/movie-recap";
-import { abortMultipartUpload, deleteObject } from "@/lib/r2";
+import { abortMultipartUpload, deletePrefix, movieRecapProjectPrefix } from "@/lib/r2";
+import { getVoice } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
+import type { MovieRecapNarrationSegment } from "@/lib/api/types";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,7 +41,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     changesConfiguration = true;
   }
   if (body?.voiceProfileId !== undefined) {
-    if (body.voiceProfileId !== "narrator") return NextResponse.json({ error: "Invalid voice profile." }, { status: 400 });
+    if (!getVoice(body.voiceProfileId, "movie-recap")) {
+      return NextResponse.json({ error: "Invalid voice profile." }, { status: 400 });
+    }
     patch.voice_profile_id = body.voiceProfileId;
     changesConfiguration = true;
   }
@@ -58,19 +62,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.subtitle_position = body.subtitlePosition;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["subtitleColor", "subtitle_color"], ["subtitleBgColor", "subtitle_bg_color"]] as const) {
-    if (body?.[client] !== undefined) {
-      if (!isHexColor(body[client])) return NextResponse.json({ error: `${client} must be a #RRGGBB color.` }, { status: 400 });
-      patch[column] = body[client];
-      changesConfiguration = true;
-    }
+  if (body?.subtitlePreset !== undefined) {
+    if (!isMovieRecapSubtitlePreset(body.subtitlePreset)) return NextResponse.json({ error: "Invalid subtitle preset." }, { status: 400 });
+    patch.subtitle_preset = body.subtitlePreset;
+    changesConfiguration = true;
   }
   for (const [client, column, min, max] of [
-    ["subtitleFontSize", "subtitle_font_size", 2, 16],
-    ["subtitleBgOpacity", "subtitle_bg_opacity", 0, 100],
     ["subtitleOffset", "subtitle_offset", 0, 45],
+    // null is a legal value here: it means the zoom has not been chosen and the
+    // recommendation for the fit mode applies.
+    ["copyrightZoom", "copyright_zoom", 1, 2],
   ] as const) {
     if (body?.[client] !== undefined) {
+      if (client === "copyrightZoom" && body[client] === null) {
+        patch[column] = null;
+        changesConfiguration = true;
+        continue;
+      }
       const value = Number(body[client]);
       if (!Number.isFinite(value) || value < min || value > max) {
         return NextResponse.json({ error: `${client} must be ${min}–${max}.` }, { status: 400 });
@@ -79,17 +87,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       changesConfiguration = true;
     }
   }
-  if (body?.subtitleBold !== undefined) {
-    if (typeof body.subtitleBold !== "boolean") return NextResponse.json({ error: "subtitleBold must be boolean." }, { status: 400 });
-    patch.subtitle_bold = body.subtitleBold;
-    changesConfiguration = true;
-  }
   if (body?.logoPlacement !== undefined) {
     if (!isMovieRecapLogoPlacement(body.logoPlacement)) return NextResponse.json({ error: "Invalid logo placement." }, { status: 400 });
     patch.logo_placement = body.logoPlacement;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"]] as const) {
+  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"], ["copyrightFree", "copyright_free"]] as const) {
     if (body?.[client] !== undefined) {
       if (typeof body[client] !== "boolean") return NextResponse.json({ error: `${client} must be boolean.` }, { status: 400 });
       patch[column] = body[client];
@@ -115,6 +118,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     Object.assign(patch, { blur_x: blur.x, blur_y: blur.y, blur_width: blur.width, blur_height: blur.height });
     changesConfiguration = true;
+  }
+  // The script is editable so an awkward line can be fixed without rerolling the
+  // whole recap. Only the TEXT is taken: the shot list is the render's own
+  // planning output, timed against the source, and a browser has no business
+  // rewriting it. Deliberately does NOT set changesConfiguration: re-rendering
+  // the script is the point, not a reason to demote an approved project.
+  if (body?.renderScript !== undefined) {
+    const current_script = (current.render_script ?? null) as MovieRecapNarrationSegment[] | null;
+    if (!Array.isArray(body.renderScript) || !current_script) {
+      return NextResponse.json({ error: "There is no rendered script to edit." }, { status: 400 });
+    }
+    if (body.renderScript.length !== current_script.length) {
+      return NextResponse.json({ error: "The edited script must keep every beat." }, { status: 400 });
+    }
+    const edited: MovieRecapNarrationSegment[] = [];
+    for (const [index, beat] of (body.renderScript as { text?: unknown }[]).entries()) {
+      const text = typeof beat?.text === "string" ? beat.text.trim() : "";
+      if (!text) return NextResponse.json({ error: `Beat ${index + 1} is empty.` }, { status: 400 });
+      edited.push({ ...current_script[index], text: text.slice(0, 600) });
+    }
+    patch.render_script = edited;
   }
   if (body?.currentStep !== undefined) {
     const step = Number(body.currentStep);
@@ -147,8 +171,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
   try {
     if (project.source_upload_id) await abortMultipartUpload(project.source_object_key, project.source_upload_id);
-    if (project.source_url) await deleteObject(project.source_object_key);
-    if (project.logo_object_key) await deleteObject(project.logo_object_key);
+    // Everything under the project's prefix, not the keys the row happens to
+    // hold: every superseded render output and its subtitles are objects no
+    // column tracks, and deleting key by key leaks exactly those.
+    await deletePrefix(movieRecapProjectPrefix(id));
   } catch (storageError) {
     return NextResponse.json({ error: storageError instanceof Error ? storageError.message : "Could not remove stored files." }, { status: 502 });
   }

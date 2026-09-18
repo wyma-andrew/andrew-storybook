@@ -7,8 +7,44 @@ import type {
   MovieRecapLanguage,
   MovieRecapLogoPlacement,
   MovieRecapSubtitlePosition,
+  MovieRecapSubtitlePreset,
   MovieRecapVoiceId,
 } from "@/lib/constants/movie-recap";
+
+/**
+ * One shot as it was actually cut, reported back by a render so the browser can
+ * keep a history of them. NOT stored server-side: the client puts these in
+ * localStorage, because it is a debugging record of how a generation turned out,
+ * not project data (see history/movie-recap.md).
+ */
+export type MovieRecapRenderShot = {
+  /** 1-based, so it reads like the render log. */
+  beat: number;
+  shot: number;
+  /** How long this shot is on screen. */
+  slotS: number;
+  sourceStartS: number;
+  sourceEndS: number;
+  /** Seconds of ORIGINAL footage behind it. */
+  sourceS: number;
+  /** Seconds with no footage behind them — a held frame. Should be 0. */
+  padS: number;
+  /** Copyright-free playback speed, or null when the transform is off. */
+  speed: number | null;
+  /** Source seconds jumped since the previous shot ended. Null for the first. */
+  skipS: number | null;
+};
+
+export type MovieRecapRenderLog = {
+  createdAt: string;
+  mock: boolean;
+  /** Total recap length: the sum of every slot. */
+  durationS: number;
+  beats: number;
+  shots: MovieRecapRenderShot[];
+  /** Total held-frame seconds across the render. */
+  padS: number;
+};
 
 export type MovieRecapProject = {
   id: string;
@@ -21,17 +57,23 @@ export type MovieRecapProject = {
   sourceContentType: string;
   sourceSizeBytes: number;
   sourceDurationSeconds: number;
+  // Source pixel size, null when the browser could not read it.
+  sourceWidth: number | null;
+  sourceHeight: number | null;
   sourceLastModified: number;
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
-  subtitleFontSize: number;
-  subtitleColor: string;
-  subtitleBgColor: string;
-  subtitleBgOpacity: number;
+  // Whether the render applies the copyright-free transform to the source. A
+  // per-project choice again — see history/movie-recap.md.
+  copyrightFree: boolean;
+  // Divisor on the source crop; 1 is no zoom. NULL means the user has not chosen
+  // one and the recommendation for the fit mode applies — see
+  // effectiveMovieRecapZoom(). Only read when copyrightFree.
+  copyrightZoom: number | null;
+  subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
-  subtitleBold: boolean;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;
@@ -53,7 +95,13 @@ export type MovieRecapProject = {
   renderStage: MovieRecapRenderStage | null;
   renderProgressCurrent: number | null;
   renderProgressTotal: number | null;
+  // The script the last full render wrote, and the only part of a render the
+  // user can edit and re-run. Patchable: fixing one awkward line must not cost
+  // a fresh analysis of the source or reroll the lines that were fine.
   renderScript: MovieRecapNarrationSegment[] | null;
+  // R2 key for the analysis that goes with `renderScript`. Null means no full
+  // render has finished yet, so re-rendering from the script is not offered.
+  renderAnalysisKey: string | null;
   renderOutputUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
@@ -64,21 +112,42 @@ export type MovieRecapProject = {
 // Mirrors the stage names lib/movie-recap-render.ts writes as it runs, for
 // progress display — see history/movie-recap.md, "real render progress".
 export type MovieRecapRenderStage =
+  | "downloading_source"
+  | "detecting_scenes"
+  | "describing_scenes"
+  | "reading_captions"
   | "extracting_audio"
   | "transcribing"
   | "writing_script"
+  | "synthesizing_narration"
   | "rendering_segments"
   | "concatenating"
   | "applying_overlays"
   | "uploading";
 
 // One narration line from the render pipeline's script-generation step, timed
-// against the ORIGINAL source video (sourceStartS/sourceEndS), not against the
-// (not-yet-generated) narration audio — see lib/movie-recap-render.ts.
+// against the ORIGINAL source video (sourceStartS/sourceEndS). The synthesized
+// audio's own length is measured during the render and used to size the video
+// segment; it is not stored here — see lib/movie-recap-render.ts.
 export type MovieRecapNarrationSegment = {
-  sourceStartS: number;
-  sourceEndS: number;
+  // The shots this beat cuts between while its line is spoken, in order. One
+  // entry is a beat that holds a single shot; several is the normal case.
+  // `keyframeFraction` is where inside the shot the vision pass found the moment
+  // it described, so a re-render cuts on the same action the first one did.
+  shots: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
   text: string;
+};
+
+// What the shot planner needs that is NOT in the script: everything derived from
+// the source itself. Stored in R2 at the end of a full render (see
+// `renderAnalysisKey`) so an edited script can be re-rendered without paying for
+// scene detection, the vision pass and transcription again.
+export type MovieRecapRenderAnalysis = {
+  // Scenes the narration model passed over, which a beat can borrow from.
+  spares: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
+  // The source's own edits, in seconds — a shot is never laid across one.
+  cuts: number[];
+  motion: { stepS: number; values: number[] } | null;
 };
 
 export type MovieRecapProjectPatch = Partial<{
@@ -87,13 +156,11 @@ export type MovieRecapProjectPatch = Partial<{
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
-  subtitleFontSize: number;
-  subtitleColor: string;
-  subtitleBgColor: string;
-  subtitleBgOpacity: number;
+  copyrightFree: boolean;
+  copyrightZoom: number | null;
+  subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;
-  subtitleBold: boolean;
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;
@@ -102,6 +169,7 @@ export type MovieRecapProjectPatch = Partial<{
   blurY: number;
   blurWidth: number;
   blurHeight: number;
+  renderScript: MovieRecapNarrationSegment[];
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];
 }>;

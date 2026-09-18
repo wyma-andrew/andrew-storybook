@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { GeckoUIPortal } from "@geckoui/geckoui";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { DEFAULT_THEME, THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -40,7 +41,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="h-full">
-        {children}
+        {/* nuqs reads and writes the URL through the App Router; the adapter is
+            what connects its hooks to it, so it wraps everything that could use
+            `useQueryState`. */}
+        <NuqsAdapter>{children}</NuqsAdapter>
         {/* One place sets toast position and colour for the whole app. GeckoUI's
             toasts are sonner underneath, which offers no true middle-centre —
             top-centre is the centre option that works here, because the

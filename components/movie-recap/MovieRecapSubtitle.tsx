@@ -3,21 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Noto_Sans_Myanmar } from "next/font/google";
 import type { MovieRecapProject } from "@/lib/api/types";
+import { MOVIE_RECAP_SUBTITLE_LINE_EM, movieRecapSubtitleStyle } from "@/lib/constants/movie-recap";
 
 // The SAME face libass burns into the render (MOVIE_RECAP_SUBTITLE_FONT).
 // Burmese faces differ a lot in how much of the em box the glyph body fills —
 // measured at one size, the same line is 33% of frame width in Noto Sans
 // Myanmar, 39% in Pyidaungsu, 44% in Myanmar Sangam MN — so the preview has to
 // use the render's face or it reports a size the export won't reproduce.
-const subtitleFont = Noto_Sans_Myanmar({ subsets: ["myanmar"], weight: ["400", "700"] });
-
-function rgba(hex: string, opacityPercent: number) {
-  const value = hex.replace("#", "");
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${(opacityPercent / 100).toFixed(2)})`;
-}
+const subtitleFont = Noto_Sans_Myanmar({ subsets: ["myanmar"], weight: ["400", "500", "600", "700"] });
 
 function positionStyle(project: MovieRecapProject): React.CSSProperties {
   if (project.subtitlePosition === "top") return { top: `${project.subtitleOffset}%` };
@@ -45,30 +38,40 @@ function useFrameHeight(ref: React.RefObject<HTMLElement | null>) {
 }
 
 // Rendered as real DOM on top of the video rather than as WebVTT `::cue`
-// styling: `::cue` ignores padding, border-radius and box-shadow, so it can
-// never show the pill design being configured here (history/movie-recap.md).
+// styling: `::cue` support for text-shadow and precise placement is uneven
+// across browsers, so it cannot be trusted to show what the export will look
+// like (history/movie-recap.md).
 export function MovieRecapSubtitleOverlay({ project, text }: { project: MovieRecapProject; text: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const frameHeight = useFrameHeight(ref);
   if (!text) return null;
-  const fontPx = (project.subtitleFontSize / 100) * frameHeight;
+  const style = movieRecapSubtitleStyle(project);
+  const fontPx = (style.fontSizePct / 100) * frameHeight;
+  const outlinePx = fontPx * style.outlineEm;
   return (
     <div
       ref={ref}
       className="pointer-events-none absolute inset-x-[6%] z-30 text-center"
       style={positionStyle(project)}
     >
-      {/* No drop shadow: the ASS style writes `Shadow 0`, so one here would be
-          preview-only decoration the export cannot reproduce — most visible at
-          0% background opacity, where the preview drew a shadow with nothing
-          casting it. */}
+      {/* The outline is `-webkit-text-stroke` with `paint-order: stroke fill`,
+          which paints the stroke BEHIND the glyph — without it the stroke eats
+          into the letterform and the caption reads thinner here than in the
+          export, where libass expands the contour outwards. No drop shadow in
+          either renderer; see the constants for why. */}
       <span
-        className={`inline-block max-w-full whitespace-pre-wrap rounded-lg px-[1.2em] py-[0.35em] leading-snug ${subtitleFont.className}`}
+        className={`inline-block max-w-full whitespace-pre-wrap ${subtitleFont.className}`}
         style={{
           fontSize: `${fontPx.toFixed(2)}px`,
-          color: project.subtitleColor,
-          backgroundColor: rgba(project.subtitleBgColor, project.subtitleBgOpacity),
-          fontWeight: project.subtitleBold ? 700 : 400,
+          // The font's own line box, stated explicitly: it is also the ratio the
+          // ASS font size is inflated by, so leaving it to Tailwind would put
+          // the caption at a different height than the export.
+          lineHeight: MOVIE_RECAP_SUBTITLE_LINE_EM,
+          color: style.color,
+          fontWeight: style.weight,
+          WebkitTextStrokeWidth: `${outlinePx.toFixed(2)}px`,
+          WebkitTextStrokeColor: style.outlineColor,
+          paintOrder: "stroke fill",
         }}
       >
         {text}

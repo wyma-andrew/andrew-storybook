@@ -61,8 +61,7 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories (Movie Recap and Voice Lab
-                               entries exist but are `hidden`; routes still work by URL).
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -147,11 +146,47 @@ its visual prompt to improve image-model recognition without changing that key.
 
 Users create resumable recap projects, upload one browser-playable source,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
-movable blur configuration. Source bytes upload directly to R2 in parts; the
+movable blur configuration, and a per-project copyright-free toggle that drives
+the per-shot transform in `lib/movie-recap-transform.ts` (a per-project zoom,
+colour, mirror, and a blurred fill behind letterbox bars) plus a per-shot playback
+speed that is never the source's own. Subtitle appearance is a two-option preset (yellow or
+white text, black shadow, no background box) whose size follows the aspect ratio;
+only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
+aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
 same local file is reselected. Generate currently records
-`ready_for_generation` only. Video analysis, transformation, and output belong
-to phase two.
+`ready_for_generation` only. The wizard's step and its customize sub-tab are
+query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
+survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
+
+The render preview (`lib/movie-recap-render.ts`) runs the real pipeline:
+download, scene detection, a vision pass (one keyframe per scene on 16:9, three
+on 9:16 so the model describes the event across them and names which frame is
+its peak — that peak is where the shot is later cut from), then the source's dialogue — read from
+its own subtitle track when it has a usable one (`lib/movie-recap-captions.ts`),
+otherwise transcribed with Whisper — then the narration script and narration
+audio through `lib/tts/` (Azure Speech). Each beat's
+measured audio duration sizes its video segment; the padded narration track is
+muxed into the export. Which footage each beat cuts between — borrowing unused
+scenes (for the cut count and again to avoid held frames), and the hard rule that
+a run of source is never on screen past the continuity limit — is decided in
+`lib/movie-recap-shots.ts`. Pacing is per aspect ratio, because the aspect ratio
+is the format: `MOVIE_RECAP_PACING` in `lib/constants/movie-recap.ts` gives 9:16
+(TikTok, Facebook) a fast 1.5-2.5s shot band and 16:9 (YouTube) a 2-4s one, and
+also sets each one's narration line budget and subtitle offset. A mock render skips every paid step, including TTS, and
+comes out silent. Each render
+also returns a per-shot log (slot, source range, held-frame seconds), which the
+Review step keeps per project in the browser's localStorage
+(`lib/movie-recap-render-history.ts`) — it is not stored server-side.
+
+A finished render leaves its script on the row (`render_script`) and everything
+the planner derived from the source — spare scenes, cuts, motion — in R2
+(`render_analysis_key`). The Review step lists the script line by line
+(`components/movie-recap/MovieRecapScript.tsx`); editing a line and re-rendering
+(`POST movie-recaps/:id/render` with `reuse`) skips detection, the vision pass,
+transcription and the script model, and runs TTS and ffmpeg on the words as
+written. Only the text is patchable — the shots under a beat are the planner's
+own output.
 
 ### Burmese Voice Lab
 
@@ -160,12 +195,30 @@ to phase two.
 - Worker: `workers/voice-lab/`
 
 The authenticated lab sends bounded Burmese test text through Spoosh to a
-Next.js route, which forwards it to a separately running self-hosted VoxCPM2
-worker. The worker lazily loads the model, applies the code-defined Narrator
-voice-design prompt and seed, and returns an in-memory WAV for playback and
-download. Lab text and audio are deliberately not stored in Supabase or R2.
-`VOICE_LAB_WORKER_URL` stays server-only; an optional shared bearer token
+Next.js route, which hands it to the TTS layer (`lib/tts/`). The lab lists every
+voice flagged for its surface — the Azure Burmese neural voices and the
+self-hosted VoxCPM2 profiles — so the two services can be compared on the same
+line of text, and returns an in-memory WAV for playback and download. Lab text
+and audio are deliberately not stored in Supabase or R2. `TTS_AZURE_KEY` and
+`VOICE_LAB_WORKER_URL` stay server-only; an optional shared bearer token
 protects the worker connection.
+
+### Text to speech
+
+- Contract and voice catalog: `lib/tts/types.ts`, `lib/tts/voices.ts`
+- Voice previews: committed MP3s in `public/movie-recap/voices/`, generated from
+  the catalog by `scripts/generate-voice-previews.ts`. `app/api/voices/preview/`
+  is the fallback for a voice with no file
+- Providers: `lib/tts/providers/azure.ts`, `lib/tts/providers/voxcpm.ts`
+- Entry point: `lib/tts/synthesize.ts`
+
+One catalog holds every voice; each entry names its provider and carries that
+provider's own parameters (Azure voice name and SSML prosody, or VoxCPM2 style
+prompt and seed). `synthesize()` picks the provider off the voice, so callers —
+the lab route and the render pipeline — never name a service. A voice's `id` is
+what the database stores, so moving a voice between providers is a code edit.
+`surfaces` decides where a voice is offered: Movie Recap lists the Azure voices,
+the lab lists all of them.
 
 ### Script
 

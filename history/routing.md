@@ -97,7 +97,7 @@ actions only — don't re-add theme/account controls there. Any future control
 that belongs on every page (not just `(app)` pages) goes in `Sidebar`'s
 footer, not back into `TopBar`.
 
-## 2026-09-16 — Movie Recap and Voice Lab hidden from the sidebar
+## 2026-09-16 — Movie Recap and Voice Lab hidden from the sidebar (superseded)
 
 `NAV_ITEMS` entries carry a `hidden` flag and `Sidebar` renders
 `VISIBLE_NAV_ITEMS`. Movie Recap and Voice Lab are both flagged hidden, leaving
@@ -115,6 +115,23 @@ sensitive, only unfinished, and an auth gate would have to be unpicked later.
 
 **Consequence:** nothing links to `/movie-recap` or `/labs/voice` from inside
 the app. A signed-in user reaches them only by typing the URL.
+
+**Superseded by the entry below (same day).**
+
+## 2026-09-16 — Movie Recap and Voice Lab shown in the sidebar again
+
+Both entries are back to `hidden: false`, so all three nav destinations render.
+Owner's call, made with the "unfinished feature in the nav" reasoning above on
+the table: they want the two features reachable from the nav while they are
+being built, not URL-only.
+
+The `hidden` flag and `VISIBLE_NAV_ITEMS` filter stay in `Sidebar` — the
+mechanism is still the right way to take a nav item out, and re-hiding either
+feature is one boolean.
+
+**Consequence:** a signed-in user can click into both unfinished features.
+Movie Recap's wizard is mid-build and untested below `md`; Voice Lab is a test
+harness. Rough edges there are known, not bugs to chase.
 
 ## 2026-09-16 — Sidebar becomes an off-canvas drawer below `md`
 
@@ -294,38 +311,38 @@ regeneration changed the shot count without scrolling the whole chapter.
 the Hints toggle; they are above the first scene. This was deliberate rather
 than a mobile-only branch — one place for the reading, one place for controls.
 
-## 2026-09-16 — Story options becomes a bottom sheet below `sm`
+## 2026-09-16 — URL state uses nuqs; the Movie Recap wizard step lives in the query string
 
-`StoryControlsMenu`'s panel was `absolute right-0 w-[260px]`, anchored to the
-"Story options" button. On a phone that button sits mid-row (the "+ New Episode"
-button is to its right), so 260px of panel reached past the left edge of the
-`(app)` layout's `overflow-hidden` container and the labels were cut in half;
-the lower rows were cut off at the container's bottom the same way.
+**Decision:** `nuqs` is the app's way of putting component state in the URL.
+`NuqsAdapter` wraps the whole tree in `app/layout.tsx`, and the Movie Recap
+wizard is the first user: `?step=source|settings|customize|review` and, inside
+the customize step, `?tab=aspect|subtitle|logo|blur`.
 
-The controls are now built once as `sections` and rendered in two shells: the
-same absolute dropdown from `sm` up (now with `max-h-[min(70vh,440px)]` so a
-long menu scrolls instead of being cut at the container's bottom), and GeckoUI's
-`Drawer` with `placement="bottom"` and `max-h-[40vh]` below it — the same
-`className`/`backdropClassName` `hidden`-at-breakpoint pattern `Sidebar` uses
-for the mobile nav.
+**Why the query string and not path segments:** the wizard's four steps are one
+resource being edited, not four resources. Path routes
+(`/movie-recap/:id/settings`) would need four page files, and a reload would
+remount the editor and lose the unsaved edits the wizard deliberately holds in
+memory until Save & Continue. Chapter tabs stay path-based because those are
+genuinely different views of different data.
 
-**Why the GeckoUI Drawer and not a hand-rolled `fixed` sheet:** a first pass
-used `fixed inset-x-2 bottom-2`, which does escape the overflow-hidden ancestor,
-but the UI rule is that interactive shells come from GeckoUI — and the Drawer
-brings the backdrop, Escape handling and open/closed data-state for free. A
-width cap alone (what `ChapterControlsMenu` uses) was not an option here: it
-only works because that trigger is already at the far right of its header.
+**Why slugs, not `?step=2`:** a number in the URL means nothing to a reader and
+breaks silently if the steps are ever reordered.
 
-**Rejected:** measuring the available space in JS and flipping the anchor. Same
-reason as the drawer entry above — a JS-measured layout decision renders wrong
-on the server and flips on hydration.
+**Step reads the URL but is still clamped.** `maxStep` (seeded from the
+project's saved `currentStep`, raised as steps are completed) bounds what the
+URL can select, so a hand-typed `?step=review` on a project that never got past
+its source upload lands on the furthest step actually reached rather than
+rendering a step with no data behind it. An absent `?step` is deliberately
+distinguishable from an explicit one — `parseAsStringLiteral` without
+`withDefault` — because with nothing in the URL the wizard opens where the
+project was left, not at step one.
 
-**Consequence:** the menu's own click-outside handler is unchanged and does not
-fight the Drawer. GeckoUI renders the Drawer inline rather than through a
-portal, so both the sheet and its backdrop are DOM descendants of the menu
-wrapper the handler checks; the backdrop closes the sheet through the Drawer's
-own `handleClose`.
+**History mode is `push` for the step** so Back walks back through the wizard,
+and the default `replace` for the customize sub-tab, which is a view toggle and
+not a place.
 
-**Consequence:** `sections` is mounted twice (once per shell), so the Selects
-exist in both. They are controlled by the same props, so there is no state to
-keep in sync — the same trade `Sidebar` already makes.
+**Consequence:** anything that reads the query string through `useQueryState` is
+a `useSearchParams` consumer, so it needs a Suspense boundary above it or a
+statically prerendered route fails the build — `/movie-recap/new` did exactly
+that. `MovieRecapWizard` wraps its editor in `Suspense`; any future nuqs user on a
+static route needs the same.

@@ -1,11 +1,16 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Grip } from "lucide-react";
+import { Grip, Pause, Play } from "lucide-react";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { MOVIE_RECAP_LOGO_BOX, MOVIE_RECAP_SUBTITLE_SAMPLE } from "@/lib/constants/movie-recap";
-import { clampBlurRect } from "@/lib/movie-recap";
+import {
+  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
+  MOVIE_RECAP_LOGO_BOX,
+  MOVIE_RECAP_SUBTITLE_SAMPLE,
+  movieRecapBlurCssPx,
+} from "@/lib/constants/movie-recap";
+import { clampBlurRect, formatDuration } from "@/lib/movie-recap";
 import { MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
 
 type BlurRect = { x: number; y: number; width: number; height: number };
@@ -20,18 +25,48 @@ const logoPosition: Record<MovieRecapProject["logoPlacement"], React.CSSProperti
   bottom_right: { right: m, bottom: m, justifyContent: "flex-end", alignItems: "flex-end" },
 };
 
+// The blur radius has to be resolved against the frame's real drawn width, so
+// it is measured rather than assumed from the max-width class.
+function useFrameWidth(ref: React.RefObject<HTMLElement | null>) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    setWidth(frame.clientWidth);
+    const observer = new ResizeObserver(() => setWidth(frame.clientWidth));
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
 export function MovieRecapPreview({
   project,
   videoUrl,
   blur,
   onBlurChange,
+  previewZoom,
 }: {
   project: MovieRecapProject;
   videoUrl: string | null;
   blur: BlurRect;
   onBlurChange: (rect: BlurRect) => void;
+  // TEMPORARY: a zoom factor to try out in the preview only. It is not saved and
+  // the render does not read it — `MOVIE_RECAP_COPYRIGHT_TRANSFORM.zoom` is what
+  // actually burns. This exists to pick that number by eye; remove the prop and
+  // the slider once it is chosen.
+  previewZoom?: number;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentS, setCurrentS] = useState(0);
+  const [durationS, setDurationS] = useState(0);
+  const scrubbingRef = useRef(false);
+  const frameWidth = useFrameWidth(frameRef);
+  // The export blurs in output pixels; the preview frame is drawn a few hundred
+  // pixels wide, so the same radius here would blur far harder than the render.
+  const blurPx = movieRecapBlurCssPx(frameWidth, project.aspectRatio);
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   function move(event: React.PointerEvent<HTMLDivElement>) {
@@ -60,61 +95,149 @@ export function MovieRecapPreview({
   return (
     <div>
       <div className="mb-2 text-sm font-medium">Uploaded Video</div>
-      <div className="flex min-h-[520px] items-center justify-center rounded-xl border border-line bg-sunken p-5">
-        <div
-          ref={frameRef}
-          className={`relative overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl ${
-            project.aspectRatio === "9:16" ? "h-[480px] w-auto" : "w-full max-w-[620px] h-auto"
-          }`}
-          style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
-        >
-          {videoUrl ? (
-            <video
-              src={videoUrl}
-              className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
-              controls
-              preload="metadata"
-            />
-          ) : (
-            <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
-          )}
+      <div className="flex min-h-[520px] flex-col items-center justify-center gap-3 rounded-xl border border-line bg-sunken p-5">
+        <div className={project.aspectRatio === "9:16" ? "w-auto" : "w-full max-w-[620px]"}>
+          <div
+            ref={frameRef}
+            className={`relative overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl ${
+              project.aspectRatio === "9:16" ? "h-[480px] w-auto" : "w-full max-w-[620px] h-auto"
+            }`}
+            style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+          >
+            {videoUrl ? (
+              // Zoom magnifies the FITTED picture and the frame clips it, which is
+              // what the render does (`scale` after framing, then crop to frame).
+              // So the CSS is a plain transform on the fitted video: the letterboxed
+              // strip grows, the bars shrink, and the sides leave the frame.
+              //
+              // An earlier version drew the strip at the SOURCE's aspect ratio and
+              // scaled inside it, which held the bars still and cropped all four
+              // sides. That matched the render as it was THEN — zoom applied before
+              // framing — and stopped matching the moment the render's order
+              // changed. Both are in history/movie-recap.md; the render is the
+              // output, so the preview follows it.
+              <video
+                src={videoUrl}
+                className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
+                style={{
+                  transform: [
+                    previewZoom && previewZoom !== 1 ? `scale(${previewZoom})` : "",
+                    // Read from the same constant the render reads. This was a
+                    // hardcoded `=== "16:9"` and would have gone on showing an
+                    // unmirrored portrait preview against a mirrored export.
+                    project.copyrightFree && MOVIE_RECAP_COPYRIGHT_TRANSFORM.mirrorAspectRatios.includes(project.aspectRatio)
+                      ? "scaleX(-1)"
+                      : "",
+                  ].filter(Boolean).join(" ") || undefined,
+                  // Same numbers the ffmpeg `eq` gets, read from the constant so
+                  // the two cannot drift. Gamma is deliberately absent: CSS has no
+                  // gamma filter, so the preview is slightly lighter than the
+                  // export at gamma 0.98.
+                  filter: project.copyrightFree
+                    ? `contrast(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.contrast}) saturate(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.saturation})`
+                    : undefined,
+                }}
+                preload="metadata"
+                ref={videoRef}
+                playsInline
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => setPlaying(false)}
+                onLoadedMetadata={(event) => setDurationS(event.currentTarget.duration)}
+                onTimeUpdate={(event) => {
+                  if (!scrubbingRef.current) setCurrentS(event.currentTarget.currentTime);
+                }}
+              />
+            ) : (
+              <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
+            )}
+            <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />
 
-          <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />
+            {project.logoEnabled && (
+              <div
+                className="pointer-events-none absolute flex"
+                style={{
+                  ...logoPosition[project.logoPlacement],
+                  width: `${MOVIE_RECAP_LOGO_BOX.widthPct}%`,
+                  height: `${MOVIE_RECAP_LOGO_BOX.heightPct}%`,
+                  opacity: project.logoOpacity / 100,
+                }}
+              >
+                {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
+              </div>
+            )}
 
-          {project.logoEnabled && (
-            <div
-              className="pointer-events-none absolute flex"
-              style={{
-                ...logoPosition[project.logoPlacement],
-                width: `${MOVIE_RECAP_LOGO_BOX.widthPct}%`,
-                height: `${MOVIE_RECAP_LOGO_BOX.heightPct}%`,
-                opacity: project.logoOpacity / 100,
-              }}
-            >
-              {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
-            </div>
-          )}
+            {/* No tint and no drop shadow on the blur region: the export only
+                blurs it, so the old `bg-panel/35` wash made the preview darker
+                than the render — which is what made the subtitle colour look
+                different between the two (history/movie-recap.md). The accent
+                border and the grip are editor chrome, preview-only by design. */}
+            {project.blurEnabled && (
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Move blur area. Use arrow keys for one percent steps and Shift for five percent steps."
+                className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent text-fg focus:outline-none focus:ring-2 focus:ring-accent"
+                style={{
+                  left: `${blur.x}%`,
+                  top: `${blur.y}%`,
+                  width: `${blur.width}%`,
+                  height: `${blur.height}%`,
+                  backdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+                  WebkitBackdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+                }}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  dragRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: blur.x, y: blur.y };
+                }}
+                onPointerMove={move}
+                onPointerUp={(event) => {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                  dragRef.current = null;
+                }}
+                onPointerCancel={() => { dragRef.current = null; }}
+                onKeyDown={nudge}
+              >
+                <Grip size={18} />
+              </div>
+            )}
+          </div>
 
-          {project.blurEnabled && (
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label="Move blur area. Use arrow keys for one percent steps and Shift for five percent steps."
-              className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent bg-panel/35 text-on-accent shadow-lg backdrop-blur-md focus:outline-none focus:ring-2 focus:ring-accent"
-              style={{ left: `${blur.x}%`, top: `${blur.y}%`, width: `${blur.width}%`, height: `${blur.height}%` }}
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
-                dragRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: blur.x, y: blur.y };
-              }}
-              onPointerMove={move}
-              onPointerUp={(event) => {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-                dragRef.current = null;
-              }}
-              onPointerCancel={() => { dragRef.current = null; }}
-              onKeyDown={nudge}
-            >
-              <Grip size={18} />
+          {videoUrl && (
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                aria-label={playing ? "Pause preview" : "Play preview"}
+                onClick={() => {
+                  const video = videoRef.current;
+                  if (!video) return;
+                  if (video.paused) void video.play().catch(() => setPlaying(false));
+                  else video.pause();
+                }}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line-2 bg-panel text-fg hover:bg-panel-2"
+              >
+                {playing ? <Pause size={14} /> : <Play size={14} className="ml-px" />}
+              </button>
+              <input
+                type="range"
+                aria-label="Seek preview"
+                min={0}
+                max={durationS || 0}
+                step={0.05}
+                value={Math.min(currentS, durationS || 0)}
+                disabled={!durationS}
+                onPointerDown={() => { scrubbingRef.current = true; }}
+                onPointerUp={() => { scrubbingRef.current = false; }}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setCurrentS(next);
+                  if (videoRef.current) videoRef.current.currentTime = next;
+                }}
+                className="w-full accent-accent"
+              />
+              <span className="shrink-0 font-mono text-xs tabular-nums text-fg-3">
+                {formatDuration(currentS)} / {durationS ? formatDuration(durationS) : "—"}
+              </span>
             </div>
           )}
         </div>

@@ -3,6 +3,9 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -92,8 +95,12 @@ function sanitizeForKey(basename: string) {
   return basename.replace(/[^\w.\-]+/g, "_").slice(-120) || "file";
 }
 
-export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle", fileName: string) {
-  return `movie-recaps/${projectId}/${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+export function movieRecapProjectPrefix(projectId: string) {
+  return `movie-recaps/${projectId}/`;
+}
+
+export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
+  return `${movieRecapProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
 function splitName(basename: string) {
@@ -143,6 +150,26 @@ export function presignPut(objectKey: string, contentType: string) {
   );
 }
 
+// Deletes everything under a prefix, not a list of keys held in columns. A
+// project accumulates objects nothing tracks — every superseded render output,
+// its subtitles — and a key-by-key cleanup leaks exactly those.
+export async function deletePrefix(prefix: string) {
+  let token: string | undefined;
+  let deleted = 0;
+  do {
+    const listed = await r2().send(
+      new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token })
+    );
+    const keys = (listed.Contents ?? []).map((object) => object.Key).filter((key): key is string => !!key);
+    if (keys.length) {
+      await r2().send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys.map((Key) => ({ Key })) } }));
+      deleted += keys.length;
+    }
+    token = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (token);
+  return deleted;
+}
+
 export async function deleteObject(objectKey: string) {
   await r2().send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
 }
@@ -152,6 +179,19 @@ export async function deleteObject(objectKey: string) {
 export async function putObject(objectKey: string, body: Buffer, contentType: string) {
   await r2().send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, Body: body, ContentType: contentType }));
   return publicUrlFor(objectKey);
+}
+
+// Reads a server-written object back as text. Only used for the render
+// analysis blob, which is JSON the pipeline wrote itself — a missing or
+// unreadable object returns null so the caller can fall back to a full run
+// rather than failing the render.
+export async function getObjectText(objectKey: string) {
+  try {
+    const result = await r2().send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+    return (await result.Body?.transformToString()) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function createMultipartUpload(objectKey: string, contentType: string) {

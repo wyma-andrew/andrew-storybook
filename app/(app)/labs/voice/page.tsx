@@ -7,17 +7,11 @@ import { Check, Download, RefreshCw, Sparkles, Volume2, WandSparkles } from "luc
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { VOICE_LAB_MAX_TEXT_LENGTH, VOICE_LAB_PROFILES, type VoiceLabProfileId } from "@/lib/voice-lab";
 
 const DEFAULT_TEXT =
   "ဒီဇာတ်လမ်းမှာ သာမန်လူတစ်ယောက်ရဲ့ မမျှော်လင့်ထားတဲ့ ခရီးစဉ်က အရာအားလုံးကို ပြောင်းလဲသွားစေခဲ့ပါတယ်။";
-
-function audioUrlFromBase64(audioBase64: string, contentType: string) {
-  const binary = window.atob(audioBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return URL.createObjectURL(new Blob([bytes], { type: contentType }));
-}
 
 export default function VoiceLabPage() {
   const [text, setText] = useState(DEFAULT_TEXT);

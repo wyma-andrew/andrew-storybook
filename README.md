@@ -52,6 +52,11 @@ Then point the app at it in `.env` (the font must be installed locally;
 ```bash
 FFMPEG_PATH=/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
 MOVIE_RECAP_SUBTITLE_FONT=Noto Sans Myanmar
+# The Medium cut, named the way fontconfig finds it (check with
+# `fc-match "Noto Sans Myanmar Med"`). One subtitle preset renders at Medium;
+# without this the render falls back to Regular and reads lighter than the preview.
+MOVIE_RECAP_SUBTITLE_FONT_MEDIUM=Noto Sans Myanmar Med
+MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD=Noto Sans Myanmar SemBd
 ```
 
 Check a build before using it — all three filters must be listed:
@@ -59,6 +64,38 @@ Check a build before using it — all three filters must be listed:
 ```bash
 "$FFMPEG_PATH" -filters | grep -E ' (subtitles|ass|drawtext) '
 ```
+
+The build also needs the Opus encoder, which the audio the render sends to
+Whisper is compressed with (uncompressed audio hits Whisper's 25MB upload limit
+after about 13 minutes of source):
+
+```bash
+"$FFMPEG_PATH" -encoders | grep libopus
+```
+
+## Movie Recap scene detection (PySceneDetect)
+
+The render pipeline reads the source twice — its audio (Whisper) and its
+pictures (one keyframe per detected scene). Scene detection is PySceneDetect,
+a Python tool, so it lives in its own virtualenv rather than in `package.json`:
+
+```bash
+/usr/bin/python3 -m venv .venv-scenedetect
+.venv-scenedetect/bin/pip install "scenedetect[opencv-headless]"
+```
+
+`/usr/bin/python3` (Apple's) is deliberate — Homebrew's `python@3.14` currently
+fails to load `pyexpat` on macOS 26 (`Symbol not found:
+_XML_SetAllocTrackerActivationThreshold`), which breaks pip inside any venv it
+creates. Point the app at the CLI in `.env`:
+
+```bash
+SCENEDETECT_BIN=/absolute/path/to/.venv-scenedetect/bin/scenedetect
+```
+
+Roughly 20x realtime on 1080p (a 2-hour film takes ~6 minutes to scan), so a
+full render is minutes of local CPU before any API call happens. The mock
+render skips this step entirely.
 
 ## Burmese Voice Lab
 

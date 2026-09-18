@@ -10,6 +10,11 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    // scripts/ runs straight through `node --experimental-strip-types`, which
+    // resolves relative imports the Node way and so needs the `.ts` extension
+    // written out. App code keeps using extensionless imports; this only stops
+    // tsc rejecting the scripts.
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,

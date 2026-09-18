@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
+import type { Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { StoryBundle } from "@/lib/story-transfer";
 
@@ -30,12 +30,20 @@ export type ApiSchema = {
         durationSeconds: number;
         sampleRate: number;
         generationMs: number;
-        seed: number;
+        // Which service spoke this clip — the lab offers voices from more than
+        // one provider so they can be compared.
+        providerId: string;
       };
       body: {
         text: string;
-        voiceId: "narrator" | "narrator-female";
+        voiceId: string;
       };
+    };
+  };
+  "voices/preview": {
+    POST: {
+      data: { audioBase64: string; contentType: "audio/wav"; cached: boolean };
+      body: { voiceId: string };
     };
   };
   "movie-recaps": {
@@ -43,6 +51,10 @@ export type ApiSchema = {
     POST: {
       data: MovieRecapProject;
       body: {
+        // Source pixel dimensions, read from the file in the browser. Optional:
+        // a file whose metadata cannot be read still uploads.
+        width?: number;
+        height?: number;
         fileName: string;
         contentType: string;
         sizeBytes: number;
@@ -86,7 +98,12 @@ export type ApiSchema = {
   "movie-recaps/:id/render": {
     // mock: skip the paid AI steps (Whisper + narration) and render canned
     // narration instead — for iterating on overlay/subtitle design.
-    POST: { data: MovieRecapProject; body: { mock?: boolean } };
+    // `renderLog` is how every shot actually came out. It rides on the response
+    // instead of being stored: the browser keeps a per-project history of it in
+    // localStorage. Null when the render failed.
+    // reuse: render the saved script instead of writing a new one — skips
+    // detection, the vision pass, transcription and the script model.
+    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean; reuse?: boolean } };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };
