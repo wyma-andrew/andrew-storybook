@@ -10,11 +10,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const body = await req.json().catch(() => null);
   const mock = body?.mock === true;
-  // Re-render the stored script instead of writing a new one. The expensive
-  // half of the pipeline — detection, the vision pass, transcription and the
-  // script model — is skipped; TTS and ffmpeg still run, because the words may
-  // have changed. See history/movie-recap.md.
-  const reuse = body?.reuse === true && !mock;
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -23,16 +18,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (project.sourceUploadStatus !== "ready" || !project.sourceUrl) {
     return NextResponse.json({ error: "The source video is not ready." }, { status: 400 });
   }
-  if (project.renderStatus === "running") {
-    return NextResponse.json({ error: "A render is already in progress." }, { status: 409 });
+  // A real render cuts an APPROVED script and nothing else. Building it, speaking
+  // it and measuring every beat is the script run's job, and the approval is the
+  // user saying they have read those measurements — see history/movie-recap.md.
+  if (!mock) {
+    if (!(project.renderScript?.length && project.renderAnalysisKey)) {
+      return NextResponse.json({ error: "Build the script first — there is nothing to render." }, { status: 400 });
+    }
   }
-  if (reuse && !(project.renderScript?.length && project.renderAnalysisKey)) {
-    return NextResponse.json({ error: "There is no saved script to re-render. Run a full render first." }, { status: 400 });
+
+  // CLAIM THE RENDER IN ONE STATEMENT. Reading the status and then acting on it
+  // is a race, and it was not a theoretical one: two POSTs arriving in the same
+  // second both read a non-running row, both passed the check, and two full
+  // renders ran at once — same project, same beats, fighting for the same CPU,
+  // with whichever finished last overwriting the row. The `neq` makes Postgres
+  // the arbiter: exactly one caller can flip a row out of "running", and the
+  // loser gets no row back.
+  const startedAt = new Date().toISOString();
+  const { data: claimed } = await db
+    .from("movie_recap_projects")
+    .update({ render_status: "running", render_is_mock: mock, render_error: null, render_started_at: startedAt })
+    .eq("id", id)
+    .neq("render_status", "running")
+    .select("id")
+    .maybeSingle();
+  if (!claimed) {
+    return NextResponse.json({ error: "A render is already in progress." }, { status: 409 });
   }
 
   // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
   // its own status/result onto the row rather than throwing.
-  const renderLog = await runMovieRecapRender(db, project, { mock, reuse });
+  const renderLog = await runMovieRecapRender(db, project, { mock });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });

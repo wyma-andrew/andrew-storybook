@@ -30,8 +30,8 @@ export type MovieRecapRenderShot = {
   sourceS: number;
   /** Seconds with no footage behind them — a held frame. Should be 0. */
   padS: number;
-  /** Copyright-free playback speed, or null when the transform is off. */
-  speed: number | null;
+  /** Playback speed this shot ran at; MOVIE_RECAP_PLAYBACK_SPEED for every shot. */
+  speed: number;
   /** Source seconds jumped since the previous shot ended. Null for the first. */
   skipS: number | null;
 };
@@ -65,12 +65,9 @@ export type MovieRecapProject = {
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
-  // Whether the render applies the copyright-free transform to the source. A
-  // per-project choice again — see history/movie-recap.md.
-  copyrightFree: boolean;
   // Divisor on the source crop; 1 is no zoom. NULL means the user has not chosen
   // one and the recommendation for the fit mode applies — see
-  // effectiveMovieRecapZoom(). Only read when copyrightFree.
+  // effectiveMovieRecapZoom().
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitlePosition: MovieRecapSubtitlePosition;
@@ -83,13 +80,46 @@ export type MovieRecapProject = {
   logoSizeBytes: number | null;
   logoPlacement: MovieRecapLogoPlacement;
   logoOpacity: number;
-  blurEnabled: boolean;
-  blurX: number;
-  blurY: number;
-  blurWidth: number;
-  blurHeight: number;
-  currentStep: 1 | 2 | 3 | 4;
+  // Every area of the frame to blur out, as PERCENTAGES of the output. A source
+  // can carry a channel logo, a watermark and a burned-in subtitle at once, so
+  // this is a list — empty means no blur at all.
+  blurRegions: MovieRecapBlurRegion[];
+  currentStep: 1 | 2 | 3 | 4 | 5;
   status: "draft" | "ready_for_generation";
+  // What the source says, read once at the Transcript step rather than inside
+  // every render. `transcriptStory` is that dialogue retold in Burmese as one
+  // flowing story — deliberately not aligned to the lines above it.
+  transcript: MovieRecapTranscriptSegment[] | null;
+  // The transcript as typed in by hand. The AI read is disconnected for now, so
+  // this is the transcript — `transcript` above only holds what an earlier
+  // automatic run left behind.
+  transcriptText: string | null;
+  transcriptStory: string | null;
+  // Whether the lines came from the file's own subtitle track or from Whisper.
+  transcriptSource: "captions" | "whisper" | null;
+  transcriptStatus: "idle" | "running" | "done" | "failed";
+  // Whether the last run only redid the retelling, so the progress bar can show
+  // the steps it skipped instead of claiming them.
+  transcriptStoryOnly: boolean;
+  transcriptStage: MovieRecapTranscriptStage | null;
+  transcriptProgressCurrent: number | null;
+  transcriptProgressTotal: number | null;
+  // 0-100 through the passage in flight, so the bar moves during one that takes
+  // minutes instead of only when a whole passage lands.
+  transcriptProgressPartial: number | null;
+  transcriptError: string | null;
+  // The script run: reading the source, dividing the story across its scenes and
+  // MEASURING each beat's narration. Separate from the render because the whole
+  // point is to stop before the cut and let the user fix a line
+  // (history/movie-recap.md, 2026-09-19).
+  scriptStatus: "idle" | "running" | "ready" | "failed";
+  scriptStage: MovieRecapRenderStage | null;
+  scriptProgressCurrent: number | null;
+  scriptProgressTotal: number | null;
+  scriptError: string | null;
+  // Cleared whenever a beat's text changes, so a render can never cut words
+  // nobody checked.
+  scriptApproved: boolean;
   renderStatus: "idle" | "running" | "done" | "failed";
   renderIsMock: boolean;
   renderError: string | null;
@@ -110,11 +140,23 @@ export type MovieRecapProject = {
   updatedAt: string;
 };
 
+// One line of the source's dialogue, timed against the ORIGINAL source video.
+export type MovieRecapTranscriptSegment = { start: number; end: number; text: string };
+
+// Mirrors the stage names lib/movie-recap-transcript.ts writes as it runs.
+export type MovieRecapTranscriptStage =
+  | "downloading_source"
+  | "reading_captions"
+  | "extracting_audio"
+  | "transcribing"
+  | "translating";
+
 // Mirrors the stage names lib/movie-recap-render.ts writes as it runs, for
 // progress display — see history/movie-recap.md, "real render progress".
 export type MovieRecapRenderStage =
   | "downloading_source"
   | "detecting_scenes"
+  | "extracting_keyframes"
   | "describing_scenes"
   | "reading_captions"
   | "extracting_audio"
@@ -130,6 +172,8 @@ export type MovieRecapRenderStage =
 // against the ORIGINAL source video (sourceStartS/sourceEndS). The synthesized
 // audio's own length is measured during the render and used to size the video
 // segment; it is not stored here — see lib/movie-recap-render.ts.
+export type MovieRecapBlurRegion = { x: number; y: number; width: number; height: number };
+
 export type MovieRecapNarrationSegment = {
   // The shots this beat cuts between while its line is spoken, in order. One
   // entry is a beat that holds a single shot; several is the normal case.
@@ -137,6 +181,39 @@ export type MovieRecapNarrationSegment = {
   // it described, so a re-render cuts on the same action the first one did.
   shots: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
   text: string;
+  // MEASURED length of this line's synthesized audio, in seconds. Written by the
+  // script run and re-written when one beat is re-checked; absent on a script
+  // from before measuring existed, and on a mock.
+  //
+  // Against the beat's own footage it is the only number that matters at the
+  // script step: more audio than footage is a held frame in the finished video,
+  // and the fix — fewer words, or a later timestamp — is the user's.
+  audioS?: number;
+  // The line as the script run first wrote it. Written once, at the birth of the
+  // beat, and carried through every edit — the restore point for a paste or a
+  // rewrite that turned out worse than what it replaced.
+  originalText?: string;
+  // Which hand-timed block this beat's words came from, and that block's own
+  // start and end. Carried on the beat so the footage can be laid out again —
+  // after one line is re-spoken, say — without re-reading the transcript.
+  blockIndex?: number;
+  blockStartS?: number;
+  blockEndS?: number;
+  // The RIBBON GROUP this beat belongs to: a run of consecutive blocks merged
+  // until it spans MOVIE_RECAP_RIBBON_GROUP_S. A beat shares footage with its
+  // neighbours INSIDE these bounds and never across them, which is what keeps
+  // the group's two stamps exact while the ones between them can give.
+  //
+  // Absent on a script built before groups existed; the ribbon falls back to the
+  // block bounds there, which is what those scripts were laid out with.
+  groupIndex?: number;
+  groupStartS?: number;
+  groupEndS?: number;
+  // The text changed after `audioS` was measured, so the number beside it is the
+  // OLD line's. Set by saving a beat without re-speaking it — sometimes a typo
+  // fix plainly cannot move the timing, and a TTS call for it is spend for
+  // nothing. Cleared by a re-check or a fresh script run.
+  audioStale?: boolean;
 };
 
 // What the shot planner needs that is NOT in the script: everything derived from
@@ -149,6 +226,10 @@ export type MovieRecapRenderAnalysis = {
   // The source's own edits, in seconds — a shot is never laid across one.
   cuts: number[];
   motion: { stepS: number; values: number[] } | null;
+  // The rectangle of the source that is actually picture, when the file carries
+  // letterbox bars of its own. Null when the whole frame is picture, which is
+  // the common case. See lib/movie-recap-crop.ts.
+  crop?: { width: number; height: number; x: number; y: number } | null;
 };
 
 export type MovieRecapProjectPatch = Partial<{
@@ -157,7 +238,6 @@ export type MovieRecapProjectPatch = Partial<{
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
-  copyrightFree: boolean;
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlePosition: MovieRecapProject["subtitlePosition"];
@@ -165,12 +245,10 @@ export type MovieRecapProjectPatch = Partial<{
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;
-  blurEnabled: boolean;
-  blurX: number;
-  blurY: number;
-  blurWidth: number;
-  blurHeight: number;
+  blurRegions: MovieRecapBlurRegion[];
   renderScript: MovieRecapNarrationSegment[];
+  transcriptText: string;
+  transcriptStory: string;
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];
 }>;

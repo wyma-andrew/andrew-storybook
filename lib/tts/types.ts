@@ -43,6 +43,12 @@ export type ProviderId = Voice["providerId"];
 export type SynthesisRequest = {
   text: string;
   voice: Voice;
+  /**
+   * Overrides the voice's own SSML rate for this one clip. Movie Recap uses it
+   * to land a beat on its footage exactly (lib/movie-recap-narration-rate.ts);
+   * a provider with no notion of rate ignores it.
+   */
+  rate?: string;
   signal?: AbortSignal;
 };
 

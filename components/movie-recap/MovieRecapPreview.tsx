@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Grip, Pause, Play } from "lucide-react";
 import type { MovieRecapProject } from "@/lib/api/types";
 import {
-  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
+  MOVIE_RECAP_LOOK,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_SUBTITLE_SAMPLE,
   movieRecapBlurCssPx,
@@ -43,18 +43,21 @@ function useFrameWidth(ref: React.RefObject<HTMLElement | null>) {
 export function MovieRecapPreview({
   project,
   videoUrl,
-  blur,
+  selectedBlur,
   onBlurChange,
+  onBlurSelect,
   previewZoom,
 }: {
   project: MovieRecapProject;
   videoUrl: string | null;
-  blur: BlurRect;
-  onBlurChange: (rect: BlurRect) => void;
-  // TEMPORARY: a zoom factor to try out in the preview only. It is not saved and
-  // the render does not read it — `MOVIE_RECAP_COPYRIGHT_TRANSFORM.zoom` is what
-  // actually burns. This exists to pick that number by eye; remove the prop and
-  // the slider once it is chosen.
+  /** Which blur region the drag handles belong to; -1 for none. */
+  selectedBlur?: number;
+  onBlurChange?: (index: number, rect: BlurRect) => void;
+  onBlurSelect?: (index: number) => void;
+  // The project's zoom, drawn as a CSS scale so the preview shows what the
+  // render will burn. Passed in rather than read from the project here because
+  // the caller already resolves "unset means the recommendation for this fit
+  // mode" (`effectiveMovieRecapZoom`).
   previewZoom?: number;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
@@ -67,29 +70,33 @@ export function MovieRecapPreview({
   // The export blurs in output pixels; the preview frame is drawn a few hundred
   // pixels wide, so the same radius here would blur far harder than the render.
   const blurPx = movieRecapBlurCssPx(frameWidth, project.aspectRatio);
-  const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const dragRef = useRef<
+    { pointerId: number; clientX: number; clientY: number; x: number; y: number; index: number } | null
+  >(null);
 
   function move(event: React.PointerEvent<HTMLDivElement>) {
     const start = dragRef.current;
     const frame = frameRef.current;
-    if (!start || !frame || start.pointerId !== event.pointerId) return;
+    const region = start ? project.blurRegions[start.index] : undefined;
+    if (!start || !frame || !region || start.pointerId !== event.pointerId) return;
     const bounds = frame.getBoundingClientRect();
-    onBlurChange(clampBlurRect({
-      ...blur,
+    onBlurChange?.(start.index, clampBlurRect({
+      ...region,
       x: start.x + ((event.clientX - start.clientX) / bounds.width) * 100,
       y: start.y + ((event.clientY - start.clientY) / bounds.height) * 100,
     }));
   }
 
-  function nudge(event: React.KeyboardEvent<HTMLDivElement>) {
+  function nudge(event: React.KeyboardEvent<HTMLDivElement>, index: number) {
+    const region = project.blurRegions[index];
     const delta = event.shiftKey ? 5 : 1;
     const movement: Record<string, [number, number]> = {
       ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta],
     };
     const change = movement[event.key];
-    if (!change) return;
+    if (!change || !region) return;
     event.preventDefault();
-    onBlurChange(clampBlurRect({ ...blur, x: blur.x + change[0], y: blur.y + change[1] }));
+    onBlurChange?.(index, clampBlurRect({ ...region, x: region.x + change[0], y: region.y + change[1] }));
   }
 
   return (
@@ -125,17 +132,13 @@ export function MovieRecapPreview({
                     // Read from the same constant the render reads. This was a
                     // hardcoded `=== "16:9"` and would have gone on showing an
                     // unmirrored portrait preview against a mirrored export.
-                    project.copyrightFree && MOVIE_RECAP_COPYRIGHT_TRANSFORM.mirrorAspectRatios.includes(project.aspectRatio)
-                      ? "scaleX(-1)"
-                      : "",
+                    MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio) ? "scaleX(-1)" : "",
                   ].filter(Boolean).join(" ") || undefined,
                   // Same numbers the ffmpeg `eq` gets, read from the constant so
                   // the two cannot drift. Gamma is deliberately absent: CSS has no
                   // gamma filter, so the preview is slightly lighter than the
                   // export at gamma 0.98.
-                  filter: project.copyrightFree
-                    ? `contrast(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.contrast}) saturate(${MOVIE_RECAP_COPYRIGHT_TRANSFORM.saturation})`
-                    : undefined,
+                  filter: `contrast(${MOVIE_RECAP_LOOK.contrast}) saturate(${MOVIE_RECAP_LOOK.saturation})`,
                 }}
                 preload="metadata"
                 ref={videoRef}
@@ -172,35 +175,49 @@ export function MovieRecapPreview({
                 than the render — which is what made the subtitle colour look
                 different between the two (history/movie-recap.md). The accent
                 border and the grip are editor chrome, preview-only by design. */}
-            {project.blurEnabled && (
-              <div
-                role="button"
-                tabIndex={0}
-                aria-label="Move blur area. Use arrow keys for one percent steps and Shift for five percent steps."
-                className="absolute z-20 grid cursor-move touch-none place-items-center overflow-hidden rounded-md border border-accent text-fg focus:outline-none focus:ring-2 focus:ring-accent"
-                style={{
-                  left: `${blur.x}%`,
-                  top: `${blur.y}%`,
-                  width: `${blur.width}%`,
-                  height: `${blur.height}%`,
-                  backdropFilter: `blur(${blurPx.toFixed(2)}px)`,
-                  WebkitBackdropFilter: `blur(${blurPx.toFixed(2)}px)`,
-                }}
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  dragRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: blur.x, y: blur.y };
-                }}
-                onPointerMove={move}
-                onPointerUp={(event) => {
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-                  dragRef.current = null;
-                }}
-                onPointerCancel={() => { dragRef.current = null; }}
-                onKeyDown={nudge}
-              >
-                <Grip size={18} />
-              </div>
-            )}
+            {project.blurRegions.map((region, index) => {
+              const selected = index === selectedBlur;
+              return (
+                <div
+                  key={index}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Blur area ${index + 1}. Use arrow keys for one percent steps and Shift for five percent steps.`}
+                  className={`absolute z-20 grid touch-none place-items-center overflow-hidden rounded-md text-fg focus:outline-none focus:ring-2 focus:ring-accent ${
+                    selected ? "cursor-move border border-accent" : "cursor-pointer border border-line-2"
+                  }`}
+                  style={{
+                    left: `${region.x}%`,
+                    top: `${region.y}%`,
+                    width: `${region.width}%`,
+                    height: `${region.height}%`,
+                    backdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+                    WebkitBackdropFilter: `blur(${blurPx.toFixed(2)}px)`,
+                  }}
+                  onPointerDown={(event) => {
+                    onBlurSelect?.(index);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    dragRef.current = {
+                      pointerId: event.pointerId,
+                      clientX: event.clientX,
+                      clientY: event.clientY,
+                      x: region.x,
+                      y: region.y,
+                      index,
+                    };
+                  }}
+                  onPointerMove={move}
+                  onPointerUp={(event) => {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                    dragRef.current = null;
+                  }}
+                  onPointerCancel={() => { dragRef.current = null; }}
+                  onKeyDown={(event) => nudge(event, index)}
+                >
+                  {selected && <Grip size={18} />}
+                </div>
+              );
+            })}
           </div>
 
           {videoUrl && (

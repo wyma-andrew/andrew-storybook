@@ -1,5 +1,18 @@
-import { MOVIE_RECAP_MOCK_SKIPPED_STEPS, MOVIE_RECAP_RENDER_STEPS } from "./constants/movie-recap";
-import type { MovieRecapProject, MovieRecapRenderStage } from "./api/types";
+import {
+  MOVIE_RECAP_MOCK_SKIPPED_STEPS,
+  MOVIE_RECAP_PARKED_STEPS,
+  MOVIE_RECAP_PLAYBACK_SPEED,
+  MOVIE_RECAP_SCRIPT_STEPS,
+  MOVIE_RECAP_RENDER_STEPS,
+  MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS,
+  MOVIE_RECAP_TRANSCRIPT_STEPS,
+} from "./constants/movie-recap";
+import type {
+  MovieRecapNarrationSegment,
+  MovieRecapProject,
+  MovieRecapRenderStage,
+  MovieRecapTranscriptStage,
+} from "./api/types";
 
 const MIB = 1024 * 1024;
 const MIN_PART_SIZE = 16 * MIB;
@@ -71,24 +84,46 @@ export function suggestMovieRecapFraming(width: number, height: number) {
 }
 
 
-// Which speed a given shot plays at. Deterministic, not random: the same project
-// must render to the same file twice, the way the voice seeds do, or a re-render
-// quietly produces different output and nothing can be compared against anything.
+// How much of a failure message reaches the project row.
 //
-// The hash is FNV-1a over the project id and the shot's position — small, stable,
-// and it does not matter that it is weak, only that it spreads neighbouring shots
-// across different speeds so a run does not all drift the same way.
-export function pickShotSpeed(speeds: readonly number[], projectId: string, beatIndex: number, shotIndex: number) {
-  if (!speeds.length) return 1;
-  const key = `${projectId}:${beatIndex}:${shotIndex}`;
+// ffmpeg writes its whole banner to stderr — version, build flags, every codec
+// warning — and `execFile` hands all of it back on a non-zero exit. One real
+// failure stored 85,975 characters. The row is re-read every two seconds while a
+// render runs, so a message that size rides along on every poll, and the one
+// line that says what actually went wrong is buried in it.
+//
+// The HEAD is kept because it names the command that failed, and the TAIL
+// because that is where ffmpeg puts the reason. The middle is the banner.
+const ERROR_HEAD_CHARS = 300;
+const ERROR_TAIL_CHARS = 1500;
+
+export function trimFailureMessage(message: string) {
+  const text = message.trim();
+  if (text.length <= ERROR_HEAD_CHARS + ERROR_TAIL_CHARS) return text;
+  const skipped = text.length - ERROR_HEAD_CHARS - ERROR_TAIL_CHARS;
+  return `${text.slice(0, ERROR_HEAD_CHARS)}\n… ${skipped} characters trimmed …\n${text.slice(-ERROR_TAIL_CHARS)}`;
+}
+
+// FNV-1a over a stable key. Weak on purpose — all it has to do is spread
+// neighbouring shots across different values, and it has to give the same answer
+// on a re-render, or the same project renders to two different files.
+function hashOf(key: string) {
   let hash = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) {
     hash ^= key.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return speeds[hash % speeds.length];
+  return hash;
 }
 
+// Which way a held shot's picture slides while it pushes in (see
+// holdMotionFilter). Deterministic, so a re-render produces the same file.
+// Neighbouring shots get different directions, so a run of held shots does not
+// all drift the same way and read as one long camera move across the cuts.
+export function pickHoldDrift(projectId: string, beatIndex: number, shotIndex: number) {
+  const hash = hashOf(`${projectId}:hold:${beatIndex}:${shotIndex}`);
+  return { driftX: (hash % 3) - 1, driftY: (Math.floor(hash / 3) % 3) - 1 };
+}
 
 // What a step in the render progress bar should show.
 //
@@ -97,22 +132,19 @@ export function pickShotSpeed(speeds: readonly number[], projectId: string, beat
 // with the status text beside it.
 export type MovieRecapStepState = "pending" | "active" | "done" | "skipped" | "failed";
 
-export function movieRecapRenderStepStates({
-  status,
-  stage,
-  isMock,
-}: {
-  status: MovieRecapProject["renderStatus"];
-  stage: MovieRecapRenderStage | null;
-  isMock: boolean;
-}): Record<string, MovieRecapStepState> {
-  const skipped = new Set<string>(isMock ? MOVIE_RECAP_MOCK_SKIPPED_STEPS : []);
-  const currentIndex = stage
-    ? MOVIE_RECAP_RENDER_STEPS.findIndex((step) => (step.stages as readonly string[]).includes(stage))
-    : -1;
+type Step = { id: string; label: string; stages: readonly string[] };
+
+function stepStates(
+  steps: readonly Step[],
+  status: "idle" | "running" | "done" | "failed",
+  stage: string | null,
+  skippedIds: readonly string[]
+): Record<string, MovieRecapStepState> {
+  const skipped = new Set<string>(skippedIds);
+  const currentIndex = stage ? steps.findIndex((step) => step.stages.includes(stage)) : -1;
 
   const states: Record<string, MovieRecapStepState> = {};
-  for (const [index, step] of MOVIE_RECAP_RENDER_STEPS.entries()) {
+  for (const [index, step] of steps.entries()) {
     if (skipped.has(step.id)) {
       // A skipped step stays skipped even once the render finishes — a mock did
       // not do it, and a finished bar claiming otherwise would be a lie.
@@ -139,4 +171,75 @@ export function movieRecapRenderStepStates({
     else states[step.id] = status === "failed" ? "failed" : "active";
   }
   return states;
+}
+
+export function movieRecapRenderStepStates({
+  status,
+  stage,
+  isMock,
+}: {
+  status: MovieRecapProject["renderStatus"];
+  stage: MovieRecapRenderStage | null;
+  isMock: boolean;
+}) {
+  return stepStates(MOVIE_RECAP_RENDER_STEPS, status, stage, [
+    ...MOVIE_RECAP_PARKED_STEPS,
+    ...(isMock ? MOVIE_RECAP_MOCK_SKIPPED_STEPS : []),
+  ]);
+}
+
+// The script run's own bar. Nothing is parked or skipped on it: every step it
+// shows is one that run actually performs.
+export function movieRecapScriptStepStates({
+  status,
+  stage,
+}: {
+  status: MovieRecapProject["scriptStatus"];
+  stage: MovieRecapRenderStage | null;
+}) {
+  // "ready" is this run's "done": the work finished, and the render is a
+  // separate action rather than a step on this bar.
+  return stepStates(MOVIE_RECAP_SCRIPT_STEPS, status === "ready" ? "done" : status, stage, []);
+}
+
+// The transcript step's own bar. A retell-only run never downloads the source or
+// reads its dialogue, so those show skipped for the same reason a mock render's
+// do: a bar claiming work that did not happen is a bar telling a lie.
+export function movieRecapTranscriptStepStates({
+  status,
+  stage,
+  storyOnly,
+}: {
+  status: MovieRecapProject["transcriptStatus"];
+  stage: MovieRecapTranscriptStage | null;
+  storyOnly: boolean;
+}) {
+  return stepStates(MOVIE_RECAP_TRANSCRIPT_STEPS, status, stage, storyOnly ? MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS : []);
+}
+
+/**
+ * SCREEN seconds behind a beat, which is what its narration has to fit.
+ *
+ * Not source seconds: every shot plays at MOVIE_RECAP_PLAYBACK_SPEED, so 5.7s of
+ * film holds the screen for 6.0s. Reporting the source length here showed
+ * overruns the render does not actually have.
+ */
+export function beatFootageS(beat: MovieRecapNarrationSegment) {
+  const sourceS = beat.shots.reduce((total, shot) => total + (shot.sourceEndS - shot.sourceStartS), 0);
+  return sourceS / MOVIE_RECAP_PLAYBACK_SPEED;
+}
+
+/**
+ * How far a beat's narration overruns its footage; 0 when it fits.
+ *
+ * The number the script step exists to show. A beat with no measurement yet — a
+ * script from before measuring existed, or a mock — reports 0 rather than a
+ * guess: a red number beside a line that may be fine is worse than none.
+ */
+export function beatOverrunS(beat: MovieRecapNarrationSegment) {
+  // A stale measurement still answers the question better than nothing: it is
+  // the previous wording of the same line, not a guess. The row says it is
+  // stale; the number stays so a small edit does not blank the column.
+  if (typeof beat.audioS !== "number") return 0;
+  return Math.max(0, Number((beat.audioS - beatFootageS(beat)).toFixed(2)));
 }

@@ -99,6 +99,15 @@ export function movieRecapProjectPrefix(projectId: string) {
   return `movie-recaps/${projectId}/`;
 }
 
+// Narration audio, keyed by WHAT WAS SAID rather than by beat number: the same
+// words in the same voice synthesize to the same clip, so a re-render pays
+// nothing for lines that did not change, and editing one line re-synthesizes
+// only that one. Under the project prefix, so deleting the project takes the
+// cache with it (see history/movie-recap.md on prefix deletion).
+export function movieRecapNarrationKey(projectId: string, hash: string) {
+  return `${movieRecapProjectPrefix(projectId)}narration/${hash}.wav`;
+}
+
 export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
   return `${movieRecapProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
@@ -189,6 +198,19 @@ export async function getObjectText(objectKey: string) {
   try {
     const result = await r2().send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
     return (await result.Body?.transformToString()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Reads a server-written object back as bytes. Like `getObjectText`, a missing
+// object is null rather than an error — every caller so far treats "not cached"
+// and "could not be read" the same way, by doing the work again.
+export async function getObjectBytes(objectKey: string) {
+  try {
+    const result = await r2().send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+    const bytes = await result.Body?.transformToByteArray();
+    return bytes ? Buffer.from(bytes) : null;
   } catch {
     return null;
   }

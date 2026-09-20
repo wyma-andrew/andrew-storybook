@@ -191,7 +191,10 @@ export async function extractKeyframes(
   rows: Row[],
   workDir: string,
   perScene = 1,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // One seek per frame, and a feature film has hundreds of scenes — long enough
+  // that a bar with no counter behind it reads as a hung render.
+  onProgress?: (done: number, total: number) => PromiseLike<unknown>
 ) {
   const fractions = keyframeFractions(perScene);
   const scenes: { index: number; files: string[]; fractions: number[] }[] = [];
@@ -210,6 +213,7 @@ export async function extractKeyframes(
       files.push(file);
     }
     scenes.push({ index, files, fractions });
+    await onProgress?.(index + 1, rows.length);
   }
   return scenes;
 }

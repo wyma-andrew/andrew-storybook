@@ -96,15 +96,55 @@ export type ApiSchema = {
     };
     DELETE: { data: MovieRecapProject };
   };
+  // Reads the source's dialogue and translates it — the wizard's Transcript
+  // step. Synchronous like the render: the request stays open for the whole
+  // run, and the browser polls the project row for its stage meanwhile.
+  // storyOnly: redo just the Burmese retelling from the stored transcript.
+  "movie-recaps/:id/transcript": {
+    POST: { data: MovieRecapProject; body: { storyOnly?: boolean } };
+  };
+  "movie-recaps/:id/transcript/cancel": {
+    POST: { data: { cancelled: boolean } };
+  };
+  // Builds and MEASURES the script without cutting anything: reads the source,
+  // divides the story across the film's own scenes, and speaks every beat so an
+  // overrun is a number the user can act on. Synchronous like the render, with
+  // the browser polling the project row for its stage.
+  "movie-recaps/:id/script": {
+    POST: { data: MovieRecapProject };
+  };
+  // Speaks and measures every beat again as they stand — the beats are read, the
+  // transcript is not. Answers "does each line still fit its footage" without
+  // moving a shot or a word.
+  "movie-recaps/:id/script/recheck": {
+    POST: { data: MovieRecapProject };
+  };
+  "movie-recaps/:id/script/cancel": {
+    POST: { data: MovieRecapProject };
+  };
+  // Writes ONE edited beat back. `measure` (default true) re-speaks it to time
+  // it; false stores the words and marks the beat's measurement stale, for an
+  // edit that cannot have moved the timing. Every other beat, and the scene
+  // split behind all of them, is left alone.
+  "movie-recaps/:id/script/beat": {
+    POST: { data: MovieRecapProject; body: { index: number; text: string; measure?: boolean } };
+  };
+  // Writes SEVERAL edited beats back in one go — the paste half of the copyable
+  // prompt. Never speaks them: the beats are marked stale and a re-check
+  // afterwards measures only the lines that changed.
+  "movie-recaps/:id/script/beats": {
+    POST: {
+      data: MovieRecapProject & { changed: number };
+      body: { edits: { index: number; text: string }[] };
+    };
+  };
   "movie-recaps/:id/render": {
-    // mock: skip the paid AI steps (Whisper + narration) and render canned
-    // narration instead — for iterating on overlay/subtitle design.
+    // mock: skip the paid AI steps and render canned narration instead — for
+    // iterating on overlay/subtitle design.
     // `renderLog` is how every shot actually came out. It rides on the response
     // instead of being stored: the browser keeps a per-project history of it in
     // localStorage. Null when the render failed.
-    // reuse: render the saved script instead of writing a new one — skips
-    // detection, the vision pass, transcription and the script model.
-    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean; reuse?: boolean } };
+    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean } };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

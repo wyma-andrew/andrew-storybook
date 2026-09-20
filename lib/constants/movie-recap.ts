@@ -1,7 +1,7 @@
 import { listVoices } from "../tts/voices";
 // Type-only, so it is erased at build time and creates no import cycle with
 // api/types.ts, which imports the value types from this file.
-import type { MovieRecapRenderStage } from "../api/types";
+import type { MovieRecapRenderStage, MovieRecapTranscriptStage } from "../api/types";
 
 export const MOVIE_RECAP_LANGUAGES = [{ id: "my", name: "Burmese" }] as const;
 // The voices the Settings tab offers, taken from the TTS catalog so the picker
@@ -122,43 +122,77 @@ export const MOVIE_RECAP_SUBTITLE_POSITIONS = [
   { id: "top", name: "Top" },
 ] as const;
 
-// The copyright-free transform, applied per shot when a project has it on. Every
-// value is deliberately mild: the point is that the export is not a frame-for-
-// frame copy of the source, not that it looks processed.
+// How a recap LOOKS, applied to every shot. This was once the "copyright-free"
+// transform, behind a per-project toggle, and the toggle is gone: these are
+// simply the house look now (user's decision, 2026-09-19). Every value stays
+// deliberately mild — the point is a finished picture, not a processed one.
+//
+// The per-shot playback speed that used to live here is gone with the toggle. It
+// existed so no shot ever played at the source's own speed, which was an
+// anti-fingerprinting goal and nothing else.
 //
 // These live here rather than in the render so the numbers are readable in one
 // place and can be shown in the UI later without importing the render.
-export const MOVIE_RECAP_COPYRIGHT_TRANSFORM = {
+// Every shot plays at this speed. Not a ratio band and not per shot — one
+// number for the whole recap, so the picture never changes pace mid-recap
+// (user's decision, 2026-09-20; the conditional speed-ramp it replaced is in
+// history/movie-recap.md).
+//
+// 0.95 is the knee, measured on a 49-beat script: it turns 14 freeze beats into
+// 6 and 10.39s of held frame into 7.78s, and slowing further buys almost nothing
+// because everything left is one block whose text is 34% longer than its
+// timestamps. Below ~0.93 the slow motion starts to read as a choice.
+export const MOVIE_RECAP_PLAYBACK_SPEED = 0.95;
+
+// How wide a ribbon group is: consecutive timestamped blocks are merged until
+// the group spans at least this long, and the ribbon shares footage inside it.
+//
+// The stamps themselves stay — a group's own start and end are real stamps, and
+// the stamps inside it are where the ribbon starts each line before it adjusts.
+// This exists because a transcript pulled off a video's narration track carries
+// a stamp every 3-4s, and a 3s wall cannot absorb the fact that Burmese takes
+// longer to say than the English it came from. Measured on a 40-line script:
+// per-line walls left 12.2s of held frame and 399 characters to cut, 25s groups
+// left 2.6s and 215 characters. Bigger groups do a little better and drift more
+// — 25s is the block size the same feature already shipped with.
+export const MOVIE_RECAP_RIBBON_GROUP_S = 25;
+
+// How far a line's picture may sit from the timestamp that line was written
+// against. The group's own two stamps are walls; this is what the stamps INSIDE
+// it are worth.
+//
+// Without it the ribbon placed every line purely by speech length and a line
+// drifted up to 5s from its own moment — measured on a 45s recap, where beat 4
+// spoke over the tail of beat 3's scene. Capping it costs almost nothing: at
+// 0.5s the same recap holds 0.12s of frame against 0.00s uncapped, while the
+// worst drift falls from 5.0s to 0.5s. At 0s — stamps as hard walls — it is
+// 1.93s of held frame, which is the trade this number exists to avoid.
+export const MOVIE_RECAP_RIBBON_DRIFT_CAP_S = 0.5;
+
+
+export const MOVIE_RECAP_LOOK = {
   // Zoom is per project now (`copyrightZoom`), not a constant — see
   // MOVIE_RECAP_ZOOM below for the range and the recommendations.
-  // eq: a nudge, not a look.
-  contrast: 1.06,
-  saturation: 1.08,
-  gamma: 0.98,
+  // eq: still a grade rather than a style, but no longer invisible. The first
+  // values (1.06 / 1.08 / 0.98) were chosen to be safe and read as nothing at
+  // all next to the source; these were picked off a four-way comparison on real
+  // footage (user's choice, 2026-09-20). Two stronger candidates were rejected
+  // with them: adding `unsharp` to claw back the softness the 0.95 slowdown and
+  // the letterbox crop introduce, which lifts grain with it, and a teal-orange
+  // balance, which is the recap-channel look and further from the source than
+  // the user wanted.
+  contrast: 1.12,
+  saturation: 1.18,
+  gamma: 0.96,
   // Both ratios. It was landscape-only at first, following the original spec
   // where mirroring sat under the 16:9 rules; portrait was added once the
   // transform was running. The cost is the same either way: any text in frame —
   // signs, screens, captions already burned into the source — reads backwards.
+  // Mirroring is the user's call, taken knowing the cost: any text in frame —
+  // signs, screens, subtitles already burned into the source — reads backwards.
+  // The recap's OWN subtitles are safe, because they are burned on the
+  // concatenated video long after this.
   mirrorAspectRatios: ["16:9", "9:16"] as readonly string[],
-  // Playback speeds a shot may run at, never 1.0. Duration matching used to
-  // DERIVE the speed from how long a shot had to last, which left most shots at
-  // the source's own speed; here the speed is chosen first and the length of
-  // source taken absorbs it, so the output timing is unchanged.
-  //
-  // Kept inside +-7%: `setpts` resamples timestamps rather than frames, so at
-  // 30fps a few percent is invisible, while past ~15% motion starts to read as
-  // wrong. The 1.0 +-3% dead zone is skipped — too close to untouched to count.
-  //
-  // SLOW-ONLY. The set used to run both ways (0.96, 0.97, 1.04, 1.07); nothing
-  // is sped up now. A fast shot fights the pacing, and a slow one consumes
-  // `slot * speed` LESS source than its slot, so it runs less far into the
-  // footage after it and the continuity invariant has more room. 0.94 is left
-  // out — at 6% it is the one value that reads as deliberate slow motion, and
-  // in a slow-only set it would land on a third of the shots.
-  speeds: [0.95, 0.96, 0.97] as readonly number[],
-  // Letterbox fill: the same clip scaled to cover, blurred, and sat behind the
-  // contained one, so the bars carry moving picture instead of black.
-  // At BLUR_REFERENCE_WIDTH, like MOVIE_RECAP_BLUR.radius — scaled per output.
   backfillBlurRadius: 20,
   backfillBlurPasses: 2,
 } as const;
@@ -177,34 +211,31 @@ export const MOVIE_RECAP_ZOOM = {
   min: 1,
   max: 2,
   step: 0.02,
-  // Keyed by fit mode AND aspect ratio, because how much the frame can afford to
-  // lose depends on both.
+  // Every case is 1 — no zoom — by the user's decision (2026-09-19). Still keyed
+  // by fit mode and aspect ratio because this is the SEEDING mechanism: a NULL
+  // `copyright_zoom` means "use the recommendation for this pair", so raising one
+  // case later is a one-line change here rather than a new concept.
+  //
+  // What these held before, which is worth knowing before raising any of them
+  // again: 9:16 `contain` was 1.56, and that number was doing a job — it is what
+  // kept a landscape source from sitting in a narrow centre strip between wide
+  // blurred bars. 9:16 `cover` was 1.05. Both 16:9 cases were already 1, because
+  // a landscape frame has nothing spare to give. See history/movie-recap.md.
   recommended: {
     contain: {
-      // Landscape contain holds a portrait source between wide blurred bars, and
-      // that centre strip is already small — zooming it crops the subject
-      // further while the bars stay exactly as wide, since a centre crop keeps
-      // the source's aspect ratio.
       "16:9": 1,
-      // Portrait contain has room to push in without losing anything visible.
-      "9:16": 1.56,
+      "9:16": 1,
     },
     cover: {
-      // Landscape `cover` already crops a landscape source to fill; zooming on
-      // top of that keeps taking from a frame that has nothing spare.
       "16:9": 1,
-      // Portrait has width to give.
-      "9:16": 1.05,
+      "9:16": 1,
     },
   },
-  // What a project carries when copyright-free is off.
-  none: 1,
 } as const satisfies {
   min: number;
   max: number;
   step: number;
   recommended: Record<string, Record<string, number>>;
-  none: number;
 };
 
 export function recommendedMovieRecapZoom(fitMode: MovieRecapFitMode, aspectRatio: MovieRecapAspectRatio) {
@@ -240,7 +271,7 @@ export function effectiveMovieRecapZoom(project: {
 // to the right group here, or it will read as "not started" while it runs.
 export const MOVIE_RECAP_RENDER_STEPS = [
   { id: "download", label: "Source", stages: ["downloading_source"] },
-  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "describing_scenes"] },
+  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "extracting_keyframes", "describing_scenes"] },
   { id: "dialogue", label: "Dialogue", stages: ["reading_captions", "extracting_audio", "transcribing"] },
   { id: "script", label: "Script", stages: ["writing_script"] },
   { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
@@ -248,11 +279,64 @@ export const MOVIE_RECAP_RENDER_STEPS = [
   { id: "publish", label: "Publish", stages: ["uploading"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapRenderStage[] }[];
 
+// The script run's own bar. It stops before anything is cut, so it carries only
+// the steps up to and including the narration it speaks in order to measure it.
+export const MOVIE_RECAP_SCRIPT_STEPS = [
+  { id: "download", label: "Source", stages: ["downloading_source"] },
+  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "extracting_keyframes", "describing_scenes"] },
+  { id: "script", label: "Script", stages: ["writing_script"] },
+  { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
+] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapRenderStage[] }[];
+
+// The transcript step's own stages, grouped the same way. "Dialogue" covers the
+// two alternatives — a source with subtitles never transcribes, and one without
+// never reads captions.
+export const MOVIE_RECAP_TRANSCRIPT_STEPS = [
+  { id: "download", label: "Source", stages: ["downloading_source"] },
+  { id: "dialogue", label: "Dialogue", stages: ["reading_captions", "extracting_audio", "transcribing"] },
+  { id: "story", label: "Burmese story", stages: ["translating"] },
+] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapTranscriptStage[] }[];
+
+// Retelling alone reuses the stored transcript, so these two genuinely do not
+// run — shown as skipped for the same reason a mock render's are.
+export const MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS = ["download", "dialogue"] as const;
+
+// Steps whose passes are parked. Only "Dialogue" now: the story is typed by
+// hand, so nothing transcribes the source or reads its captions.
+//
+// "Scenes" and "Script" came back on 2026-09-19. The story is still the user's,
+// but the render detects the film's own cuts and divides each block's passage
+// across them — see history/movie-recap.md. Shown struck through rather than
+// dropped from the bar: the stages still exist, and a bar that silently lost a
+// step hides that it is gone.
+export const MOVIE_RECAP_PARKED_STEPS = ["dialogue"] as const;
+
 // A mock render produces its narration from canned text and never touches the
 // source's pictures, audio or any model, so these steps genuinely do not run.
 // They are shown as skipped rather than done — claiming a mock "transcribed the
 // dialogue" would be a lie told by a progress bar.
 export const MOVIE_RECAP_MOCK_SKIPPED_STEPS = ["download", "scenes", "dialogue", "script", "narration"] as const;
+
+// A held frame moves instead of sitting dead: the picture pushes in slowly, the
+// way a documentary treats a still. Applied ONLY to a shot whose slot outlasts
+// its footage — a shot with enough footage is never touched.
+//
+// `zoom` is where the push-in ends (1.12 = 12% tighter by the end of the shot).
+// Small on purpose: past ~1.2 it reads as a deliberate zoom rather than as the
+// picture simply being alive. `prescale` is a straight quality fix: zoompan
+// snaps its window to whole pixels, and doing that on a doubled frame halves the
+// step it snaps by. Measured at 1080x1920: the doubling costs nothing next to
+// the encode.
+export const MOVIE_RECAP_HOLD_MOTION = {
+  zoom: 1.12,
+  prescale: 2,
+  // zoompan renders at this multiple of the output and the chain scales back
+  // down. `prescale` alone was not enough: zoompan still places its window on
+  // whole pixels, so a slow push-in holds for a few frames and then jumps one,
+  // which reads as a shake on a held frame. Rendering large and shrinking makes
+  // that jump a fraction of an output pixel — the downscale averages it away.
+  supersample: 2,
+} as const;
 
 // Every segment is resampled to this before the parts are concatenated.
 //
@@ -381,6 +465,73 @@ export function movieRecapSubtitleStyle(project: {
   };
 }
 
+// How many frames the vision pass sees per scene. THREE, because one still
+// cannot show an EVENT: "two men argue" is a frame, "he draws and she runs" is a
+// change over time, and a fast-cut recap lives on the second kind. The model
+// describes what changes across them and says which frame is the peak.
+//
+// NOT keyed on the aspect ratio. It was, at 3 on 9:16 and 1 on 16:9, and that
+// was the one thing in MOVIE_RECAP_PACING that changed how the story is
+// UNDERSTOOD rather than how it is presented — a 16:9 recap was built from a
+// weaker reading of the same film. Nothing about describing an event properly is
+// format-specific. See history/movie-recap.md.
+//
+// Frames go at `detail: "low"` (~19 prompt tokens each), so the cost is ffmpeg
+// seek time and request size, not really tokens.
+export const MOVIE_RECAP_KEYFRAMES_PER_SCENE = 3;
+
+// How far the reading speed may be pushed so the finished narration fits the
+// film, applied ONCE for the whole video.
+//
+// Per-beat fitting was built first and thrown out: a narrator who speeds up and
+// slows down every few seconds sounds wrong however well the numbers line up.
+// One rate for the whole recap is what a person hears as a reading. `min`/`max`
+// multiply the voice's own rate, so 1.15 on a +15% voice reads at +32%.
+//
+// Past `max` the fit stops: the recap simply runs longer than its source, the
+// last block holds a frame, and the Transcript step says which block has too
+// much text for its timestamps. A line read at +70% is not a recap, it is an
+// auctioneer.
+//
+// `tolerance` is the band inside which nothing is re-synthesized — a second TTS
+// pass to move the video by 1% is spend for nothing.
+export const MOVIE_RECAP_NARRATION_RATE_FIT = { min: 0.92, max: 1.15, tolerance: 0.02 } as const;
+
+// Laying the picture under the locked narration; see lib/movie-recap-ribbon.ts.
+//
+// `driftCapS` is how far the picture may sit from the timestamp that describes
+// it before the next block re-anchors. Five seconds is a shot or so: a cut that
+// lands a second or two from where it was typed is invisible, while forcing the
+// picture onto an exact timestamp is a jump the viewer sees. The cap exists to
+// stop drift ACCUMULATING — without it a run of long blocks walks the picture
+// half a minute behind the words by the end.
+//
+// The snap windows put every jump on one of the film's own edits. The re-anchor
+// one is wider because that jump is already visible, so landing it on a real cut
+// matters more than hitting the typed second exactly.
+export const MOVIE_RECAP_RIBBON = { driftCapS: 5, startSnapS: 1, resyncSnapS: 2 } as const;
+
+// One idea per narration line, in Burmese characters. The line's length decides
+// how long its beat holds the screen, which makes this a pacing control — but it
+// is spent by WRITING the line, so it also decides the words.
+//
+// NOT keyed on the aspect ratio, and that is the point: one script has to serve
+// both. Keyed on it, the same film posted to TikTok and to YouTube came back as
+// two different scripts, so a line fixed in one was still wrong in the other and
+// neither could be compared with the other. Ratio now chooses how many pieces
+// the narration is CUT into, never what it says. See history/movie-recap.md.
+//
+// The values are the wider, 16:9 pair. 9:16 kept 40-70 (itself raised from
+// 25-45, because at 40 characters a line had to carry who someone is, what they
+// did and what they are doing now, and the only way to fit that is to stack it
+// into one clause before the verb — reported as awkward, and it is
+// over-compression rather than bad grammar). Widening 9:16 again costs it
+// nothing: a longer beat there buys MORE cuts, since `minShotS` is 1.5. The
+// narrower pair would have cost 16:9 real pacing — a 45-character line cannot
+// hold a 4s clip without the picture stalling.
+export const MOVIE_RECAP_LINE_CHARS = [45, 80] as const;
+export const MOVIE_RECAP_LINE_MAX_CHARS = 90;
+
 // How fast the picture cuts, how long a narration line runs, and where the
 // caption sits — keyed on the ASPECT RATIO, because the aspect ratio IS the
 // format here (user's decision, 2026-09-17): 9:16 goes to TikTok and Facebook,
@@ -411,16 +562,6 @@ export const MOVIE_RECAP_PACING = {
     maxShotS: 2.4,
     // THE HARD ONE. No source footage may be on screen this long without a cut.
     maxContinuousSourceS: 3,
-    // One idea per line. The line's length decides how long its beat holds, so
-    // this is the pacing control the narration model actually has.
-    // Raised from 25-45 (max 50). At 40 characters a line had to carry who
-    // someone is, what they did and what they are doing now, and the only way
-    // to fit that is to stack it all into one clause before the verb —
-    // "အဘွားကိုအလုပ်ခေါ်လာတဲ့ကောင်မလေးက..." reported by the user as awkward, and
-    // it is over-compression, not bad grammar. Costs nothing in pacing: on 9:16
-    // a longer beat buys MORE cuts, since `minShotS` is 1.5.
-    lineChars: [40, 70],
-    lineMaxChars: 80,
     // A beat's timed length before measured audio stretches it.
     maxSegmentS: 3.5,
     // Percent of frame height the caption sits above the bottom edge. Higher on
@@ -429,13 +570,6 @@ export const MOVIE_RECAP_PACING = {
     // burned subtitle lands behind their UI. NOT yet checked against a real
     // post; it is a starting value to eyeball, not a measured one.
     subtitleOffsetPct: 18,
-    // How many frames the vision pass sees per scene. THREE, because one still
-    // cannot show an EVENT: "two men argue" is a frame, "he draws and she runs"
-    // is a change over time, and a fast-cut recap lives on the second kind. The
-    // model describes what changes across them and says which frame is the peak.
-    // Frames go at `detail: "low"` (~19 prompt tokens each), so this is a
-    // request-size and ffmpeg-time cost, not really a token one.
-    keyframesPerScene: 3,
   },
   // LONG FORM. Reasoned, NOT measured — derived from the arithmetic below and
   // never rendered at length. Treat as a first draft to test.
@@ -453,16 +587,8 @@ export const MOVIE_RECAP_PACING = {
     // Moved WITH minShotS, not separately: at 2/3 the invariant above fails (a
     // 3.5s beat asks for 2 cuts and can afford 1).
     maxContinuousSourceS: 4,
-    // Longer lines are what make 3-4s shots reachable at all — a 45-character
-    // line cannot hold a 4s clip without the picture stalling.
-    lineChars: [45, 80],
-    lineMaxChars: 90,
     maxSegmentS: 6,
     subtitleOffsetPct: 8,
-    // ONE, unchanged. Multi-frame description is a 9:16-only experiment for now
-    // (user's call). If it proves out on a reel it should come here too — there
-    // is nothing format-specific about describing an event properly.
-    keyframesPerScene: 1,
   },
 } as const satisfies Record<MovieRecapAspectRatio, MovieRecapPacing>;
 
@@ -471,11 +597,8 @@ export type MovieRecapPacing = {
   shotTargetS: number;
   maxShotS: number;
   maxContinuousSourceS: number;
-  lineChars: readonly [number, number];
-  lineMaxChars: number;
   maxSegmentS: number;
   subtitleOffsetPct: number;
-  keyframesPerScene: number;
 };
 
 export function movieRecapPacing(aspectRatio: MovieRecapAspectRatio): MovieRecapPacing {

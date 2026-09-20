@@ -9,13 +9,17 @@ import {
   type SceneRegenerationTarget,
 } from "./prompts/storyboard";
 import { VOICE_OVER_ASSIGNMENT_SCHEMA, voiceOverAssignmentSystemPrompt } from "./prompts/voice-over";
-import type { MovieRecapPacing } from "./constants/movie-recap";
+import { movieRecapStorySystemPrompt } from "./prompts/movie-recap-translation";
 import {
   MOVIE_RECAP_NARRATION_SCHEMA,
   MOVIE_RECAP_SCENE_VISION_SCHEMA,
   movieRecapNarrationSystemPrompt,
   movieRecapSceneVisionSystemPrompt,
 } from "./prompts/movie-recap-narration";
+import {
+  MOVIE_RECAP_SCENE_SPLIT_SCHEMA,
+  movieRecapSceneSplitSystemPrompt,
+} from "./prompts/movie-recap-scene-split";
 import type { Region } from "./constants/regions";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
@@ -212,6 +216,25 @@ export async function regenerateSceneShots(
 // read twice: once through its audio (Whisper) and once through its pictures
 // (one keyframe per detected scene), because an action beat with no dialogue is
 // invisible to a transcript.
+// The two passes a Movie Recap render actually spends on, as env-overridable
+// names.
+//
+// Default `gpt-5.4-mini` rather than the Luna model the rest of this file uses:
+// it is on OpenAI's shared-traffic free tier (2.5M tokens a day across the mini
+// and nano models), and a whole render is about 16k — so a day's allowance is
+// ~150 renders. Neither pass is a writing pass, which is why a small model is
+// enough: one describes a frame, the other only chooses where the user's own
+// text breaks, and the split is verified character-for-character before it is
+// used (lib/movie-recap-scene-text.ts).
+//
+// Both must support VISION and STRICT JSON SCHEMA, and both are sent
+// `reasoning_effort`. Swapping in a model without one of those — gpt-4.1-mini
+// and 4o-mini see images but reject `reasoning_effort`; o3-mini and o4-mini take
+// it but are text-only — fails the call, not the render: the split falls back to
+// the mechanical one and a vision failure leaves the descriptions empty.
+const MOVIE_RECAP_VISION_MODEL = process.env.MOVIE_RECAP_VISION_MODEL || "gpt-5.4-mini";
+const MOVIE_RECAP_SPLIT_MODEL = process.env.MOVIE_RECAP_SPLIT_MODEL || "gpt-5.4-mini";
+
 export type TranscriptSegment = { start: number; end: number; text: string };
 
 export type RecapScene = {
@@ -245,7 +268,11 @@ export async function describeMovieRecapScenes(
   }
   const res = await openai().chat.completions.create(
     {
-      model: "gpt-5.6-luna",
+      model: MOVIE_RECAP_VISION_MODEL,
+      // Describing what is in a frame is recall, not reasoning, and this runs
+      // once per eight scenes across the whole film — the cheapest setting is
+      // also the one that keeps a long source from spending minutes here.
+      reasoning_effort: "low",
       messages: [
         { role: "system", content: movieRecapSceneVisionSystemPrompt },
         { role: "user", content },
@@ -261,19 +288,53 @@ export async function describeMovieRecapScenes(
   return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string; peakFrame: number }[] }).scenes ?? [];
 }
 
+/**
+ * Divide ONE passage of the user's own Burmese across the scenes it plays over.
+ *
+ * Nothing here writes narration: the passage is the user's, and this pass only
+ * decides where it breaks. The result is positional — one entry per scene given,
+ * in the same order — so a model that loses count is caught by the caller rather
+ * than silently re-ordering the story.
+ */
+export async function splitMovieRecapBeat(
+  scenes: { index: number; seconds: number; visual: string }[],
+  text: string,
+  signal?: AbortSignal
+): Promise<{ sceneIndex: number; text: string }[]> {
+  const res = await openai().chat.completions.create(
+    {
+      model: MOVIE_RECAP_SPLIT_MODEL,
+      // NOT low. Matching a sentence to the picture it describes is the entire
+      // reason this pass exists — at low effort it falls back to splitting by
+      // length, which is what the mechanical fallback already does for free.
+      reasoning_effort: "medium",
+      messages: [
+        { role: "system", content: movieRecapSceneSplitSystemPrompt },
+        { role: "user", content: JSON.stringify({ scenes, passage: text }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "movie_recap_scene_split", schema: MOVIE_RECAP_SCENE_SPLIT_SCHEMA, strict: true },
+      },
+    },
+    { signal }
+  );
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  return (JSON.parse(raw) as { parts: { sceneIndex: number; text: string }[] }).parts ?? [];
+}
+
 // Returns one narration line per BEAT, each naming the scenes it plays over —
 // the model picks which scenes carry the plot and how they group, rather than
 // inventing timestamps, so every recap cut lands on a real one.
 export async function generateMovieRecapNarration(
   scenes: RecapScene[],
-  pacing: MovieRecapPacing,
   signal?: AbortSignal
 ): Promise<{ sceneIndexes: number[]; text: string }[]> {
   const res = await openai().chat.completions.create(
     {
       model: "gpt-5.6-luna",
       messages: [
-        { role: "system", content: movieRecapNarrationSystemPrompt(pacing) },
+        { role: "system", content: movieRecapNarrationSystemPrompt },
         { role: "user", content: JSON.stringify({ scenes }) },
       ],
       response_format: {
@@ -285,4 +346,42 @@ export async function generateMovieRecapNarration(
   );
   const raw = res.choices[0]?.message?.content ?? "{}";
   return (JSON.parse(raw) as { segments: { sceneIndexes: number[]; text: string }[] }).segments ?? [];
+}
+
+// The retelling runs on Sol rather than the Luna model every other pass uses:
+// this is the one pass whose output a person reads as prose, so it is judged on
+// how the Burmese sounds, not on filling a schema.
+const STORY_MODEL = "gpt-5.6-sol";
+
+// One passage of the source's dialogue, retold in Burmese as a story rather
+// than translated line by line. Chunking is the caller's job
+// (lib/movie-recap-transcript.ts).
+export async function retellInBurmese(
+  text: string,
+  signal?: AbortSignal,
+  // Called with the characters written so far. Streamed for the progress bar,
+  // not for display: one passage takes minutes, and a bar that only moves when a
+  // whole passage lands sits at 0% for all of it.
+  onProgress?: (charactersSoFar: number) => void
+): Promise<string> {
+  if (!text.trim()) return "";
+  const stream = await openai().chat.completions.create(
+    {
+      model: STORY_MODEL,
+      messages: [
+        { role: "system", content: movieRecapStorySystemPrompt },
+        { role: "user", content: text },
+      ],
+      stream: true,
+    },
+    { signal }
+  );
+  let out = "";
+  for await (const part of stream) {
+    const delta = part.choices[0]?.delta?.content;
+    if (!delta) continue;
+    out += delta;
+    onProgress?.(out.length);
+  }
+  return out.trim();
 }

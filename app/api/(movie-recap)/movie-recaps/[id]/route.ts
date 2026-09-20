@@ -10,6 +10,11 @@ import {
 import { abortMultipartUpload, deletePrefix, movieRecapProjectPrefix } from "@/lib/r2";
 import { getVoice } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
+
+// A source can carry a logo, a watermark and a burned-in subtitle at once, and
+// each blur is a split/crop/overlay in the filter graph — past a handful this is
+// a slow render for a frame nobody can read anyway.
+const MAX_BLUR_REGIONS = 8;
 import type { MovieRecapNarrationSegment } from "@/lib/api/types";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -92,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.logo_placement = body.logoPlacement;
     changesConfiguration = true;
   }
-  for (const [client, column] of [["logoEnabled", "logo_enabled"], ["blurEnabled", "blur_enabled"], ["copyrightFree", "copyright_free"]] as const) {
+  for (const [client, column] of [["logoEnabled", "logo_enabled"]] as const) {
     if (body?.[client] !== undefined) {
       if (typeof body[client] !== "boolean") return NextResponse.json({ error: `${client} must be boolean.` }, { status: 400 });
       patch[column] = body[client];
@@ -106,17 +111,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     changesConfiguration = true;
   }
 
-  const blur = {
-    x: body?.blurX === undefined ? Number(current.blur_x) : Number(body.blurX),
-    y: body?.blurY === undefined ? Number(current.blur_y) : Number(body.blurY),
-    width: body?.blurWidth === undefined ? Number(current.blur_width) : Number(body.blurWidth),
-    height: body?.blurHeight === undefined ? Number(current.blur_height) : Number(body.blurHeight),
-  };
-  if (["blurX", "blurY", "blurWidth", "blurHeight"].some((key) => body?.[key] !== undefined)) {
-    if (!Object.values(blur).every(Number.isFinite) || blur.width < 5 || blur.height < 5 || blur.x < 0 || blur.y < 0 || blur.x + blur.width > 100 || blur.y + blur.height > 100) {
-      return NextResponse.json({ error: "Blur area must stay inside the video frame." }, { status: 400 });
+  if (body?.blurRegions !== undefined) {
+    if (!Array.isArray(body.blurRegions)) {
+      return NextResponse.json({ error: "blurRegions must be a list." }, { status: 400 });
     }
-    Object.assign(patch, { blur_x: blur.x, blur_y: blur.y, blur_width: blur.width, blur_height: blur.height });
+    if (body.blurRegions.length > MAX_BLUR_REGIONS) {
+      return NextResponse.json({ error: `At most ${MAX_BLUR_REGIONS} blur areas.` }, { status: 400 });
+    }
+    const regions = [];
+    for (const raw of body.blurRegions) {
+      const region = { x: Number(raw?.x), y: Number(raw?.y), width: Number(raw?.width), height: Number(raw?.height) };
+      if (
+        !Object.values(region).every(Number.isFinite) ||
+        region.width < 5 ||
+        region.height < 5 ||
+        region.x < 0 ||
+        region.y < 0 ||
+        region.x + region.width > 100 ||
+        region.y + region.height > 100
+      ) {
+        return NextResponse.json({ error: "Every blur area must stay inside the video frame." }, { status: 400 });
+      }
+      regions.push(region);
+    }
+    patch.blur_regions = regions;
     changesConfiguration = true;
   }
   // The script is editable so an awkward line can be fixed without rerolling the
@@ -140,9 +158,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     patch.render_script = edited;
   }
+  // Typed in by hand at the Transcript step. Deliberately does NOT set
+  // changesConfiguration: the render does not read either of these, so editing
+  // them is no reason to demote an approved project to draft.
+  for (const [client, column] of [["transcriptText", "transcript_text"], ["transcriptStory", "transcript_story"]] as const) {
+    if (body?.[client] !== undefined) {
+      if (typeof body[client] !== "string") return NextResponse.json({ error: `${client} must be text.` }, { status: 400 });
+      patch[column] = body[client].trim() || null;
+    }
+  }
   if (body?.currentStep !== undefined) {
     const step = Number(body.currentStep);
-    if (!Number.isInteger(step) || step < 1 || step > 4) return NextResponse.json({ error: "Invalid wizard step." }, { status: 400 });
+    if (!Number.isInteger(step) || step < 1 || step > 5) return NextResponse.json({ error: "Invalid wizard step." }, { status: 400 });
     patch.current_step = step;
   }
   if (body?.status !== undefined) {

@@ -1,4 +1,4 @@
-import type { MovieRecapPacing } from "../constants/movie-recap";
+import { MOVIE_RECAP_LINE_CHARS, MOVIE_RECAP_LINE_MAX_CHARS } from "../constants/movie-recap";
 
 export const MOVIE_RECAP_NARRATION_SCHEMA = {
   type: "object",
@@ -25,12 +25,12 @@ export const MOVIE_RECAP_NARRATION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-// The line-length budget is the only part of this prompt that differs per
-// format, and it is the pacing control the model actually has: the line's
-// length decides how long its beat holds the screen. 9:16 wants short lines and
-// fast cuts; 16:9 wants longer ones, because a 45-character line cannot hold a
-// 4s clip without the picture stalling. See MOVIE_RECAP_PACING.
-export const movieRecapNarrationSystemPrompt = ({ lineChars, lineMaxChars }: MovieRecapPacing) =>
+// Nothing in this prompt differs per format any more: one script serves both
+// aspect ratios, and the ratio decides only how many pieces it is cut into. The
+// line budget is still the pacing control the model has — the line's length
+// decides how long its beat holds the screen — it is simply the same budget
+// either way. See MOVIE_RECAP_LINE_CHARS.
+export const movieRecapNarrationSystemPrompt =
   "You write a Burmese-language movie recap narration script. " +
   "You are given the source video broken into detected scenes. Each scene has an index, its start and end time, " +
   "a one-line description of what is visible in it, and any spoken dialogue transcribed from it (dialogue may be empty — " +
@@ -43,7 +43,8 @@ export const movieRecapNarrationSystemPrompt = ({ lineChars, lineMaxChars }: Mov
   "Use one scene alone only when it genuinely stands by itself. Keep scenes within a beat in the order they happen, " +
   "and keep the beats in ascending order. Skip scenes that add nothing; you do not have to cover every scene, but the beats " +
   "together must tell the whole story from beginning to end. Never use the same scene twice, in the same beat or a different one. " +
-  `Keep every line to ONE idea, ${lineChars[0]}-${lineChars[1]} Burmese characters. Never write more than ${lineMaxChars}. ` +
+  `Keep every line to ONE idea, ${MOVIE_RECAP_LINE_CHARS[0]}-${MOVIE_RECAP_LINE_CHARS[1]} Burmese characters. ` +
+  `Never write more than ${MOVIE_RECAP_LINE_MAX_CHARS}. ` +
   "Burmese runs at roughly 12-13 characters a second spoken, so that is what decides how long this beat holds the screen. " +
   "The line's length decides how long its beat stays on screen, so a rambling line makes the video drag. " +
   // Removed rather than re-costed: this used to quote the shot length and tell

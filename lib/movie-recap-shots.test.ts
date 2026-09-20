@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { segmentFilters } from "./movie-recap-render";
-import { MOVIE_RECAP_PACING, type MovieRecapPacing } from "./constants/movie-recap";
+import { MOVIE_RECAP_PACING, MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
 import {
   focusWindow,
+  holdDeficit,
   motionMean,
   type MotionTrack,
   MIN_JUMP_S,
@@ -32,18 +33,14 @@ const scenes = (n: number, { lengthS = 2, gapS = 10, fromS = 0 } = {}): SourceWi
 // screen for longer than MAX_CONTINUOUS_SOURCE_S without a cut. A run is broken
 // only when the next shot starts somewhere OTHER than where the previous one
 // stopped playing.
-const longestContinuousRun = (
-  shots: SourceWindow[],
-  slotS: number,
-  speedFor?: (shotIndex: number) => number
-) => {
+const longestContinuousRun = (shots: SourceWindow[], slotS: number) => {
   let longest = slotS;
   let run = slotS;
   for (let i = 1; i < shots.length; i++) {
     const previous = shots[i - 1];
     const playedEnd =
       previous.sourceStartS +
-      playedSourceSeconds(previous.sourceEndS - previous.sourceStartS, slotS, speedFor ? speedFor(i - 1) : null);
+      playedSourceSeconds(previous.sourceEndS - previous.sourceStartS, slotS);
     run = Math.abs(shots[i].sourceStartS - playedEnd) <= 0.16 ? run + slotS : slotS;
     longest = Math.max(longest, run);
   }
@@ -197,14 +194,14 @@ describe("planBeat", () => {
     expect(plan.sparesUsed).toEqual([]);
   });
 
-  it("leaves a gap the render can slow-fill alone", () => {
-    // 2.2s of scene under a 2.4s slot is a ratio of 1.09, inside the speed-ramp
-    // band: the render slows the clip and the scene still plays whole. Nothing
-    // freezes, so there is nothing to buy a cut for.
+  it("leaves a gap the global slowdown fills alone", () => {
+    // 2.3s of scene under a 2.4s slot: at MOVIE_RECAP_PLAYBACK_SPEED the slot
+    // only wants 2.28s, so the scene still plays whole and nothing freezes.
+    // There is nothing to buy a cut for.
     const plan = planBeat({
       pacing: SHORT,
       shots: [
-        { sourceStartS: 0, sourceEndS: 2.2 },
+        { sourceStartS: 0, sourceEndS: 2.3 },
         { sourceStartS: 100, sourceEndS: 106 },
       ],
       spares: [{ sourceStartS: 200, sourceEndS: 206 }],
@@ -298,22 +295,13 @@ describe("planBeat", () => {
     }
   });
 
-  it("measures continuity against the sped-up shot, not the slot", () => {
-    // The copyright-free transform takes `slot * speed` seconds of source, so a
-    // shot consumes more than its slot and lands closer to the next scene.
-    const speedFor = () => 1.3;
+  it("measures continuity against the played shot, not the slot", () => {
+    // A shot consumes `slot * speed` seconds of source, not its slot, so where
+    // it stops playing is where the next one has to start from.
     for (const targetS of [3.4, 5.5, 7]) {
-      const plan = planBeat({
-        pacing: SHORT,
-        shots: scenes(2, { lengthS: 6, gapS: 0 }),
-        spares: [],
-        targetS,
-        speedFor,
-      });
+      const plan = planBeat({ pacing: SHORT, shots: scenes(2, { lengthS: 6, gapS: 0 }), spares: [], targetS });
       if (plan.warning) continue;
-      expect(longestContinuousRun(plan.shots, plan.slotS, speedFor)).toBeLessThanOrEqual(
-        MAX_CONTINUOUS_SOURCE_S + 1e-9
-      );
+      expect(longestContinuousRun(plan.shots, plan.slotS)).toBeLessThanOrEqual(MAX_CONTINUOUS_SOURCE_S + 1e-9);
     }
   });
 });
@@ -500,23 +488,20 @@ describe("motion-aware placement", () => {
   });
 
   it("counts playback speed when asking whether a scene fills the slot", () => {
-    // The copyright-free transform plays `slot * speed` seconds of source, so a
-    // scene that clears the slot can still be too short. Measured on a real
-    // export: a 2.93s scene under a 2.92s slot at 1.04x held 0.10s.
-    // Slot is 2.0s, so a shot at 1.07x eats 2.14s of source. The nearer spare
-    // clears the slot but not the footage; the farther one covers both.
+    // Slot is 2.0s, and at MOVIE_RECAP_PLAYBACK_SPEED that wants 1.9s of source
+    // — so the nearer spare, 0.05s short of the slot, is long enough and the
+    // pass must take it rather than reaching past it for the longer one.
     const plan = planBeat({
       pacing: SHORT,
       shots: [{ sourceStartS: 0, sourceEndS: 4 }],
       spares: [
-        { sourceStartS: 20, sourceEndS: 22.05 },
+        { sourceStartS: 20, sourceEndS: 21.95 },
         { sourceStartS: 60, sourceEndS: 64 },
       ],
       targetS: 4,
-      speedFor: () => 1.07,
     });
-    expect(plan.sparesUsed).toContain(1);
-    expect(plan.sparesUsed).not.toContain(0);
+    expect(plan.sparesUsed).toContain(0);
+    expect(plan.sparesUsed).not.toContain(1);
   });
 
   it("says so when a beat has to be padded with held frames", () => {
@@ -617,18 +602,36 @@ describe("motion-aware placement", () => {
 });
 
 describe("playedSourceSeconds", () => {
-  it("is the whole scene when the render speed-ramps or freeze-pads it", () => {
-    expect(playedSourceSeconds(2, 2.2, null)).toBe(2); // freeze-pad
-    expect(playedSourceSeconds(2, 1.8, null)).toBe(2); // ratio 0.9, inside the ramp band
+  it("is slot * speed, because every shot plays at MOVIE_RECAP_PLAYBACK_SPEED", () => {
+    expect(playedSourceSeconds(6, 1.4)).toBeCloseTo(1.4 * MOVIE_RECAP_PLAYBACK_SPEED, 6);
   });
 
-  it("is the slot when the render trims", () => {
-    expect(playedSourceSeconds(6, 1.4, null)).toBe(1.4);
+  it("is the whole scene when the scene runs out before the slot does", () => {
+    expect(playedSourceSeconds(2, 2.2)).toBe(2);
+  });
+});
+
+describe("holdDeficit", () => {
+  it("is zero while the scene covers `slot * speed`", () => {
+    expect(holdDeficit(6, 1.4)).toBe(0);
+    // A scene that is short of its slot but not of `slot * speed` still fills
+    // it: this is the whole point of the global slowdown.
+    expect(holdDeficit(1.4, 1.4)).toBe(0);
   });
 
-  it("is slot * speed under the copyright-free transform, capped by the scene", () => {
-    expect(playedSourceSeconds(6, 1.4, 1.3)).toBeCloseTo(1.82, 6);
-    expect(playedSourceSeconds(1.5, 1.4, 1.3)).toBe(1.5);
+  it("is the slot the slowed scene cannot reach", () => {
+    expect(holdDeficit(1, 2)).toBeCloseTo(2 - 1 / MOVIE_RECAP_PLAYBACK_SPEED, 6);
+  });
+
+  it("plus the played scene is always the whole slot", () => {
+    // The invariant the render's two branches rest on: what plays and what is
+    // held have to add up, or the picture drifts off the narration track.
+    for (const [windowS, slotS] of [[6, 1.4], [1.4, 1.4], [1, 2], [0.05, 9]]) {
+      expect(playedSourceSeconds(windowS, slotS) / MOVIE_RECAP_PLAYBACK_SPEED + holdDeficit(windowS, slotS)).toBeCloseTo(
+        slotS,
+        6
+      );
+    }
   });
 });
 

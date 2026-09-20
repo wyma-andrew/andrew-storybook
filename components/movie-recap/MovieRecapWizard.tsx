@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
-import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Loader2, Pause, Play, RectangleHorizontal, RectangleVertical, Stamp, Trash2, Upload } from "lucide-react";
+import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Loader2, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, Stamp, Trash2, Upload } from "lucide-react";
 import { ConfirmDialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -31,8 +31,9 @@ import { MovieRecapScript } from "./MovieRecapScript";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 import MovieRecapRenderHistory from "./MovieRecapRenderHistory";
 import { MovieRecapSource } from "./MovieRecapSource";
+import { MovieRecapTranscript } from "./MovieRecapTranscript";
 
-const STEP_NAMES = ["Add Source", "Project Settings", "Customize Video", "Review"];
+const STEP_NAMES = ["Add Source", "Transcript", "Narrative Script", "Customize Video", "Review"];
 
 // What each step saves, as a list rather than a hand-copied object literal. The
 // literal version silently dropped `fitMode` — the control worked, the value
@@ -41,12 +42,13 @@ const STEP_NAMES = ["Add Source", "Project Settings", "Customize Video", "Review
 // adding one word here.
 type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
 
-const STEP_2_FIELDS = ["name", "outputLanguage", "voiceProfileId"] as const satisfies readonly PatchableField[];
+const SETTINGS_FIELDS = ["name", "outputLanguage", "voiceProfileId"] as const satisfies readonly PatchableField[];
 
-const STEP_3_FIELDS = [
+const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptStory"] as const satisfies readonly PatchableField[];
+
+const CUSTOMIZE_FIELDS = [
   "aspectRatio",
   "fitMode",
-  "copyrightFree",
   "copyrightZoom",
   "subtitlePreset",
   "subtitlePosition",
@@ -54,11 +56,7 @@ const STEP_3_FIELDS = [
   "logoEnabled",
   "logoPlacement",
   "logoOpacity",
-  "blurEnabled",
-  "blurX",
-  "blurY",
-  "blurWidth",
-  "blurHeight",
+  "blurRegions",
 ] as const satisfies readonly PatchableField[];
 
 function pick(project: MovieRecapProject, fields: readonly PatchableField[]) {
@@ -68,8 +66,12 @@ function pick(project: MovieRecapProject, fields: readonly PatchableField[]) {
 // is linkable, survives a reload, and the browser's Back button walks back
 // through the wizard instead of leaving it. Slugs rather than numbers because
 // `?step=customize` says what it is; the number is this list's index + 1.
-const STEP_SLUGS = ["source", "settings", "customize", "review"] as const;
-type StepNumber = 1 | 2 | 3 | 4;
+const STEP_SLUGS = ["source", "transcript", "script", "customize", "review"] as const;
+type StepNumber = 1 | 2 | 3 | 4 | 5;
+// Mirrors the server's own limit (the PATCH route), so the Add button stops at
+// the same place the request would have been refused.
+const MAX_BLUR_REGIONS = 8;
+
 type CustomizeTab = "aspect" | "subtitle" | "logo" | "blur";
 
 // Icon-only tabs — the label lives in `aria-label`/`title` so the row stays one
@@ -117,6 +119,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
+  const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
+  const { trigger: recheckBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
+  const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
+  const { trigger: recheckScript, loading: recheckingScript } = useWrite((api) => api("movie-recaps/:id/script/recheck").POST());
+  const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
@@ -132,7 +139,28 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // furthest step actually reached.
   const requestedStep = (stepSlug ? STEP_SLUGS.indexOf(stepSlug) + 1 : initialProject?.currentStep ?? 1) as StepNumber;
   const step = Math.min(requestedStep, maxStep) as StepNumber;
-  const setStep = (target: StepNumber) => setStepSlug(STEP_SLUGS[target - 1]);
+  // Beat edits live in the Narrative Script step's own state and are lost when it
+  // unmounts. Leaving the step is the one moment that can throw them away
+  // without the user having asked for anything, so it asks.
+  const [dirtyBeats, setDirtyBeats] = useState(0);
+  const setStep = (target: StepNumber) => {
+    if (step === 3 && target !== 3 && dirtyBeats > 0) {
+      return new Promise<void>((resolve) => {
+        ConfirmDialog.show({
+          title: "Leave without saving?",
+          content: `${dirtyBeats} beat${dirtyBeats === 1 ? " has" : "s have"} edits that are not saved. Leaving this step discards them.`,
+          confirmButtonLabel: "Discard and leave",
+          cancelButtonLabel: "Stay",
+          onConfirm: () => {
+            setDirtyBeats(0);
+            void setStepSlug(STEP_SLUGS[target - 1]).then(() => resolve());
+          },
+          onCancel: () => resolve(),
+        });
+      });
+    }
+    return setStepSlug(STEP_SLUGS[target - 1]);
+  };
   const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
   // Owned here, not in MovieRecapSource: that component unmounts when step 1 is
   // left, and revoking on its unmount killed the URL step 3 had just been handed.
@@ -140,6 +168,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     if (localVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(localVideoUrl);
   }, [localVideoUrl]);
   const [logoBusy, setLogoBusy] = useState(false);
+  // Which beat is being re-spoken, so only that row shows a spinner.
+  const [checkingBeat, setCheckingBeat] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   // The voice id whose preview is currently playing, or is being synthesized.
   const [playing, setPlaying] = useState<string | null>(null);
@@ -148,52 +178,48 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // replays instead of asking the server again.
   const previewUrls = useRef(new Map<string, string>());
 
+  // The row as it actually is, for when a request failed and local state is a
+  // guess. `force` skips the cache: the point is to stop trusting what we had.
+  async function syncProject() {
+    if (!project) return;
+    const result = await pollProject({ params: { id: project.id }, force: true });
+    if (result.data) setProject(result.data);
+  }
+
   function merge(patch: Partial<MovieRecapProject>) {
     setProject((current) => current ? { ...current, ...patch } : current);
   }
 
-  // Zoom is seeded from the fit mode, not typed in from nothing: turning the
-  // transform on, or changing the fit mode while it is on, sets the recommended
-  // value. Turning it off returns to 1 (no zoom), which is also what the render
-  // ignores. A hand-set zoom therefore survives everything except a fit-mode
-  // change, which is the one thing the recommendation depends on.
-  // Turning the transform on or off, and changing the fit mode while it is on,
-  // both UNSET the zoom rather than writing a number. Unset means "use the
-  // recommendation for this fit mode", so the value tracks the fit mode until
-  // someone moves the slider — and once they do, it stays where they put it
-  // until the fit mode changes again.
-  function setCopyrightFree(enabled: boolean) {
-    merge({ copyrightFree: enabled, copyrightZoom: null });
-  }
-
+  // Changing the fit mode or the aspect ratio UNSETS the zoom rather than
+  // writing a number. Unset means "use the recommendation for this pair", so the
+  // value tracks them until someone moves the slider — and once they do, it
+  // stays where they put it until one of the two changes again.
   function setFitMode(fitMode: MovieRecapProject["fitMode"]) {
-    if (!project) return;
-    merge({ fitMode, ...(project.copyrightFree ? { copyrightZoom: null } : {}) });
+    merge({ fitMode, copyrightZoom: null });
   }
 
-  // The recommendation depends on the aspect ratio as well as the fit mode, so
-  // changing either one returns the zoom to unset.
   function setAspectRatio(aspectRatio: MovieRecapProject["aspectRatio"]) {
-    if (!project) return;
-    merge({ aspectRatio, ...(project.copyrightFree ? { copyrightZoom: null } : {}) });
+    merge({ aspectRatio, copyrightZoom: null });
   }
 
-  async function saveAndGo(target: 2 | 3 | 4) {
+  async function saveAndGo(target: 2 | 3 | 4 | 5) {
     if (!project) return;
     const body: MovieRecapProjectPatch = { currentStep: target };
+    // The Transcript step has no save button of its own: its two textareas edit
+    // the project draft and this is what writes them.
     if (step === 2) {
+      for (const field of TRANSCRIPT_FIELDS) body[field] = project[field] ?? "";
+    }
+    if (step === 4) {
       if (!project.name.trim()) {
         toast.error("Project name is required.");
         return;
       }
-      Object.assign(body, pick(project, STEP_2_FIELDS));
-    }
-    if (step === 3) {
       if (project.logoEnabled && !project.logoUrl) {
         toast.error("Upload a brand logo or turn Add Logo off.");
         return;
       }
-      Object.assign(body, pick(project, STEP_3_FIELDS));
+      Object.assign(body, pick(project, SETTINGS_FIELDS), pick(project, CUSTOMIZE_FIELDS));
     }
     const result = await updateProject({ params: { id: project.id }, body });
     if (result.error || !result.data) {
@@ -205,26 +231,99 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     void setStep(target);
   }
 
-  async function saveRenderScript(texts: string[]) {
-    if (!project?.renderScript) return;
-    const result = await updateProject({
-      params: { id: project.id },
-      body: { renderScript: project.renderScript.map((beat, index) => ({ ...beat, text: texts[index] })) },
-    });
-    if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save the script.");
+  // Same write as Continue's, without leaving the step. The two textareas edit
+  // the project draft, so a long transcript can be parked before it is finished.
+  async function saveTranscript() {
+    if (!project) return;
+    const body: MovieRecapProjectPatch = {};
+    for (const field of TRANSCRIPT_FIELDS) body[field] = project[field] ?? "";
+    const result = await updateProject({ params: { id: project.id }, body });
+    if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save the transcript.");
     else {
       setProject(result.data);
-      toast.success("Script saved. Re-render to hear it.");
+      toast.success("Transcript saved.");
     }
   }
 
-  async function renderRecapPreview(mock = false, reuse = false) {
+  async function buildRecapScript() {
+    if (!project) return;
+    // Optimistic, for the same reason the render is: the POST does not resolve
+    // until the whole run finishes, and the polling effect reads local state.
+    merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
+    const result = await buildScript({ params: { id: project.id } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not build the script.");
+      // Re-read the row rather than guessing. A 409 means a run is ALREADY
+      // going — often one this browser started and then lost track of — and
+      // leaving the local status on the optimistic "running" would show a bar
+      // that never moves, while resetting it to idle would hide a run that is.
+      await syncProject();
+      return;
+    }
+    setProject(result.data);
+    if (result.data.scriptStatus === "ready") toast.success("Script measured. Check the beats, then approve.");
+    else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The script run failed.");
+  }
+
+  async function recheckWholeScript() {
+    if (!project) return;
+    merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
+    const result = await recheckScript({ params: { id: project.id } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not check the script.");
+      await syncProject();
+      return;
+    }
+    setProject(result.data);
+    if (result.data.scriptStatus === "ready") toast.success("Every beat re-measured.");
+    else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The check failed.");
+  }
+
+  // The paste half of the copyable prompt. Returns how many beats actually
+  // changed so the component can say so rather than claiming a silent success.
+  async function applyScriptBeats(edits: { index: number; text: string }[]) {
+    if (!project) return 0;
+    const result = await applyBeats({ params: { id: project.id }, body: { edits } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not apply those beats.");
+      return 0;
+    }
+    setProject(result.data);
+    if (result.data.changed > 0) {
+      toast.success(`${result.data.changed} beat${result.data.changed === 1 ? "" : "s"} updated. Re-check to measure them.`);
+    } else {
+      toast.error("Nothing in that paste was different from what is already here.");
+    }
+    return result.data.changed;
+  }
+
+  async function saveScriptBeat(index: number, text: string, measure: boolean) {
+    if (!project) return;
+    setCheckingBeat(index);
+    try {
+      const result = await recheckBeat({ params: { id: project.id }, body: { index, text, measure } });
+      if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
+      else setProject(result.data);
+    } finally {
+      setCheckingBeat(null);
+    }
+  }
+
+
+  async function cancelScriptRun() {
+    if (!project) return;
+    const result = await cancelScript({ params: { id: project.id } });
+    if (result.error || !result.data) toast.error(result.error?.error ?? "Could not cancel the script run.");
+    else setProject(result.data);
+  }
+
+  async function renderRecapPreview(mock = false) {
     if (!project) return;
     // Optimistic: the POST below doesn't resolve until the whole pipeline
     // finishes, so flip local status to "running" now — that's what starts
     // the progress-polling effect (it reads local state, not the request).
     merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
-    const result = await renderPreview({ params: { id: project.id }, body: { mock, reuse } });
+    const result = await renderPreview({ params: { id: project.id }, body: { mock } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not render the preview.");
       return;
@@ -237,9 +336,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       toast.success(
         mock
           ? "Mock preview rendered — no AI calls were made."
-          : reuse
-            ? "Re-rendered from your script — the source was not read again."
-            : "Preview rendered (video only, narration audio not synthesized yet)."
+          : "Rendered from the approved script — the source was not read again."
       );
     }
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
@@ -350,16 +447,27 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // history/movie-recap.md, "real render progress".
   const projectId = project?.id;
   const renderStatus = project?.renderStatus;
+  const scriptStatus = project?.scriptStatus;
+  // Both long runs report their stage on the row, so one poller serves both.
   useEffect(() => {
-    if (!projectId || renderStatus !== "running") return;
+    if (!projectId || (renderStatus !== "running" && scriptStatus !== "running")) return;
     const interval = setInterval(async () => {
       const result = await pollProject({ params: { id: projectId }, force: true });
       if (result.data) setProject(result.data);
     }, 2000);
     return () => clearInterval(interval);
-  }, [projectId, renderStatus, pollProject]);
+  }, [projectId, renderStatus, scriptStatus, pollProject]);
 
-  const blur = project ? { x: project.blurX, y: project.blurY, width: project.blurWidth, height: project.blurHeight } : { x: 35, y: 40, width: 30, height: 20 };
+  // Which blur box the preview's drag handles belong to. Per visit, like any
+  // other selection — it is not part of the project.
+  const [selectedBlur, setSelectedBlur] = useState(0);
+
+  function updateBlur(index: number, patch: Partial<{ x: number; y: number; width: number; height: number }>) {
+    if (!project) return;
+    merge({
+      blurRegions: project.blurRegions.map((region, i) => (i === index ? clampBlurRect({ ...region, ...patch }) : region)),
+    });
+  }
   const videoUrl = localVideoUrl ?? project?.sourceUrl ?? null;
 
   return (
@@ -367,7 +475,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       <TopBar><Crumb><Link href="/movie-recap">Movie Recap</Link> / <span className="text-fg">{project?.name ?? "New project"}</span></Crumb></TopBar>
       <Body>
         <Wrap wide>
-          <div className="mb-8 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="mb-8 grid grid-cols-2 gap-2 md:grid-cols-5">
             {STEP_NAMES.map((name, index) => {
               const number = (index + 1) as StepNumber;
               const active = step === number;
@@ -384,8 +492,37 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           {step === 1 && <MovieRecapSource project={project} onProject={(next, preview) => { setProject(next); setLocalVideoUrl(preview ?? null); }} />}
 
           {step === 2 && project && (
+            <MovieRecapTranscript project={project} onChange={merge} />
+          )}
+
+          {step === 3 && project && (
             <div>
-              <h2 className="mb-1 text-lg font-semibold">Project Settings</h2><p className="mb-6 text-sm text-fg-2">Name the project and choose its narration.</p>
+              <h2 className="mb-1 text-lg font-semibold">Narrative Script</h2>
+              <p className="mb-6 text-sm text-fg-2">
+                Your story, cut into beats on the film&apos;s own scenes and spoken so each one is measured against the
+                footage behind it. Fix anything that overruns here — the render cuts what you approve.
+              </p>
+              <MovieRecapScript
+                project={project}
+                onBuild={buildRecapScript}
+                onRecheckAll={recheckWholeScript}
+                onSave={saveScriptBeat}
+                onCancel={cancelScriptRun}
+                onDirtyChange={setDirtyBeats}
+                onApplyBeats={applyScriptBeats}
+                applyingBeats={applyingBeats}
+                building={buildingScript}
+                recheckingAll={recheckingScript}
+                checking={checkingBeat}
+                cancelling={cancellingScript}
+              />
+            </div>
+          )}
+
+          {step === 4 && project && (
+            <div>
+              <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project, choose its narration, and preview how framing and overlays will be applied.</p>
+<div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Project</div>
               <Field label="Project name"><Input value={project.name} onChange={(event) => merge({ name: event.target.value })} maxLength={200} /></Field>
               <Field label="Output language"><Select value={project.outputLanguage} onChange={(value) => merge({ outputLanguage: value })}>{MOVIE_RECAP_LANGUAGES.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></Field>
               <div className="mb-6"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Voice profile</div>
@@ -413,14 +550,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                 </div>
                 <audio ref={audioRef} onPause={() => setPlaying(null)} onEnded={() => setPlaying(null)} />
               </div>
-            </div>
-          )}
 
-          {step === 3 && project && (
-            <div>
-              <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Preview how framing and overlays will be applied in phase 2.</p>
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
-                <MovieRecapPreview project={project} videoUrl={videoUrl} blur={blur} previewZoom={project.copyrightFree ? effectiveMovieRecapZoom(project) : 1} onBlurChange={(rect) => merge({ blurX: rect.x, blurY: rect.y, blurWidth: rect.width, blurHeight: rect.height })} />
+                <MovieRecapPreview project={project} videoUrl={videoUrl} previewZoom={effectiveMovieRecapZoom(project)} selectedBlur={selectedBlur} onBlurSelect={setSelectedBlur} onBlurChange={(index, rect) => updateBlur(index, rect)} />
                 <div className="rounded-xl border border-line bg-panel-2 p-4">
                   <div className="mb-5 grid grid-cols-4 gap-2">
                     {CUSTOMIZE_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => void setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
@@ -433,37 +565,28 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                     <div className="mt-5"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Fit mode</div>
                       <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
                     </div>
-                    <label className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-line bg-panel-2 p-3">
-                      <span>
-                        <span className="block text-sm font-medium">Copyright-free transform</span>
-                        <span className="mt-1 block text-xs text-fg-3">Re-cut and alter the source so the export is not a continuous copy of it. Turn off to keep the footage as it is.</span>
+                    <label className="mt-5 block">
+                      <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
+                        <span>Zoom</span>
+                        <span>
+                          {effectiveMovieRecapZoom(project).toFixed(2)}x
+                          {project.copyrightZoom === null ? " · recommended" : ""}
+                        </span>
                       </span>
-                      <Switch checked={project.copyrightFree} onChange={setCopyrightFree} />
+                      <input
+                        aria-label="Zoom"
+                        type="range"
+                        min={MOVIE_RECAP_ZOOM.min}
+                        max={MOVIE_RECAP_ZOOM.max}
+                        step={MOVIE_RECAP_ZOOM.step}
+                        value={effectiveMovieRecapZoom(project)}
+                        onChange={(event) => merge({ copyrightZoom: Number(event.target.value) })}
+                        className="w-full accent-accent"
+                      />
+                      <span className="mt-2 block text-[11px] text-fg-3">
+                        1.00x keeps the original framing. Changing the aspect ratio or fit mode returns this to the recommended value.
+                      </span>
                     </label>
-                    {project.copyrightFree && (
-                      <label className="mt-3 block">
-                        <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
-                          <span>Zoom</span>
-                          <span>
-                            {effectiveMovieRecapZoom(project).toFixed(2)}x
-                            {project.copyrightZoom === null ? " · recommended" : ""}
-                          </span>
-                        </span>
-                        <input
-                          aria-label="Copyright-free zoom"
-                          type="range"
-                          min={MOVIE_RECAP_ZOOM.min}
-                          max={MOVIE_RECAP_ZOOM.max}
-                          step={MOVIE_RECAP_ZOOM.step}
-                          value={effectiveMovieRecapZoom(project)}
-                          onChange={(event) => merge({ copyrightZoom: Number(event.target.value) })}
-                          className="w-full accent-accent"
-                        />
-                        <span className="mt-2 block text-[11px] text-fg-3">
-                          1.00x keeps the original framing. Changing the fit mode returns this to the recommended value.
-                        </span>
-                      </label>
-                    )}
                   </div>}
                   {tab === "subtitle" && <div>
                     <p className="mb-5 text-xs text-fg-2">Subtitles are burned into the exported video. Pick a look; its size is set by the aspect ratio.</p>
@@ -497,24 +620,104 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                     </div>}
                   </div>}
                   {tab === "blur" && <div>
-                    <label className="mb-5 flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Blur</span><span className="text-xs text-fg-3">Drag the area directly in the preview.</span></span><Switch checked={project.blurEnabled} onChange={(checked) => merge({ blurEnabled: checked })} /></label>
-                    {project.blurEnabled && <div className="space-y-5">
-                      <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Width</span><span>{Math.round(project.blurWidth)}%</span></span><input aria-label="Blur width" type="range" min={5} max={100} value={project.blurWidth} onChange={(event) => { const rect = clampBlurRect({ ...blur, width: Number(event.target.value) }); merge({ blurX: rect.x, blurY: rect.y, blurWidth: rect.width, blurHeight: rect.height }); }} className="w-full accent-accent" /></label>
-                      <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Height</span><span>{Math.round(project.blurHeight)}%</span></span><input aria-label="Blur height" type="range" min={5} max={100} value={project.blurHeight} onChange={(event) => { const rect = clampBlurRect({ ...blur, height: Number(event.target.value) }); merge({ blurX: rect.x, blurY: rect.y, blurWidth: rect.width, blurHeight: rect.height }); }} className="w-full accent-accent" /></label>
-                    </div>}
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium">Blur areas</span>
+                      <Button
+                        className="!h-8 !px-2.5 !text-xs"
+                        disabled={project.blurRegions.length >= MAX_BLUR_REGIONS}
+                        onClick={() => {
+                          // Offset each new box from the last so a second one is
+                          // not created exactly under the first, invisible.
+                          const step = project.blurRegions.length * 6;
+                          const region = clampBlurRect({ x: 35 + step, y: 40 + step, width: 30, height: 20 });
+                          merge({ blurRegions: [...project.blurRegions, region] });
+                          setSelectedBlur(project.blurRegions.length);
+                        }}
+                      >
+                        <Plus size={14} /> Add
+                      </Button>
+                    </div>
+
+                    {project.blurRegions.length === 0 && (
+                      <p className="text-xs text-fg-3">No blur areas. Add one to cover a logo or a watermark.</p>
+                    )}
+
+                    <div className="space-y-2">
+                      {project.blurRegions.map((region, index) => (
+                        <div
+                          key={index}
+                          className={`rounded-lg border p-3 ${index === selectedBlur ? "border-accent bg-panel" : "border-line bg-panel-2"}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBlur(index)}
+                              className="flex-1 text-left text-xs font-medium"
+                            >
+                              Area {index + 1}
+                              <span className="ml-2 font-normal text-fg-3 tabular-nums">
+                                {Math.round(region.width)}% × {Math.round(region.height)}% at {Math.round(region.x)}%,{" "}
+                                {Math.round(region.y)}%
+                              </span>
+                            </button>
+                            <Button
+                              className="!h-7 !w-7 !px-0"
+                              aria-label={`Remove blur area ${index + 1}`}
+                              onClick={() => {
+                                merge({ blurRegions: project.blurRegions.filter((_, i) => i !== index) });
+                                setSelectedBlur((current) => (current >= index ? Math.max(0, current - 1) : current));
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
+                          {index === selectedBlur && (
+                            <div className="mt-3 space-y-4">
+                              <label className="block">
+                                <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
+                                  <span>Width</span>
+                                  <span>{Math.round(region.width)}%</span>
+                                </span>
+                                <input
+                                  aria-label={`Blur area ${index + 1} width`}
+                                  type="range"
+                                  min={5}
+                                  max={100}
+                                  value={region.width}
+                                  onChange={(event) => updateBlur(index, { width: Number(event.target.value) })}
+                                  className="w-full accent-accent"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
+                                  <span>Height</span>
+                                  <span>{Math.round(region.height)}%</span>
+                                </span>
+                                <input
+                                  aria-label={`Blur area ${index + 1} height`}
+                                  type="range"
+                                  min={5}
+                                  max={100}
+                                  value={region.height}
+                                  onChange={(event) => updateBlur(index, { height: Number(event.target.value) })}
+                                  className="w-full accent-accent"
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>}
                 </div>
               </div>
             </div>
           )}
 
-          {step === 4 && project && (
+          {step === 5 && project && (
             <Review
               project={project}
-              saving={saving}
               onRenderPreview={renderRecapPreview}
-              onSaveScript={saveRenderScript}
-              onReRenderScript={() => renderRecapPreview(false, true)}
               rendering={rendering}
               onCancelRender={cancelRecapRender}
               cancelling={cancelling}
@@ -524,8 +727,17 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           <div className="mt-8 flex items-center justify-between border-t border-line pt-5">
             {step > 1 ? <Button onClick={() => void setStep((step - 1) as StepNumber)}><ChevronLeft size={16} /> Back</Button> : <span />}
             {step === 1 && <LoadingButton variant="primary" disabled={project?.sourceUploadStatus !== "ready"} loading={saving} onClick={() => saveAndGo(2)}>Continue <ChevronRight size={16} /></LoadingButton>}
-            {step === 2 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(3)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
-            {step === 3 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(4)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
+            {step === 2 && (
+              <div className="flex items-center gap-2">
+                <LoadingButton loading={saving} onClick={() => void saveTranscript()}>Save</LoadingButton>
+                {/* The BURMESE STORY is what gates this, not the source
+                    transcript: the story with its timestamps is what the script
+                    run reads, and nothing downstream touches the source text. */}
+                <LoadingButton variant="primary" disabled={!project?.transcriptStory?.trim()} loading={saving} onClick={() => saveAndGo(3)}>Continue <ChevronRight size={16} /></LoadingButton>
+              </div>
+            )}
+            {step === 3 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(4)}>Continue <ChevronRight size={16} /></LoadingButton>}
+            {step === 4 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(5)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
           </div>
         </Wrap>
       </Body>
@@ -536,10 +748,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 function confirmFullRender(project: MovieRecapProject, run: () => void) {
   const hasRender = project.renderStatus === "done";
   ConfirmDialog.show({
-    title: "Render AI Preview",
+    title: "Render Preview",
     content: hasRender
-      ? "This reads the source again and writes a NEW narration script, replacing the one below and any edits you made to it. The current video is replaced too. Scene detection, the vision pass, transcription, narration audio and the video are all regenerated, so this costs the full render."
-      : "This runs the full pipeline: scene detection, the vision pass, transcription, the narration script, narration audio and the video. It costs AI usage and takes several minutes.",
+      ? "This cuts the approved script below and replaces the current video. The source is not read again and the narration is already synthesized, so nothing is re-measured — only the video is rebuilt."
+      : "This cuts the approved script below over the source footage and renders the video. The narration is already synthesized, so this is ffmpeg alone, but it still takes several minutes.",
     confirmButtonLabel: "Render",
     cancelButtonLabel: "Cancel",
     // Swallow the promise on purpose. Handing it to ConfirmDialog holds the
@@ -552,19 +764,13 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
 
 function Review({
   project,
-  saving,
   onRenderPreview,
-  onSaveScript,
-  onReRenderScript,
   rendering,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
-  saving: boolean;
   onRenderPreview: (mock?: boolean) => void;
-  onSaveScript: (texts: string[]) => void;
-  onReRenderScript: () => void;
   rendering: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
@@ -574,14 +780,15 @@ function Review({
     ["Project name", project.name], ["Output language", "Burmese"], ["Voice profile", MOVIE_RECAP_VOICES.find((voice) => voice.id === project.voiceProfileId)?.name ?? project.voiceProfileId], ["Aspect ratio", project.aspectRatio],
     ["Subtitles", `Burned in · ${MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)?.name ?? project.subtitlePreset} · ${MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}% · ${MOVIE_RECAP_SUBTITLE_POSITIONS.find((item) => item.id === project.subtitlePosition)?.name ?? project.subtitlePosition}`],
     ["Logo", project.logoEnabled ? `${project.logoFileName ?? "Missing"} · ${MOVIE_RECAP_LOGO_PLACEMENTS.find((item) => item.id === project.logoPlacement)?.name} · ${project.logoOpacity}%` : "Off"],
-    ["Copyright-free", project.copyrightFree ? `On · zoom ${effectiveMovieRecapZoom(project).toFixed(2)}x` : "Off"],
-    ["Blur", project.blurEnabled ? `${Math.round(project.blurWidth)}% × ${Math.round(project.blurHeight)}% at ${Math.round(project.blurX)}%, ${Math.round(project.blurY)}%` : "Off"],
+    ["Zoom", `${effectiveMovieRecapZoom(project).toFixed(2)}x`],
+    ["Blur", project.blurRegions.length ? `${project.blurRegions.length} area${project.blurRegions.length === 1 ? "" : "s"}` : "Off"],
   ];
   const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";
   const stageLabel = project.renderStage
     ? {
         downloading_source: "Downloading source",
         detecting_scenes: "Detecting scenes",
+        extracting_keyframes: `Taking keyframe ${project.renderProgressCurrent}/${project.renderProgressTotal}`,
         describing_scenes: `Describing scene ${project.renderProgressCurrent}/${project.renderProgressTotal}`,
         reading_captions: "Reading source captions",
         extracting_audio: "Extracting audio",
@@ -605,7 +812,7 @@ function Review({
         <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}{mockTag}</span>
       </div>
       <p className="mb-4 text-xs text-fg-2">
-        <span className="font-medium text-fg">Mock</span> uses canned narration over the first 40s of the source — no Whisper, no GPT, no API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">AI</span> runs the real read → copyright-free transform → narration-script → narration-audio pipeline, and the exported file carries the spoken narration. Mock stays silent, because synthesizing costs the same as a real run. Styled subtitles are burned into the exported file by libass, exactly as designed in step 3.
+        <span className="font-medium text-fg">Mock</span> uses canned narration over the first 40s of the source — no TTS, no API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">Preview</span> cuts the approved script below; the source is not read again and the narration is already synthesized, so this is ffmpeg alone. Mock stays silent, because synthesizing costs the same as a real run. Styled subtitles are burned into the exported file by libass, exactly as designed in step 3.
       </p>
       {/* The stepper replaces watching one line of text change for minutes.
           It is hidden while idle, where seven grey dots would say nothing the
@@ -618,13 +825,12 @@ function Review({
       {project.renderStatus === "failed" && project.renderError && <p className="mb-4 text-sm text-danger">{project.renderError}</p>}
       <div className="flex flex-wrap items-center gap-3">
         <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
-        <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running"} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render AI Preview</LoadingButton>
+        <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !project.renderScript?.length} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Preview</LoadingButton>
+        {!project.renderScript?.length && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
         {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
       </div>
       {project.renderStatus === "done" && project.renderOutputUrl && <MovieRecapRenderPlayer project={project} />}
     </div>
-
-    <MovieRecapScript project={project} onSave={onSaveScript} onReRender={onReRenderScript} saving={saving} rendering={rendering} />
 
     <MovieRecapRenderHistory projectId={project.id} />
 

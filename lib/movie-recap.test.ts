@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampBlurRect, formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize, pickShotSpeed, suggestMovieRecapFraming } from "./movie-recap";
+import { clampBlurRect, formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize, suggestMovieRecapFraming } from "./movie-recap";
 
 describe("movie recap multipart sizing", () => {
   it("uses 16 MiB parts for ordinary videos", () => {
@@ -41,32 +41,3 @@ describe("suggestMovieRecapFraming", () => {
   });
 });
 
-describe("pickShotSpeed", () => {
-  const speeds = [0.96, 0.97, 1.04, 1.07];
-
-  it("never returns original speed", () => {
-    for (let beat = 0; beat < 12; beat++) {
-      for (let shot = 0; shot < 5; shot++) {
-        expect(pickShotSpeed(speeds, "project-a", beat, shot)).not.toBe(1);
-      }
-    }
-  });
-
-  it("is deterministic — the same project renders the same way twice", () => {
-    expect(pickShotSpeed(speeds, "project-a", 3, 1)).toBe(pickShotSpeed(speeds, "project-a", 3, 1));
-    expect(pickShotSpeed(speeds, "project-b", 3, 1)).toBe(pickShotSpeed(speeds, "project-b", 3, 1));
-  });
-
-  it("spreads neighbouring shots across the set rather than drifting one way", () => {
-    const run = Array.from({ length: 24 }, (_, n) => pickShotSpeed(speeds, "project-a", Math.floor(n / 4), n % 4));
-    expect(new Set(run).size).toBeGreaterThan(2);
-    // And both directions are represented, so a render does not come out
-    // uniformly faster or slower than the source.
-    expect(run.some((s) => s < 1)).toBe(true);
-    expect(run.some((s) => s > 1)).toBe(true);
-  });
-
-  it("falls back to original speed only when there is nothing to choose from", () => {
-    expect(pickShotSpeed([], "project-a", 0, 0)).toBe(1);
-  });
-});

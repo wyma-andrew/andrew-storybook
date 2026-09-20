@@ -49,7 +49,7 @@ export const azureProvider: TtsProvider = {
     return Boolean(process.env.TTS_AZURE_KEY?.trim() && endpoint());
   },
 
-  async synthesize({ text, voice, signal }: SynthesisRequest): Promise<SynthesisResult> {
+  async synthesize({ text, voice, rate, signal }: SynthesisRequest): Promise<SynthesisResult> {
     if (voice.providerId !== "azure") throw new TtsError("Azure cannot speak this voice profile.", 500);
     const key = process.env.TTS_AZURE_KEY?.trim();
     const url = endpoint();
@@ -57,7 +57,7 @@ export const azureProvider: TtsProvider = {
       throw new TtsError("Azure Speech is not configured. Set TTS_AZURE_KEY and TTS_AZURE_REGION first.", 503);
     }
 
-    const body = buildSsml(voice.params, text);
+    const body = buildSsml(rate ? { ...voice.params, rate } : voice.params, text);
 
     let response: Response | null = null;
     for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt++) {

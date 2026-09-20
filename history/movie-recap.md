@@ -3014,7 +3014,7 @@ being merged again — **fill-speed** is derived and fills a gap; **transform-sp
 is an input and de-fingerprints. A ramped shot is not playing at 1.0 either, so
 "no shot ever plays at the source's own speed" survives both.
 
-## 2026-09-17 — Three frames per scene on 9:16, so the vision pass can describe an EVENT
+## 2026-09-17 — Three frames per scene on 9:16, so the vision pass can describe an EVENT (the 9:16-ONLY half is SUPERSEDED 2026-09-19 — three frames on both ratios now; the reasoning for three stands)
 
 **The limit, and it was never the prompt:** `extractKeyframes` took ONE still per
 scene and the vision prompt asked for one sentence about it. A single frame
@@ -3397,3 +3397,1495 @@ at them.
 project lives. Deleting the old output on each successful render is the obvious
 follow-up and is the real cost driver now that re-rendering from an edited
 script is cheap.
+
+## 2026-09-19 — The transcript is a wizard step, read once, before anything else (the line-for-line translation in this entry is SUPERSEDED the same day — see below)
+
+**Decision:** a **Transcript** step sits between Add Source and Project Settings,
+so the wizard is five steps (`?step=transcript`). It reads the source's dialogue
+— the file's own subtitle track when it has a usable one, Whisper otherwise —
+and then translates every line into Burmese. Both readings are stored on the
+project row (`transcript`, `transcript_mm`, `transcript_source`) and shown side
+by side, one row per line, with the line's timestamp.
+
+**The render no longer reads the source for dialogue.** It uses the stored
+transcript when there is one and falls back to reading the source only for
+projects that predate this step or whose transcript run failed. Two readings of
+the same film would disagree — Whisper is not deterministic — and the user would
+have approved words the render never used.
+
+**This supersedes "Rejected: caching the transcript and scene descriptions too"
+(2026-09-18).** That entry rejected storing the transcript because *nothing
+downstream read it*, and said to revisit when something did. The transcript step
+is that something: it is shown, and the render consumes it.
+
+**Translation is display-only.** The narration model still receives the
+original-language dialogue through `dialogueForScene`. It already writes Burmese
+from whatever it is given, and translating twice — once here, once implicitly in
+the narration prompt — would put a second lossy hop in front of the script for no
+gain. The Burmese column exists so a user who does not read the source language
+can judge whether the recap is about to be written from the right material.
+
+**Translation is batched and strictly one line in, one line out**
+(~6000 characters or 60 lines per request). A feature's transcript is thousands
+of lines. The one-to-one rule is not politeness to the model: the two columns are
+read as rows, so a model that merges or splits lines puts every Burmese line
+under someone else's timestamp. A batch that comes back the wrong length is
+padded from the original, which reads as untranslated rather than misaligned.
+
+**Continue is blocked until the transcript exists.** Everything after this step
+is configuration for a render that now depends on it; letting a user past would
+mean the render silently falling back to reading the source itself.
+
+**Consequence: existing projects shift a step.** The migration bumps every
+`current_step >= 2` by one and widens the check to 1-5. Their `transcript` is
+null, so their Review step still renders — the render's fallback path is what
+keeps them working, and it is not dead code.
+
+**Also in this change:** `transcribeSource()` and the captions-or-Whisper choice
+moved out of `lib/movie-recap-render.ts` into `lib/movie-recap-transcript.ts`
+(`readSourceTranscript`), and `FFMPEG`/`run()` into `lib/movie-recap-ffmpeg.ts`,
+so the render and the transcript step share them without a cycle.
+
+## 2026-09-19 — The Burmese side is a retelling, not a translation (supersedes)
+
+**Decision, made by the user against the entry above:** the Transcript step's
+Burmese output is **one flowing story**, produced by a storyteller prompt that is
+explicitly told to avoid literal translation and to sound like a story told
+person-to-person. The source transcript is displayed first — timed, line by line,
+the record of what was said — and the Burmese story sits under it as prose.
+
+**This supersedes "Translation is batched and strictly one line in, one line
+out"** from the entry above, and the two-column aligned table it existed to
+protect. The reasoning there was not wrong: a retelling cannot be aligned to
+source lines, and that alignment is now gone. It is deferred, not denied — the
+plan is to break the story back down into lines later, from the story rather than
+from the source.
+
+**Consequence: nothing downstream reads the Burmese story.** The narration model
+still receives the original-language dialogue through `dialogueForScene`. Until
+the breakdown exists, the story is for the user to read.
+
+**Retold in passages, and they are not stitched.** A feature's dialogue is far
+past one call, so it is chunked at ~12,000 characters and each chunk retold
+(`retellInBurmese`), the results joined with a blank line. Each passage is its own
+narrative with its own opening — the seams are visible, and that is accepted for
+now. A chunk small enough to align neatly would have nothing to narrate, which is
+the whole reason the chunk is large.
+
+**`transcript_mm` (jsonb) was dropped for `transcript_story` (text).** Same-day
+column, no data worth migrating, and the name now says what it holds.
+
+**Update, same day: the retelling runs on `gpt-5.6-sol`,** not the `gpt-5.6-luna`
+every other pass here uses. It is the only pass whose output a person reads as
+prose — it is judged on how the Burmese sounds, not on filling a schema.
+
+**Update, same day: the retelling is streamed, for the bar's sake.** Counting
+whole passages left the bar at 0% for minutes — a long source is only two or
+three passages, so nothing moved until one finished, and the run looked hung.
+`retellInBurmese` now streams and reports characters written; the pipeline turns
+that into `transcript_progress_partial` (0-100 through the passage in flight),
+written at most every 1.5s because the browser polls every 2s. The estimate
+divides by the INPUT length, which over-estimates — the retelling is condensed
+and Burmese runs shorter — and is capped at 95%: a bar sitting at 95% is honest,
+one that reaches 100% and keeps working is not. The stream is for progress only;
+the text is still used whole when the passage ends.
+
+**Update, same day: the transcript run has a stepper,** the render's one
+generalized (`stepStates` in `lib/movie-recap.ts`, now shared by both). Source /
+Dialogue / Burmese story. A **percentage bar appears only under the retelling**,
+because that is the one stage that can count itself — it knows how many passages
+are left. No percentage is invented for the download or the transcription: a bar
+that fakes its own progress is worse than no bar. A retell-only run shows the
+first two steps struck through, which is why `transcript_story_only` is a column
+rather than something derived after the fact — once the run is over, nothing in
+the row would say those steps had been skipped rather than done.
+
+**Update, same day: "Retell" rerolls the story alone** (`POST
+movie-recaps/:id/transcript` with `storyOnly`). It runs on the transcript already
+on the row: no download, no second Whisper bill. Without it the only way to
+reject the wording was re-reading the whole film, which is the same trap the
+script's "re-render from the saved script" was built to escape.
+
+## 2026-09-19 — Deleting the video at step 1 deletes the project
+
+**Decision:** the Add Source step has a "Delete video" button, and it deletes the
+whole project (`DELETE movie-recaps/:id`) and returns to the project list.
+
+**Why not remove just the source:** at this step the project IS the source. Its
+name, aspect ratio, fit mode and subtitle offset were all seeded from the file,
+its R2 object key is built from the filename, and the transcript and every render
+hang off it. Clearing only the source would invent a state nothing else handles —
+a project row whose `source_upload_status` says nothing usable is there — and
+would leave a transcript and a rendered video describing a file that is gone.
+
+**Rejected: swapping in a different file in place.** It reads as the obvious
+feature and is a trap: the object key would have to be rewritten, and every
+derived artefact (transcript, story, script, analysis, render output) silently
+becomes about the wrong film. Build it only with an explicit reset of all of
+those, and a confirmation that says so.
+
+**Consequence:** deleting removes the uploaded source and logo with the project,
+so there is no undo. The confirm dialog names the file and says as much.
+
+## 2026-09-19 — The Transcript step takes both texts by hand (AI read parked)
+
+**Decision, by the user:** the Transcript step is two textareas — the source
+transcript and the Burmese story — saved on the project row
+(`transcript_text`, `transcript_story`). Nothing calls a model.
+
+**Parked, not deleted.** `POST movie-recaps/:id/transcript`, its cancel route,
+`runMovieRecapTranscript`, `retellTranscript` and
+`MovieRecapTranscriptProgress.tsx` all still exist and still work; the wizard
+simply stopped calling them. Turning the automatic read back on is a change to
+one step's component, not a rebuild. `readSourceTranscript` is NOT parked — the
+render still calls it, which is what keeps the render working now that nothing
+fills `transcript` up front.
+
+**Pasted text has no timestamps,** so it could not go in `transcript` (the timed
+`{start, end, text}[]` the read pipeline produces). Hence a separate
+`transcript_text` column. `transcript` still holds whatever an earlier automatic
+run left on a row; nothing displays it.
+
+**Consequence: the render is back to reading the source itself.** With
+`transcript` empty on new projects, the render's fallback path runs — subtitle
+track or Whisper, as it did before the Transcript step existed. So the hand-typed
+transcript is not what the recap is written from. It is stored for the line-level
+breakdown that is coming, and for the user to read.
+
+**Continue is gated on the source transcript being non-empty,** the same gate as
+before, now on the typed text instead of the read one.
+
+## 2026-09-19 — The render cuts the typed Burmese story at its own timestamps
+
+**Decision, by the user:** the hand-typed Burmese story IS the narration script,
+and its timestamps are positions in the SOURCE — the uploaded video is the very
+one they were read off. So a block's footage is simply the source between that
+block's time and the next one. Nothing has to be matched to anything.
+
+**What a full render now runs:** download, TTS, ffmpeg. That is all. Scene
+detection, the vision pass, subtitle-reading/Whisper and the narration model are
+each skipped — not conditionally, but because nothing calls them.
+
+**Parked, not deleted, at the user's instruction.** `detectScenes`,
+`describeScenes`, `extractKeyframes`, `generateMovieRecapNarration`,
+`readSourceTranscript`, `runMovieRecapTranscript` and `dialogueForScene` all
+still exist and still work (`dialogueForScene` is exported purely so it survives
+being uncalled). Their stages stay in `MovieRecapRenderStage` and stay grouped in
+`MOVIE_RECAP_RENDER_STEPS`, so the progress bar is correct again the day they
+come back. On the bar they read as **skipped** — struck through — via
+`MOVIE_RECAP_PARKED_STEPS`, rather than being dropped from it: a bar that
+silently lost three steps hides that they are gone.
+
+**One block is one beat.** A block is 23-30s of source carrying ~385 Burmese
+characters, so the shot planner still does its job inside it — the continuity
+limit, the speed set and the copyright transform all apply unchanged. Nothing
+here bypasses the planner; it is handed one window per beat instead of a model's
+scene picks.
+
+**Blocks outside the source are dropped, not clamped** (`parseTimestampedBlocks`,
+with tests). A stamp past the end describes footage that is not there, and a
+zero-length window would put narration over nothing — which reads as a render bug
+rather than as the bad paste it is. A stamp that goes backwards is dropped for
+the same reason: one bad line must not drag the blocks after it out of order.
+
+**Consequence: there are no spare scenes.** Without detection the planner has
+nothing to borrow from, so a beat whose narration outruns its own footage holds
+or slows rather than cutting away. The analysis blob is still written (empty) so
+a re-render has something to load instead of failing on a missing object.
+
+**Consequence: the English transcript is not read by anything.** It is stored for
+the user and for the line-level breakdown still to come.
+
+**Also: "Render AI Preview" is now "Render Preview",** and the confirm text no
+longer promises passes that do not run. The only model left in a full render is
+the TTS voice.
+
+## 2026-09-19 — The keyframe count leaves the pacing table: how a scene is READ is not a format choice
+
+**Decision, approved by the user:** `keyframesPerScene` is gone from
+`MOVIE_RECAP_PACING` and is now `MOVIE_RECAP_KEYFRAMES_PER_SCENE = 3`, the same
+for both aspect ratios. This supersedes the 9:16-only half of the 2026-09-17
+entry, which had already recorded that asymmetry as the user's call rather than a
+technical boundary, to be revisited.
+
+**Why it mattered enough to fix while dead:** it was the one field in that table
+that changed how the story is UNDERSTOOD rather than how it is presented. Every
+other field — the shot band, the continuity limit, line length, caption timing
+and offset — is a consequence of where the video is posted or of the frame's
+shape. One frame per scene on 16:9 meant a landscape recap was built from a
+weaker reading of the same film: the model saw a situation ("two men argue")
+where the vertical one saw an event ("he draws and she runs"). An audit against
+the rule "one recap logic, aspect ratio as a presentation profile" found nothing
+else out of place.
+
+**Fixed while nothing calls it,** because the vision pass is parked with the
+other AI passes. That is the point: it is cheaper to correct now than to
+rediscover the asymmetry the day the pass comes back, and the entry above shows
+how easily an admitted-temporary asymmetry reads as reasoned later.
+
+**Deliberately NOT changed: `fitMode`.** The crop is a user setting seeded once
+from the source's orientation, not derived from the output ratio. A ratio alone
+cannot decide it — `cover` is right for a portrait source in a 9:16 frame and
+throws away most of a landscape one. Recorded because a format-profile table
+looks like the obvious home for it.
+
+## 2026-09-19 — The line budget leaves the pacing table too: one script, two formats
+
+**Decision, by the user:** `lineChars` and `lineMaxChars` are gone from
+`MOVIE_RECAP_PACING` and are now `MOVIE_RECAP_LINE_CHARS = [45, 80]` and
+`MOVIE_RECAP_LINE_MAX_CHARS = 90`, the same for both aspect ratios. With the
+keyframe count already moved (above), the pacing table is now presentation only:
+the shot band, the continuity limit, caption timing and the subtitle offset.
+
+**Why:** keyed on the ratio, the same film posted to TikTok and to YouTube came
+back as two DIFFERENT SCRIPTS. A line fixed in one was still wrong in the other,
+and the two could not be compared. Choosing an aspect ratio should decide how
+many pieces the narration is cut into, never what it says.
+
+**The 16:9 pair won.** 9:16 had 40-70 (max 80) against 16:9's 45-80 (max 90).
+Widening 9:16 costs it nothing — a longer beat there buys MORE cuts, since
+`minShotS` is 1.5, and 9:16's own budget had already been raised once for being
+over-compressed. Narrowing 16:9 would have cost it real pacing: a 45-character
+line cannot hold a 4s clip without the picture stalling.
+
+**Rejected: making the line budget a project setting.** It would decouple the
+same thing, and the user does not want the control — they are the only user and
+one budget is enough. Revisit only if a second budget is ever actually wanted.
+
+**`movieRecapNarrationSystemPrompt` is a plain string again,** not a function of
+the pacing profile, and `generateMovieRecapNarration` no longer takes one. Both
+are parked with the rest of the AI passes; fixed now for the same reason the
+keyframe count was, rather than leaving the asymmetry to be rediscovered.
+
+**What choosing an aspect ratio now does, in full:** how many pieces a beat is
+cut into (9:16 cuts every 3s, 16:9 every 4s), the frame's shape and crop, the
+output size (1080x1920 against 16:9's 720p, still a draft), where the subtitle
+sits, and how long one caption may hold. Nothing else.
+
+## 2026-09-19 — A held frame drifts instead of sitting dead
+
+**Decision, by the user:** when a shot's slot outlasts its footage, the held
+frame is no longer frozen — it pushes in slowly and slides, the way a
+documentary treats a still. Nothing on screen stops.
+
+**Why it matters more than it sounds:** the shortfall is not one hold at the end
+of a beat. Every shot in a short beat runs out of footage, so the picture used to
+move, stop, cut, move, stop, cut — a rhythmic stutter, which reads as a broken
+render rather than as a slow one. On this project's opening blocks each shot was
+~3.2s of motion followed by ~3.2s of nothing.
+
+**Applied ONLY to shots that actually hold.** A shot with enough footage is
+untouched. In the copyright-free path `tpad` also covers the single frame a speed
+change leaves to rounding; that is deliberately NOT animated, or every shot in
+the recap would drift for an invisible frame.
+
+**Across the whole shot, not just the held part.** Starting the move at the
+moment the footage runs out marks exactly where the freeze began. Drifting from
+the first frame means the hold has no onset to see.
+
+**Numbers, and why they are small.** 1.12 zoom by the end of the shot, and the
+slide spends 0.6 of the room that zoom opens. Past ~1.2 it reads as a deliberate
+zoom rather than as the picture being alive — the same line the rejected
+slow-motion fill ran into. The drift fraction stays under 1 so the window can
+never leave the frame, which is asserted rather than eyeballed.
+
+**Direction is hashed, not random** (`pickHoldDrift`), for the reason the speed
+set is: a re-render has to produce the same file. Neighbouring shots get
+different directions, so a run of held shots does not read as one long camera
+move across the cuts. The FNV-1a hash `pickShotSpeed` had inline is now shared.
+
+**`zoompan` runs on a doubled frame.** It snaps its window to whole pixels, which
+jitters at output size; doing it at 2x halves the step. Measured at 1080x1920 the
+doubling costs nothing next to the encode (1.78s against 1.83s for a 5s clip).
+
+**Timing is a parameter of `holdMotionFilter`, which the rest of
+`movie-recap-transform.ts` refuses.** That rule is about steps which change a
+shot's DURATION — a speed change or a freeze — because those must be planned, not
+appended. This one is `slotS` in, `slotS` out; it needs the length only to finish
+its move as the shot ends. Verified end to end against ffmpeg, not just as a
+string: 5.000s, 150 frames, output size unchanged, and three frames sampled from
+inside the hold all differ.
+
+**This does NOT replace fixing the script.** The opening seven blocks still say
+more than their footage can cover (75s over), and a drifting hold is a better
+failure, not a success. The numbers are in the entry above.
+
+## 2026-09-19 — The copyright-free toggle is gone; its look is just the look
+
+**Decision, by the user:** `copyright_free` is removed. Everything it gated is
+now unconditional — the blurred backfill behind letterbox bars, the zoom, the
+mirror, and the colour grade — except the per-shot playback speed, which is
+deleted outright. Zoom keeps its slider.
+
+**This supersedes the whole copyright-mode line of entries** (2026-09-15 through
+2026-09-17): the per-project toggle, the slow-only speed set, and "Speed is an
+input, so no shot plays at the source's own speed". The reasoning in those is not
+wrong, it is simply no longer being paid for.
+
+**Speed went because its only purpose went.** A shot never playing at 1.0 was an
+anti-fingerprinting goal. With that goal dropped it is a moving part the planner
+has to reason about — `speedFor`, `topSpeed`, `playedSourceSeconds` — for a
+picture nobody can see the difference in. `pickShotSpeed` is deleted with it. The
+PLANNER keeps its speed support: it is the generic way to say "this shot consumes
+more source than its slot", it is tested, and it is simply not given one now.
+
+**Mirror is ON, and that is the user's call against advice.** Every piece of text
+inside the source reads backwards — signs, screens, phone displays, subtitles
+already burned into the footage. The recap's OWN subtitles are safe, because they
+are burned onto the concatenated video long after this filter. Recorded plainly
+so nobody later reads the mirrored text as a bug.
+
+**`MOVIE_RECAP_COPYRIGHT_TRANSFORM` is renamed `MOVIE_RECAP_LOOK`.** The old name
+described a purpose that no longer exists, and a constant named for a dropped
+goal is how a reader concludes the goal is still live.
+
+**The "slightly raised default" was asked for and then withdrawn the same day —
+see the entry below.** It was never applied to 16:9: both its cases were already
+1, because a landscape frame has nothing spare to give.
+
+**`MOVIE_RECAP_ZOOM.none` is deleted** — it meant "what a project carries when
+copyright-free is off", and nothing read it even before that state stopped
+existing.
+
+## 2026-09-19 — Every zoom default is 1: no zoom, whatever the ratio
+
+**Decision, by the user, replacing the "slightly raised default" asked for hours
+earlier:** every entry in `MOVIE_RECAP_ZOOM.recommended` is 1. A project that has
+never touched the slider renders at the source's own framing.
+
+**What this gives up, so it is not rediscovered as a bug:** 9:16 `contain` was
+1.56, and that number was doing real work — it is what kept a landscape source
+from sitting in a narrow centre strip between two wide blurred bars. At 1 that
+strip is back. If a portrait recap of landscape footage starts looking like a
+small picture in a big blur, this is why, and the slider is the answer.
+
+**The table stays keyed by fit mode and aspect ratio** even though all four
+values are now equal. It is the SEEDING mechanism, not a tuning table: NULL
+`copyright_zoom` means "use the recommendation for this pair", and keeping the
+shape means raising one case again is a one-line change rather than
+reintroducing a concept. The old values are recorded in the comment beside it.
+
+## 2026-09-19 — The render outlived its own request: `-ss` was on the wrong side of `-i`
+
+**Bug, found from a real failure:** a full render took over an hour and reached
+beat 8 of 32. The browser had given up long before (`maxDuration = 300`), while
+the pipeline kept running server-side — two orphaned renders were still burning
+225% CPU each an hour later, because a dead HTTP request aborts nothing.
+
+**Cause:** every shot was cut with `-i source.mp4 -ss <start>` — `-ss` AFTER
+`-i`, which is OUTPUT-side seeking. ffmpeg then decodes the film from zero and
+throws frames away until it reaches the cut point, so shot 200 re-reads 200
+shots' worth of film to produce two seconds. A log line from the failure shows it
+plainly: `frame=0 ... elapsed=0:00:16.12` — sixteen seconds of work, not one
+frame emitted yet.
+
+**Measured on the real 17-minute source**, one 3.5s shot starting at 241s:
+
+| | |
+|---|---|
+| `-i` then `-ss` (what it was doing) | **17.0s** |
+| `-ss` then `-i` | **1.54s** |
+
+Byte-identical output either way: 105 frames, 3.500s, same dimensions. At ~300
+shots that is roughly 85 minutes against 8.
+
+**Fix:** `-ss` and `-t` move before `-i`. Input-side seeking makes the second
+number a DURATION from the seek point where output-side `-to` was an absolute
+timestamp, so the three branches now hand over how much source to read rather
+than where to stop.
+
+**Why it only appeared today:** the copyright-free branch had always seeked on
+the input side, with a comment saying why. Removing the toggle sent every shot
+down the other path, which had been the slow one all along and was simply never
+the one a real render took.
+
+**Also measured, and NOT a problem:** the hold-motion filter was suspected next,
+since a first timing put it at minutes. That reading was taken while the two
+orphans were saturating the machine. Cleanly, on a 1080p source through the 16:9
+`contain` chain (split, blurred backfill, overlay): **1.03s without it against
+1.51s with it**, same 180 frames and 6.000s out. Half a second per HELD shot is
+not what needs attention.
+
+**Still open: `maxDuration = 300`.** Even at ~1.5s a shot, ~300 shots is 5-8
+minutes, which is at or past the limit. The request dying does not stop the
+pipeline, so the failure mode is a browser error plus an orphan — the shape of
+this whole incident. Raise the limit, or move the render off the request.
+
+## 2026-09-19 — Cancel reset the row but did not stop the render
+
+**Bug, caught live:** the user pressed Cancel, the UI said cancelled, the row
+said `failed / Cancelled.` — and an ffmpeg kept running at 660% CPU, still a
+child of `next-server`, still writing segments. Not an orphan: a render that had
+been told to stop and had not.
+
+**Cause:** `activeRenders` was plain module state. `next dev` recompiles a file
+on every save, and the cancel route then imported a FRESH EMPTY map while the
+pipeline it was meant to cancel carried on inside the old module instance. The
+route found no controller and took its fallback branch, whose comment read
+"Nothing is actually running, so it's safe to just reset it here." That
+assumption was false.
+
+**This also explains the two concurrent renders** from the incident above, which
+had been left unexplained: a render survives a hot reload; Cancel resets the row
+to `failed` without stopping it; the guard on the render route sees `failed` and
+happily starts a second one.
+
+**Two fixes, because either alone leaves a hole:**
+- `activeRenders` (and the transcript run's map) now live on `globalThis`, so a
+  hot reload keeps them and Cancel finds the controller it needs.
+- The pipeline re-reads `render_status` between beats and stops itself when it is
+  no longer `running`. That makes the row's reset an INSTRUCTION rather than
+  bookkeeping, and it covers the case `globalThis` cannot — a controller that is
+  genuinely gone while its work is not.
+
+Between beats, not inside them: one indexed read per beat is free next to the
+work, and it stops within seconds.
+
+## 2026-09-19 — Narration audio is cached by what it says
+
+**Decision, asked for by the user:** synthesized narration is stored in R2 and
+reused when the same words are spoken by the same voice.
+
+**The key is `sha256(providerId:voiceId + "\n" + text)`, and beat NUMBER is
+deliberately not in it.** Keyed by position, reordering the script or editing one
+line would invalidate every clip after it. Keyed by content, editing one line
+costs one synthesis and the other thirty-one are free. Stored under the project
+prefix, so the existing prefix-delete takes the cache with the project.
+
+**Why it matters more than an API bill:** TTS for EVERY beat completes before any
+video is cut, so a render stopped at "beat 6 of 32" had already paid for all
+thirty-two clips and threw them all away. With the cache, stopping and restarting
+— which is what tuning a render actually looks like — costs nothing for audio.
+
+**The cached object is the TRIMMED clip, and its length is measured back off the
+file** rather than stored beside it. That length sizes the beat's video, so it
+must be right; one source of truth cannot drift from the audio it describes. A
+cached object whose duration will not probe is re-synthesized rather than
+rendered against a guess.
+
+**`trimToSpeech` returns its INPUT when there was nothing worth trimming**, so
+what gets cached is whatever it actually returned, not the output path it was
+offered. Caching the wrong one would have stored an empty file.
+
+## 2026-09-19 — Only the useful ends of a failure message reach the row
+
+**Found while reading a real failure:** `render_error` held **85,975
+characters** — ffmpeg's entire stderr, banner and build flags and several hundred
+repeats of `Late SEI is not implemented`, with the one line that mattered buried
+in the middle of it.
+
+**Why that is not just untidy:** the project row is re-read every two seconds
+while a render runs, so an 86KB message rides along on every poll. It is the same
+reason the render analysis lives in R2 rather than in a column — anything stored
+on this row is paid for repeatedly.
+
+**Decision:** `trimFailureMessage` keeps the first 300 characters and the last
+1,500, with a marker naming how many were dropped. The head is kept because it
+names the command that failed; the tail because that is where ffmpeg puts the
+reason. The middle is the banner. Applied to both the render and the transcript
+run.
+
+**The cut is announced, not hidden** (`… N characters trimmed …`). A truncated
+log that looks complete is worse than a long one, because the next reader stops
+looking for what is missing.
+
+**Not done: writing the full stderr somewhere else.** It could go to R2 beside
+the analysis. Nothing has needed it yet — every failure so far was legible from
+the tail — and an object per failed render is a cleanup problem. Revisit if a
+failure ever turns out to need the middle.
+
+## 2026-09-19 — Starting a render is one statement, because checking then acting is a race
+
+**Bug, caught with timestamps:** two temp directories were created in the SAME
+SECOND (16:39:06) for one project. Two full renders ran at once — same beats,
+same shots, same CPU — and whichever finished last would have overwritten the
+row. The user had pressed the button once.
+
+**Cause:** the route read `render_status`, decided it was not running, and only
+later did the pipeline write `running`. Two requests arriving together both read
+a non-running row and both passed. Classic check-then-act; the window is small
+but it is real, and it was hit.
+
+**Fix:** the route claims the render in ONE statement —
+`update … set render_status='running' … where id = ? and render_status <> 'running'`
+— and treats "no row came back" as the 409. Postgres arbitrates; exactly one
+caller can flip a row out of `running`. The pipeline no longer writes that status
+itself, since re-writing it there is what made the claim non-atomic. The same
+change went into the transcript route, which had the identical shape.
+
+**This is a different bug from the cancel one above**, though they produced the
+same symptom. That one let a render survive a cancel; this one let a second
+render start. Both had to be fixed to stop seeing two renders at once.
+
+**The measurement that "cleared" the filter was wrong — see the entry below.**
+It timed the hold-motion chain WITHOUT the trailing `fps` filter the render
+always appends, and that filter was the whole bug. The 6m49s shot was not
+contention; it was frames being duplicated without bound.
+
+**Revised estimate for a full render:** ~300 shots at ~2s is about 10 minutes,
+plus the download, with TTS now free from cache.
+
+## 2026-09-19 — zoompan's timestamps made the render duplicate frames forever
+
+**Bug:** one shot ran for over six minutes at 693% CPU, writing an 18MB file for
+five seconds of video and still growing, on an otherwise idle machine with a
+single render. It should take two seconds and 1.4MB.
+
+**Cause:** `zoompan` hands on frames whose timestamps the `fps` filter — which
+`segmentFilters()` appends to EVERY shot — cannot make sense of. It answers by
+duplicating frames without bound. Counted on the real source, for a shot that is
+163 frames:
+
+| chain | frames in 20s |
+|---|---|
+| zoompan `fps=` + trailing `fps` (what shipped) | **9,401**, still climbing |
+| zoompan `fps=`, no trailing `fps` | 163 |
+| no hold motion at all | 163 |
+
+**Fix: `settb=1/fps,setpts=N` after zoompan**, rewriting the stamps as a clean
+frame count so the trailing `fps` has nothing left to conform. Verified as the
+render actually builds it: **1.95s, exactly 163 frames, 5.433s, 1.4MB.**
+
+**Dropping zoompan's own `fps=` is NOT the fix**, though it looks like one from
+the table above. It was tried first and still ran away, because the trailing
+`fps` is always there in the real chain. The option stays out regardless — the
+trailing filter is the one place the pipeline sets the rate — but the timebase
+rebuild is what actually works.
+
+**Why two earlier measurements missed it, recorded because the mistake is the
+lesson:** both timed the hold-motion chain without the trailing `fps` filter. A
+filter chain assembled by hand for a benchmark is not the chain that ships. The
+third measurement generated the string from `holdMotionFilter` itself, appended
+`fps=30` exactly as `segmentFilters()` does, and ran it against the real source —
+and found it in one run. Benchmark the built artefact, not an approximation of it.
+
+**Guarded by tests** that assert `settb`/`setpts=N` follow `zoompan`, and that
+`zoompan` carries no `fps=` of its own.
+
+**This also explains the earlier 6m49s shot** that was blamed on two renders
+competing. They were competing, and that was its own bug, but this is what made a
+single shot unfinishable.
+
+## 2026-09-19 — held frames push in, they no longer pan
+
+`holdMotionFilter` used to slide the picture sideways while it pushed in, with
+`pickHoldDrift` picking a per-shot direction so a run of held shots did not all
+move the same way. The drift is gone: on a held frame the pan was the part that
+read as an effect rather than as a living picture, and the push-in on its own
+already does the job the motion was added for.
+
+`MOVIE_RECAP_HOLD_MOTION.drift` was removed with it. `pickHoldDrift` is left in
+`lib/movie-recap.ts` unused, deliberately — it is cheap to keep and the
+deterministic-hash approach is worth having if a future motion needs a per-shot
+choice.
+
+Nothing else about the hold changed: it still applies ONLY to a shot whose slot
+outlasts its footage, and the `settb`/`setpts=N` timebase rebuild after zoompan
+is still load-bearing (see the entry above it).
+
+## 2026-09-19 — beats are the film's own scenes, and the SPEECH bends to fit them
+
+Measured on a real 16:9 export (7 blocks, 185.5s, 35 shots): **56.41s of held
+frames, 30% of the video.** The genuine shortfall was 19.2s — the source is
+170.2s and the narration needed 184.5s — so **37s of the freeze was
+self-inflicted**. The planner was opening a gap between adjacent windows so a cut
+would read as a cut (`MIN_JUMP_S`), and then freezing to pay for the footage it
+had just skipped. On an earlier 32-block export the same arithmetic produced 44s
+held against 44s skipped, spread as 0.6–2.3s at the end of every one of 154
+shots — which is what reads as a broken render, not the total.
+
+### Decided
+
+**A beat is a SCENE, not a block.** The render detects the source's cuts, takes
+the scenes inside each hand-timed block, and makes one beat per scene. The
+block's Burmese passage is divided across them.
+
+**The picture no longer moves to fit the words; the words move to fit the
+picture.** Every second of the user's block plays, in order, at its own speed.
+Each beat's line is then re-read at the rate that makes it as long as its scene
+(`lib/movie-recap-narration-rate.ts`, clamp 0.92–1.15 on the voice's own rate).
+On the export above that takes the hold from 56.41s to ~5.8s, all of it in one
+block whose text is 46% longer than its timestamps allow.
+
+**Which sentence goes on which scene is a vision question.** One keyframe per
+scene is described, and the block's passage is split across the scenes by
+`splitMovieRecapBeat`. It NEVER writes narration — the Burmese is the user's —
+and the result is verified character-for-character against the passage before it
+is used (`resolveSceneTexts`). Anything else falls back to a mechanical
+sentence split weighted by scene length, which is also what runs when the pass
+fails or is skipped.
+
+**A block that cannot be fitted is the user's to fix.** The Transcript step warns
+before the render: "27s of video, about 39s to read." No rate makes that line fit
+and no planner can invent footage.
+
+**Leftover hold lands on the LAST shot of a beat, alone.** Spreading it evenly is
+what produced 154 small stutters instead of one deliberate held push-in.
+
+### Rejected / superseded
+
+- **The 2026-09-19 "scene detection is not needed" decision is superseded.** It
+  was right while a block was a beat; it is not once cuts have to land on the
+  film's own edits. `Scenes` and `Script` are live steps again, and only
+  `Dialogue` stays parked (nothing transcribes the source).
+- **Slowing the VIDEO to fill the gap** (`SPEED_RAMP_MIN`) was the earlier answer
+  and was considered again here. Rejected by the user in favour of moving the
+  speech: the footage plays at its own speed, always.
+- **Speeding the voice past the clamp.** Beat 1 of the export wanted 1.46x on top
+  of the voice's +15%, i.e. +68%. That is not a recap.
+- **A proportional text split.** The cut lands where a part ends, so a mechanical
+  split cuts mid-clause and the picture changes in the middle of a thought. It
+  survives only as the fallback.
+- **The 0.15s inter-beat breath** is gone. A beat's length is its scene's footage
+  exactly, so a gap on top of it is time with no picture behind it — the freeze
+  it was added to prevent is the freeze it would cause. The pause did not go with
+  it: a beat is a whole sentence or two, so the clip already begins and ends on
+  one.
+
+### Consequences a later reader should not "fix"
+
+- **The narration cache key now includes the rate** (`narrationHash`). The same
+  words in the same voice legitimately have several clips of different lengths;
+  drop the rate and a beat gets some other render's tempo and drifts out of sync
+  for the rest of the video. An unfitted clip keys as before, so older caches
+  still hit.
+- **TTS is called up to twice per beat** — once to find out how long the line
+  runs, once at the fitted rate — and the fitted reading is kept only when it
+  actually lands closer, because Azure's rate is not exactly linear in duration.
+  Both readings are cached, so a re-render pays nothing.
+- **Slots are per-shot, not per-beat.** A scene's own pieces are not all the same
+  length, so one average slot would stretch one and squeeze the next. Captions
+  are held for the sum of the slots they cover for the same reason.
+- **Cost scales with scene count, not block count**, which is why a block is
+  capped at `MAX_SCENES_PER_BLOCK` (12). A scene is a keyframe, a share of a
+  vision call and a TTS call of its own, and a block whose passage is four
+  sentences cannot use twenty of them — the extra scenes come back with no text
+  and are merged into their neighbour anyway, after being paid for. The cap costs
+  the picture nothing: merging only makes a longer window, and
+  `splitSceneIntoShots` still cuts it every few seconds. Merging is
+  shortest-first, so what goes is the quick cutaway rather than the scene that
+  carries the block.
+- **Reasoning effort is set deliberately**: `low` on the vision pass (describing
+  a frame is recall, and it runs once per eight scenes across the whole film),
+  `medium` on the split pass. Dropping the split to `low` makes it divide by
+  length, which is what the free mechanical fallback already does.
+- **The mock render still uses `planBeat`.** It has no detection and no audio, so
+  there are no scenes to align to — it is the one path left that sizes the beat
+  from its captions.
+
+## 2026-09-19 (later) — the radio cut: one reading speed, and the picture runs under it
+
+Two things were wrong with the scene-aligned render above, both found by
+watching it rather than by measuring it.
+
+**The narrator would not settle.** Fitting each beat's rate to its own scene
+(0.92–1.15) lands every number and sounds like someone speeding up and slowing
+down every few seconds. It is worse than the freeze it replaced.
+
+**Held frames shook.** `zoompan` places its window on whole pixels, so a slow
+push-in holds for a few frames and then jumps one. `prescale: 2` halved that and
+was not enough to hide it.
+
+### Decided
+
+**The documentary order: lock the audio, then lay picture under it.** This is the
+"radio cut" — editors finish the narration with no picture at all, then run
+footage underneath. Automated narration pipelines land on the same rule from the
+other direction: the synthesized audio's duration IS the clock. So:
+
+1. **One reading speed for the whole recap.** The script is read once at the
+   voice's own rate, measured, and — if it misses — read again at
+   `totalAudio / totalFootage`, clamped by `MOVIE_RECAP_NARRATION_RATE_FIT`. On
+   the 170.2s export that is about +8% on top of the voice's +15%, once, for
+   everything. Per-beat fitting is gone.
+2. **The source is one ribbon** (`lib/movie-recap-ribbon.ts`). Each beat takes
+   exactly as much footage as its clip is long. A beat whose line runs long
+   borrows from the footage after it; one that runs short gives footage back.
+   Nothing is frozen, nothing is stretched.
+3. **Timestamps are targets, not sync points.** The offset between where a block
+   was typed and where its picture actually sits is the drift, corrected only
+   when it passes `MOVIE_RECAP_RIBBON.driftCapS` (5s) — and only at a block
+   boundary, never inside one. This is the L-cut principle: the picture and the
+   words are not supposed to cut together.
+4. **Every jump lands on one of the film's own cuts.** The first frame snaps
+   within 1s, a drift correction within 2s. A jump that lands mid-scene reads as
+   a glitch; the same jump on a real edit reads as an edit.
+5. **Held frames render large and shrink.** zoompan now outputs at
+   `supersample: 2` and the chain scales back down, so its whole-pixel step
+   becomes half an output pixel and the downscale averages it away. Measured on
+   a 3.5s 9:16 shot: 1.19s → 1.43s, same 105 frames.
+
+### Rejected
+
+- **Per-beat rate fitting** — see above. Kept in the code as the same function,
+  now called once for the whole script.
+- **Correcting drift mid-block.** It would cut a sentence's own picture in half
+  to satisfy a number.
+- **Raising `prescale` to 4** as the shake fix. It makes a 9:16 frame
+  4320x7680 to fix a fraction of a pixel; supersampling the output is the cheaper
+  half of the same idea.
+
+### Consequences
+
+- **The picture no longer matches the typed timestamps exactly**, by design, up
+  to 5s. That is the price of never freezing and never changing tempo, and the
+  user chose it knowing so.
+- **A scene the passage had nothing to say about no longer becomes a beat.** With
+  the narration as the clock there is no slot for silent footage; those seconds
+  are not lost, the ribbon plays straight through them inside a neighbouring
+  beat's window.
+- **`render_script` is written AFTER synthesis**, not before it: the windows do
+  not exist until the narration has been read. A render that dies during TTS now
+  leaves no script behind, which is the trade for a re-render reproducing the
+  exact cut the user saw.
+- **A re-render never re-walks the ribbon.** Its stored script already carries
+  the windows; walking again against different audio would move every cut.
+- **The whole script is synthesized twice on a first render** (once to measure,
+  once at the fitted rate). Both readings are cached by `narrationHash`, which
+  includes the rate, so it is paid once.
+
+## 2026-09-19 (later still) — the script becomes its own step, measured and approved before anything is cut
+
+Watching the scene-aligned render answered two questions that no measurement
+had: a narrator whose rate changes every few seconds sounds wrong, and the
+question "is this line too long for its shot" has a definite answer — a
+synthesized clip and a stopwatch — that was being discovered an hour and a half
+into a render.
+
+### Decided
+
+**The script run is a separate job.** `lib/movie-recap-script.ts` reads the
+source, detects its cuts, describes one keyframe per scene, divides each block's
+passage across those scenes, and then SPEAKS AND MEASURES every beat. It writes
+`render_script` with each beat's `audioS` and stops. Its own status columns
+(`script_status`, `script_stage`, `script_progress_*`, `script_error`,
+`script_approved`), because a failed script run must not read as a failed render.
+
+**The user approves before anything is cut.** The Review step's script panel
+shows, per beat, its footage, its measured narration and any overrun. Editing a
+line touches THAT BEAT ALONE (`POST script/beat`) — the scenes, the split and
+every other clip are untouched. Two ways to commit it: *Re-check* re-speaks the
+line and re-measures it, *Save without re-checking* stores the words and marks
+the beat `audioStale`, because an edit that plainly cannot move the timing does
+not deserve a TTS call. A stale beat keeps its old number — it is the previous
+wording of the same line, not a guess — and the row says so. `script_approved`
+is cleared either way, and the render route refuses to run without it.
+
+**The render is ffmpeg.** It loads the approved script and the analysis blob,
+reads every narration clip from the R2 cache, and cuts. It no longer detects,
+describes, splits, or writes a script; `reuse` is gone because every real render
+is now what `reuse` used to mean.
+
+**No borrowing, and no rate fitting.** Each beat plays its own scene's footage
+and is read at the voice's own rate. An overrun is not something the pipeline
+should solve behind the user's back — it is words that do not fit, and the fix is
+theirs.
+
+### Rejected
+
+- **Borrowing footage from the next block** (`lib/movie-recap-ribbon.ts`,
+  written and tested a few hours earlier). It removes freezing completely, but it
+  moves the picture away from the timestamps the user typed and there is no way
+  to show them that before the render. Kept in the tree, unwired, with its tests
+  — the drift/snap arithmetic is right, and it is the answer if the manual step
+  ever becomes tiring.
+- **One fitted rate for the whole video.** It sounds correct — that part was
+  right — but the rate is part of the narration cache key, so editing one line
+  re-reads every other line. That is incompatible with a script step whose whole
+  promise is that fixing a beat costs one beat.
+- **Blocking approval while any beat overruns.** A second or two of held frame is
+  sometimes the right call; the panel says how many beats will hold and lets the
+  user approve anyway.
+
+### Consequences
+
+- **Two long runs per project**, each cancellable, each with its own bar
+  (`MovieRecapRenderProgress` takes a `phase`). They share the stage names
+  because they are the same pipeline cut in half.
+- **The render's cost moved, not vanished.** Detection, vision, the split and all
+  the TTS are paid in the script run. A render after it is ffmpeg plus cache
+  downloads.
+- **`render_script` is no longer whatever the last render wrote.** It is the
+  script step's output, and the render never rewrites it.
+- **A mock render still ignores all of this** — no script, no approval — because
+  it exists to check framing and subtitles for free.
+
+## 2026-09-20 — the script gets its own wizard step
+
+Add Source -> Transcript -> **Narrative Script** -> Customize Video -> Review.
+
+The beats were living in a panel at the bottom of Review, under the render
+controls, which put the thing you have to read BEFORE rendering below the button
+that renders. They are their own step now, and Review no longer carries them.
+
+`Project Settings` is gone as a step — name, output language and voice are three
+fields and are now the first section of Customize Video. The step count stays at
+five.
+
+**"Rebuild script" is now "Resync with Script", and it asks first.** The
+distinction it draws is the one the whole step depends on: everything else —
+re-checking a beat, saving one — reads the stored beats, and only this goes back
+to the Transcript step's text and replaces them. It is the single action that
+discards edits made here, so it is the single action that confirms.
+
+### Checking without resyncing
+
+`POST script/recheck` speaks and measures every beat again exactly as they
+stand — the beats are read, the transcript is not. It is the answer to "do these
+lines still fit?" after a run of edits saved without re-checking, and it moves
+nothing: no detection, no re-split, no shot changed. A line whose words have not
+changed is a cache hit, so it costs TTS only for the ones that were saved
+un-measured.
+
+Three actions on the step, deliberately separate, in order of what they throw
+away: re-check one beat (nothing), re-check all beats (nothing), Resync with Main
+Script (every edit here). The last one is in its own section at the bottom with
+its own heading, after a mis-click next to Approve was the obvious failure.
+
+### 2026-09-20 — the beat floor is what fixes overruns, not the words
+
+A real export: 170.2s of film, 60 beats, **27 of them overrunning by 42.2s in
+total**. The obvious reading is "too much text", and it is wrong — the whole
+narration measured 177.3s against 170.2s of film, 4% over. The beats that
+overran were paid for by neighbours sitting 35s UNDER.
+
+It was granularity. The film cut 75 times in 170s, `MIN_SCENE_S` was 1, so a beat
+averaged 2.8s — and one Burmese sentence takes 3 to 8 seconds to say. Nothing
+about the writing could fix that; a sentence does not fit a 1.1s scene.
+
+`MIN_SCENE_S` was raised to **4** on that measurement and put back to **1** the
+same day, at the user's call, before a render had been cut either way — so the
+finding stands and the setting is open. It is the shortest a BEAT may be, and it
+is not the shot length: merging two of the film's cuts makes a longer window, which
+`splitSceneIntoShots` still divides every `maxContinuousSourceS` on screen. The
+two limits are independent and confusing them is the trap — a longer beat must
+never mean a stiller picture, and there is a test that says so.
+
+**Merging brought two consequences, both fixed here rather than left open.** A
+beat now spans several of the film's real scenes, so:
+
+- **`splitSceneIntoShots` takes the cut list and splits on the edits first.**
+  Dividing the merged window evenly would sooner or later lay a shot across an
+  edit — one shot to the pipeline, a picture that changes halfway through to the
+  viewer. Every shot is now a piece of ONE scene; the continuity limit then
+  applies inside each run. A run under `minShotS` is absorbed into its neighbour,
+  which does then contain an edit — the lesser of the two problems, and what the
+  floor exists to choose.
+- **The keyframe comes from `dominantRun`, the longest unbroken stretch in the
+  beat**, not from a third of the way into the merged window. That position can
+  land on a two-second cutaway while the scene the beat is actually about fills
+  the rest, and the split pass would then match the user's sentence to the
+  cutaway.
+
+### 2026-09-20 — the spoken-pace estimate was wrong by two seconds a beat
+
+Checked against real data for the first time: 30 beats whose `audioS` had been
+measured, fitted against their character counts. Burmese at the narration voice's
++15% is **18.2 characters a second, flat** — 0.0549s per character with an
+intercept of -0.1s, accurate to 0.47s on average and 2.05s at worst.
+
+The estimate in use was a two-rate model (12.5 chars/s for the first 20
+characters, 36 after) from a much earlier pipeline. Nothing is read at 36
+characters a second, so it under-estimated EVERY beat, by 1.83s on average and
+6.24s at worst. The Transcript step's overrun warning was built on it and
+therefore almost never fired when it should have.
+
+Replaced with the flat measured rate, and the warning's threshold with it: it was
+`footage * 1.15`, which came from the rate-fitting that no longer exists, and is
+now `footage + 1s` — one second because the estimate itself is good to about
+half, and a warning that fires on rounding is one people stop reading.
+
+The method is written into `lib/movie-recap-speech.ts` so this can be redone
+after a voice or rate change: fit `audioS` against the whitespace-stripped
+character count of `text`, over any project's stored `render_script`.
+
+### 2026-09-20 — the block ribbon: borrow inside a block, never across one
+
+Measured on the real export, per block rather than per beat:
+
+```
+block  footage  audio   block deficit   beat-level overrun
+  1     27.0    37.1        10.1              23.0
+  2     24.0    23.8         0.0              16.8
+  3     24.0    25.7         1.7              17.7
+  4     25.0    26.2         1.2              16.6
+  5     22.0    20.5         0.0              12.5
+  6     24.0    23.4         0.0              15.5
+  7     24.2    24.4         0.2              11.4
+ all   170.2   181.1        13.2             113.4
+```
+
+**113s of overrun against 13s of real deficit.** Blocks 2, 5 and 6 have footage
+to spare and still had beats freezing inside them — the footage was next door,
+under the neighbouring line.
+
+`layoutBlockRibbon` lays a block's narration over its footage as one strip: the
+beats decide which words play in what order, and the footage is handed out by
+what each line actually needs. A long line takes from the beat after it, a short
+one gives footage back. Inside a block that costs nothing — the pieces play in
+order and touch, so there is no jump anywhere.
+
+**Block edges never move.** Borrowing across one would take footage the user
+assigned to different words, and their timestamps are the one thing in this
+pipeline that is not negotiable. That is the difference from
+`lib/movie-recap-ribbon.ts`, which borrows across blocks and stays unwired.
+
+A block that is genuinely over-subscribed shares the shortfall across its beats
+rather than dumping it on the last one — half a second held under each of six
+beats reads better than a twenty-second still at the end.
+
+Consequences:
+
+- **Re-laying happens whenever a measurement changes**, so re-checking one beat
+  moves the pictures under its whole block — and only that block.
+- **The text-to-picture match loosens by a second or two.** The split pass
+  matched each line to a scene's description; the ribbon then gives that line
+  whatever footage its length needs, starting from where the previous line
+  ended. Order is preserved and the drift stays inside the block.
+- **Beat length stopped mattering**, which is why `MIN_SCENE_S` went back to 1:
+  a short beat is no longer a beat that freezes, it is a beat that borrows.
+
+### 2026-09-20 — narration rate +15% -> +20%, and the rate joins the cache key
+
+After the block ribbon, what was left was a real shortfall: the story ran 177.3s
+against 170.2s of film, and six of the seven blocks were within a couple of
+seconds of fitting. Trimming the writing to close that is the user's work, and
+not always possible; reading it a little faster is free.
+
+Measured per block:
+
+```
+rate    block1  block3  block4  block7   total short
++15%     10.1s    1.7s    1.2s    0.2s      13.2s
++20%      8.5s    0.6s    0.1s       -       9.2s
++22%      7.8s    0.1s       -       -       7.9s
+```
+
+**+20%.** Every block except the first now fits, and the first is 37% over on
+text — no reading speed rescues that, and the Narrative Script step says so per
+beat.
+
+**The voice's rate is now part of the narration cache key.** It had to be:
+raising the rate changes how long every line takes, beats are sized from that
+measurement, and a cache hit at the old speed would put the speech off the
+picture for the rest of the video. Changing the constant therefore invalidates
+every clip, which is correct — they are recordings at the wrong speed.
+
+Two things must follow a rate change, and both are written where the constant is:
+re-measure `CHARS_PER_SECOND` (scaled provisionally to 19.0 here), and run
+`scripts/generate-voice-previews.ts` — done, both previews regenerated.
+
+The SSML test that pinned the rate to `"+15%"` now pins the DIRECTION instead. A
+test that hard-codes a tuned number only ever fails the person tuning it.
+
+## 2026-09-20 — one global playback speed, and the conditional speed-ramp is gone (supersedes the 2026-09-17 ramp-band entries)
+
+**Decision:** every shot plays at `MOVIE_RECAP_PLAYBACK_SPEED = 0.95`. The
+`SPEED_RAMP_MIN`/`SPEED_RAMP_MAX` band is deleted along with the per-shot
+`speedFor` plumbing, and the render's segment loop has two branches instead of
+three: the scene either covers `slot * speed` seconds or it is freeze-padded for
+the rest.
+
+**Why the band went:** it was conditional, and that is what the user objected to
+— a recap whose picture changes pace from shot to shot. Measured on the 49-beat
+script for project `1e7c440f`, the band was also catching nothing. The beats are
+bimodal:
+
+```
+ratio 1.00-1.05  ->  21 beats, 1.19s over
+ratio 1.05-1.25  ->   0 beats
+ratio 1.25-1.40  ->   6 beats, 9.20s over   (all of block 0)
+```
+
+Nothing lives in the middle, which is where a ramp band earns its keep.
+
+**Why 0.95:** it is the knee. Against that same script, remaining held frames by
+speed — 1.00: 10.39s over 14 beats; 0.97: 8.78s / 11; **0.95: 7.78s / 6**; 0.92:
+6.85s / 6; 0.90: 6.20s / 6. Below 0.95 the freeze count stops falling, because
+everything left is block 0, whose text is 34% longer than its own timestamps and
+which no playback speed can rescue. Going slower only makes the slow motion
+visible — the 2026-09-17 objection to 1.25 (~0.8x) stands and is the lower bound
+here.
+
+**Superseded:** `SPEED_RAMP_MAX stays 1.15` (2026-09-17) and the narrowed
+`[0.96, 1.07]` copyright speed set. Their reasoning is kept above: a conditional
+slowdown past ~0.87x reads as deliberate slow motion. A global 0.95 does not,
+because nothing around it plays at another speed to compare against.
+
+**The trap this introduced, in three places:** a window's SOURCE length is no
+longer its SCREEN length. `beatFootageS`, `layoutBlockRibbon` and
+`manualScriptOverruns` all divide by the speed now, and `planBeat`'s `padding`
+warning had to move from `slot - windowLength` to `holdDeficit` — measuring the
+raw difference made every healthy shot report 5% of its slot as held frames.
+Anything new that compares audio seconds against a source window has to do the
+same.
+
+**Still open:** block 0. 27.0s of film under 36.2s of narration. Only a later
+timestamp or fewer words fixes it, which is what the Narrative Script step is
+for.
+
+## 2026-09-20 — a timestamp may carry its own line's words
+
+**Decision:** `parseTimestampedBlocks` accepts `MM:SS words…` at the start of a
+line, not only a stamp alone above a wrapped paragraph. A stamp anywhere else on
+the line is still narration, so `"he leaves at 00:01:00 sharp"` does not split.
+
+**Why:** the user's transcripts are now pulled off the source video's own
+narration track, one line per stamp. That layout parsed as ZERO blocks and said
+nothing about it — the Transcript step showed no overrun warnings and the script
+build had nothing to work with. Both layouts are real; the parser takes both.
+
+## 2026-09-20 — the ribbon lays narration over GROUPS of stamps, not single stamps
+
+**Decision:** consecutive timestamped blocks are merged into ribbon groups of at
+least `MOVIE_RECAP_RIBBON_GROUP_S = 25` seconds (`groupBlocks`). A group's two
+outer stamps are walls; the stamps inside it are where the ribbon starts each
+line before it adjusts. `manualScriptOverruns` measures per group for the same
+reason, and a beat carries `groupIndex/groupStartS/groupEndS` beside its block
+fields so a re-measured line can be re-laid without re-reading the transcript.
+
+**Why:** the transcripts changed shape. They are now pulled off the source
+video's own narration track, one stamp every 3-4 seconds, so every block became
+its own wall. Burmese takes about 13% longer to say than the English it was
+translated from, and that excess is not spread evenly — measured across 40 lines
+of a real script, the per-line ratio of speech to footage ran from 0.79 to 2.03.
+A 3-second wall cannot absorb that: a line running 87% long sat next to one with
+1.5s spare and could not reach it.
+
+Measured on that script, at `MOVIE_RECAP_PLAYBACK_SPEED`:
+
+```
+per-line walls (40)   24.8s of held frame
+25s groups (6)        15.1s
+```
+
+And with the text also cut to fit (the still-unbuilt shortening pass), 12.2s
+against 2.6s. Grouping roughly halves what shortening then has to remove: 399
+characters per-line against 215 per-group, and no line needing a 30-50% cut.
+
+**The cost, stated plainly:** a line can start up to about 2s from its own stamp.
+Measured inside the first group: drifts of 0.98, 1.32, 1.89, 1.28, 1.39s. With
+scenes averaging 1.57s that can be a scene off. Drift returns to zero at every
+group edge, so it never accumulates across the story.
+
+**Why 25s:** it is the block size this feature already shipped and was accepted
+with, when the transcripts carried a stamp every 25-30 seconds. 40s groups leave
+less held frame and drift further; 15s groups drift less and leave more.
+
+**Superseded:** "Never borrow across block boundary" now means across a GROUP
+boundary. The reasoning stands — the user's timestamps are what tie words to
+pictures — but a stamp every 3 seconds is a placement mark, not a contract.
+
+**Also here:** the split pass is skipped for a one-sentence block, and so are
+the keyframe and vision passes behind it. `resolveSceneTexts` cannot break inside
+a sentence, so the model's answer could not change the result, and the vision
+pass exists only to answer which sentence belongs on which picture. One sentence
+per stamp made all three run for every scene in the film for nothing — 40 split
+calls, and a keyframe and a vision call for each of roughly a hundred scenes.
+Only the scenes under a block that will actually be split are described now.
+
+## 2026-09-20 — the Transcript step MEASURES the overrun; it does not rewrite the story (supersedes the shortening pass, same day)
+
+**Decision:** the Transcript step shows a table — section, seconds of video,
+seconds to read, seconds over, characters to cut — and stops there. The user
+makes the edit. `manualScriptOverruns` carries `overS`, `chars` and
+`budgetChars` so the number is exact, and `budgetCharsFor` turns a stretch of
+footage into the characters it can hold.
+
+**What was removed, hours after being built:** an AI pass that rewrote the user's
+Burmese to fit (`shortenMovieRecapLines`, `lib/movie-recap-shorten.ts`,
+`lib/prompts/movie-recap-shorten.ts`, `lib/prompts/movie-recap-voice.ts`, the
+`transcript/shorten` route and its accept/reject UI). The user's call: the
+writing is theirs, and a machine editing it is not what they want even with a
+diff to approve. Analysis is the useful half.
+
+**Kept from it, because it was measured and is worth not re-deriving:**
+
+- A group is the unit. A line running long beside one with room to spare is not
+  an overrun, and warning about it teaches people to ignore the warning.
+- Per-line budgets needed 399 characters cut across 22 lines of a 40-line script,
+  five of them by 30-50%. Per-GROUP budgets needed 215 across 4 groups, none
+  worse than 17%. That is the number the table now shows.
+- A model asked to shorten Burmese finds its characters in the polite sentence
+  endings first — ပါတယ် flattened to တယ် on nearly every line — and in spelling
+  counts as digits. If a shortening pass is ever wanted again, the register has
+  to be named as something that never gets cut, and the sample of the house voice
+  the user pointed at is in the conversation that produced this entry.
+
+## 2026-09-20 — overruns are fixed by tightening the user's own Burmese, not by rewriting it (SUPERSEDED same day — the pass was removed, see above)
+
+**Decision:** the Transcript step can ask a model to say the same thing in fewer
+Burmese words, one ribbon group at a time, and PROPOSES the result. Nothing is
+written until the user accepts line by line (`Shorten what overruns` →
+`lib/movie-recap-shorten.ts`, `shortenMovieRecapLines`, the
+`transcript/shorten` route). Rejected alternatives, in the order they were
+raised and dropped:
+
+- **Re-translating from the English with a per-line character budget.** The
+  user's answer: do not translate again, tighten what is already written. The
+  Burmese is theirs and has been read; a fresh translation is a new draft to
+  proofread.
+- **A per-LINE budget.** Measured on a 40-line script, per-line budgets needed
+  399 characters cut across 22 lines, five of them by 30-50%. Per-GROUP budgets
+  needed 215 across 4 groups, none worse than 17%.
+
+**Why a group at a time:** the group is what has to fit. A line running long
+beside one with room to spare is not an overrun, and asking for it to be cut
+takes words off writing that was fine.
+
+**The guard, and why it is not configurable:** a group needing more than
+`MAX_SHORTEN_FRACTION = 0.3` is reported and never sent. Past about a third the
+model stops tightening phrasing and starts dropping facts — and it does it
+silently, which is worse than a held frame. The honest fix there is a later
+timestamp, which is the user's to make.
+
+**Two more refusals in `shortenProposals`:** a reply with a different number of
+lines is discarded whole, because the lines are positional and a short reply
+would shift every line after it onto the wrong timestamp; and a "shortened" line
+that came back longer is dropped, because that is the model rewriting rather
+than cutting.
+
+**Measured on the 40-line script**, at `MOVIE_RECAP_PLAYBACK_SPEED` and the
+current voice rate: 24.8s of held frame per-line, 15.1s with groups, about 2.6s
+with groups and this pass. The last of it is one group and a hand edit.
+
+**Consequence worth knowing:** applying accepted lines rebuilds the story from
+the parsed blocks as `MM:SS words`, so a story typed in the other layout (stamp
+alone on its own line) comes back in this one. Both parse.
+
+## 2026-09-20 — the house voice is a constant every Burmese pass reads (SUPERSEDED same day — the file went with the shortening pass; the findings stand)
+
+**Decision:** `lib/prompts/movie-recap-voice.ts` holds a sample of the
+storytelling register the user wants, plus the rules that sample is there to
+demonstrate. The shortening pass includes it; the retelling pass should too if it
+is ever wired back up. Change the sample to change the house voice.
+
+**Why:** the first real run of the shortening pass came back 597 -> 494
+characters with the facts intact and the voice gone. It had found its characters
+in the sentence endings — ပါတယ် flattened to တယ် on nearly every line — and in
+spelling counts as digits (နှစ်ယောက် -> ၂ ယောက်). Both read as a different,
+flatter narrator. The politeness IS the voice, so it is now named as something
+that never gets cut, and the model is given a list of what to take instead.
+
+**The sample is raw text from a channel, typos and run-ons included.** That is
+deliberate — it is a register reference, not a quality model — so the prompt says
+in as many words to take only the voice from it, and that nothing in it is part
+of the story being worked on.
+
+**Second finding, from the same run:** adding the voice rules alone made the pass
+refuse to cut at all (597 -> 589, five of six lines returned untouched). A
+constraint on HOW to cut reads as permission not to. The budget had to be
+restated as the job — with `currentChars` sent alongside it so the model can work
+out how much to remove — and the WHAT TO CUT list given as concrete Burmese
+substitutions that each keep the polite ending. The pass then landed 597 -> 504
+against a 540 budget with the register intact.
+
+## 2026-09-20 — the Narrative Script is authoritative; only Resync may replace it
+
+**Decision, the user's, stated as a rule:** once the beats exist, nothing may
+change them except `Resync with Main Script`. Editing the transcript does not
+reach them, re-checking does not reach them, and leaving the step must not lose
+them. The script step is where the words are final.
+
+**It was already true on the server** — `remeasureMovieRecapScript` and
+`saveMovieRecapBeat` both carry `beat.text` forward and only
+`runMovieRecapScript` reads the transcript — and it was checked rather than
+assumed: the render_script of the project this came up on was character-for-
+character identical to `transcript_story`, which only a resync can produce.
+
+**What actually lost the work, and it was a UI trap.** While any beat has unsaved
+edits, both `Re-check all beats` and `Approve script` are disabled, silently. The
+only control left alive on the panel is Resync — the one that discards. Someone
+trying to make progress clicks the button that works.
+
+Three things now:
+- The disabled state says why, and names how many beats are waiting.
+- The Resync dialog counts the unsaved beats and says they go too.
+- Leaving the step with unsaved beats asks first. The drafts live in the step's
+  own state and the step unmounts on a step change, so that navigation was
+  silent data loss.
+
+**Not done, deliberately:** the drafts are still component state rather than
+being persisted. Saving every keystroke to the row would make an edit a write,
+and the two buttons under each beat exist precisely so the user decides when an
+edit costs something.
+
+## 2026-09-20 — overruns leave and come back as one block of text
+
+**Decision:** the script step copies its overrunning lines out as a prompt and
+reads the reply back in one paste (`lib/movie-recap-beat-transfer.ts`, the
+`script/beats` route). No model is called from here; the user shortens the lines
+in whatever chat they already trust with Burmese.
+
+**Why not an in-app pass:** one was built and removed the same day — see the
+entry above. Analysis is what the app is good for; the writing is the user's.
+This keeps the measurement here and puts the editing where they already do it.
+
+**Beat numbers are the anchor, not the text.** `[Beat 7 | 1.2s over]` — only the
+number is parsed, and a number outside the script is
+dropped rather than applied to a neighbouring line. Anchoring on the text would
+break on exactly the change the round trip exists to make; landing an edit on the
+wrong beat is worse than losing it.
+
+**The prompt is two sentences and no rules** (user's call, after trying rules).
+Every rule that was tried came off again: a character budget (derived from a
+still-provisional `CHARS_PER_SECOND`, so it read as precision it did not have),
+and register rules about polite endings and spelled-out numbers. What is left
+says what the lines are and how to reply. A known consequence, seen on the first
+real reply: a chat asked only to shorten will also SWAP words — `သစ်တောအုပ်` came
+back as `သစ်တောနက်`, which is a different thing — and may drop the sentence-final
+`။` that `splitIntoSentences` counts on. The paste is reviewed before it is
+applied, and that review is the control.
+
+**Seconds, plus how many characters to REMOVE** — `[Beat 7 | 1.2s over | remove
+about 23 characters]`. Three shapes were tried and the middle one is the one not
+to repeat: `about 96 characters fit` reads as a length to rewrite TO, and on a
+real reply it cost far more than it asked. Beat 1 of a real script, 88 characters
+and 0.3s over, came back at 56 characters and 2.60s against 3.60s of footage —
+1.3s cut where 0.3s was wanted, and `ပြင်းပြင်းထန်ထန်`, the one word carrying how
+bad the injury was, gone with it. Seconds alone was tried next and put back:
+a chat has no feel for "0.3 seconds of Burmese" and guesses, and guessing
+over-cuts the same way.
+
+So: the seconds are the target, and the characters are a delta — how much to
+remove, never a length to land on. Both are estimates on a line of Burmese digits
+(see lib/movie-recap-speech.ts), which is why it says "about".
+
+Fixing a 0.3s overrun by cutting a third of the line is the wrong trade: do that
+across forty beats and the recap thins out to solve a held frame nobody sees.
+
+**The parser is deliberately forgiving**, because the text has been through a
+chat window and a clipboard: anything before the first header is dropped (models
+open with "Here you go"), a beat wrapped over several lines is joined, and a
+header with nothing under it is ignored rather than emptying that beat.
+
+**It lives in a modal now**, opened by `Fix overruns` beside the script's own
+menu, and holds its own state: a dialog shown imperatively renders a snapshot of
+what it was handed, so the paste and the in-flight write have to live inside it
+rather than in the panel that opened it. As an inline panel it sat above the
+beats it was about and pushed them down the page whether or not anyone was using
+it.
+
+**Applying never speaks.** The beats are marked `audioStale` and written in ONE
+update — a per-beat save reads and rewrites the whole script, so a loop of them
+races itself. A re-check afterwards pays for the lines that changed and reads the
+rest from cache.
+
+## 2026-09-20 — the render never writes `render_script`
+
+**Bug, found by the user running a mock preview:** every render finished by
+writing `render_script: narration` onto the row. On a real render that was a
+no-op — `narration` is `project.renderScript`, read back unchanged. On a MOCK
+render `narration` is `mockNarration()`, six canned lines, and the write replaced
+an approved, measured script with them. The Narrative Script step then showed
+mock data, and the only way back was a resync.
+
+**Fix:** the render writes its status, its output and nothing about the script.
+The script run owns `render_script`; only a resync replaces it. That rule was
+already written down (the entry above) — the render had simply never been
+revisited after the script step took the column over.
+
+**Why it survived this long:** the render used to build the script itself, so
+writing it was correct then. The script step took that over and the write stayed
+behind, harmless on the path anyone tested.
+
+## 2026-09-20 — every beat keeps the line it was born with
+
+**Decision:** a beat carries `originalText`, written once by the script run and
+never touched again. `Restore original` puts it back in one beat's box;
+`Restore N originals` in the header writes back every saved line that has drifted
+from it, through the same bulk route a paste uses.
+
+**Why:** applying a paste replaces many lines at once, and until now there was
+nothing to compare against or go back to — a paste that turned out worse than
+what it replaced was simply the new text. Undoing that beat by beat is not
+undoing it.
+
+**Why on the beat and not in a column:** `render_script` is jsonb, so this needed
+no migration, and every write path already spreads the beat (`{...beat, text}`),
+which carries the field through without a single change to them.
+
+**Per-beat restore fills the BOX, not the row.** It is reviewed and then saved
+like any other edit, so it costs nothing until it is wanted and the existing
+Save / Re-check choice still applies. The header's restore does write, because
+its whole point is undoing a bulk change in one action.
+
+**What it does NOT protect against:** a resync. That rebuilds every beat from the
+transcript, `originalText` included, and there is nothing to restore to
+afterwards. A resync says so before it runs.
+
+## 2026-09-20 — the approval gate is gone; the script is used as it comes out
+
+**Decision, the user's:** no `Approve script` step. Whatever the Narrative Script
+step produces is what renders. The button, the `Approved` badge, the PATCH route
+behind them, the render's 400 and every `script_approved: false` write are
+removed; Render Preview now waits only for a script to exist.
+
+**Why it existed:** a render takes twenty minutes, and the approval was there so
+nobody discovered an overrun an hour in. The measurement is what actually solved
+that — every beat's overrun is a number on the screen before anything is cut — so
+the gate was asking for a click to confirm what the page already showed.
+
+**What is left of it:** `movie_recap_projects.script_approved` and
+`MovieRecapProject.scriptApproved` still exist and are still read into the mapped
+project. Nothing writes them any more and nothing reads the value. Left rather
+than dropped because dropping a column is a migration nobody asked for; if this
+stays settled, that migration is the tidy-up.
+
+## 2026-09-20 — slot rounding quantizes the BOUNDARIES, not the slots
+
+**Bug, reported by the user as "the speech runs slightly past the footage" even
+on beats the script step called a fit.** Every slot was rounded to the frame grid
+on its own — `Math.round(value * fps) / fps` — so each shot contributed up to
+half a frame of error and a beat's error grew with its shot count. Measured on a
+real script: a beat of 49 shots came out 6.567s against 6.690s of speech. The
+narration is cut to the picture (`-t slotS`), so the end of that line was clipped.
+
+```
+per slot        0.153s of speech truncated, worst beat 0.123s
+per boundary    0.033s,                     worst beat 0.013s
+```
+
+**Fix:** round the running total and take the difference, so a beat's error is
+bounded by one frame however many shots it has. A frame is 0.033s and inaudible;
+0.123s takes a syllable.
+
+**Why it hid:** it needs a beat with many shots to show, and beats normally carry
+one to three. The 49-shot beat came from a transcript saved with only its first
+ten lines, which left the last block owning two minutes of film.
+
+## 2026-09-20 — the ribbon may not move a line more than half a second from its own stamp
+
+**Bug the user watched, not a number on a screen:** beat 4's narration played
+over the tail of beat 3's scene. Its window started 0.57s before the timestamp
+its words were written against, and further down the same recap two beats sat
+2.0s early. The ribbon placed every line purely by speech length; nothing said a
+line had to stay near its own moment.
+
+**Decision:** `MOVIE_RECAP_RIBBON_DRIFT_CAP_S = 0.5`. A group's two outer stamps
+are still walls; this is what the stamps inside it are worth. The boundary
+between two beats split out of ONE block stays free — they share a stamp, so
+there is nothing between them to be near.
+
+**Measured on that 45s recap, over the whole range of the choice:**
+
+```
+cap 0s      1.93s held frame   drift 0.00s   (stamps as hard walls)
+cap 0.5s    0.12s              drift 0.50s
+cap 1.0s    0.00s              drift 1.00s
+uncapped    0.00s              drift 5.00s   (what shipped)
+```
+
+The 5s of drift was never bought with anything: capping it to half a second costs
+0.12s of held frame — four frames — across the whole video.
+
+**Why not per-beat slowdown instead**, which the user asked about: with stamps as
+walls the same recap needs seven blocks slowed and three sped up, from 0.610x to
+1.746x, with 1.639x and 0.610x landing side by side. That is not a timing nudge,
+it is slow motion next to fast-forward. The single global speed stands.
+
+## 2026-09-20 — a ribbon boundary takes a film cut when one is within reach
+
+**Decision:** `layoutBlockRibbon` snaps each boundary to the nearest of the
+film's own cuts that falls inside the drift cap. If none does, the boundary stays
+where speech length put it.
+
+**Why it is free:** the boundary was already allowed to move that far — the cap
+is the whole budget — so landing it on a cut gains and loses no footage.
+Measured on the 45s recap: 5 of 9 internal boundaries land exactly on a cut, and
+the shortfall stays 0.00s.
+
+**What it does NOT fix:** `maxContinuousSourceS` is still only enforced INSIDE a
+beat, so two beats playing contiguous source with no cut between them can hold
+the picture past the cap.
+
+**How far past, measured properly:** a hold is bounded by the FILM'S OWN longest
+take, because our windows cannot hide a cut that is there. On the 45s recap the
+film's longest take is 4.63s (4.87s at playback speed) against a 4s cap for 16:9,
+the next two are 4.35s and 4.18s, and the median hold is 1.29s across 25 holds.
+Nothing reached 5s and nothing could have.
+
+(An earlier measurement here said 6.74s. That was wrong: it did not count a cut
+landing exactly on a beat boundary as a break, so it merged two holds. The
+corrected figure is above.)
+
+**So there is nothing to fix on this source**, and the options were priced in case
+a source with long takes turns up:
+
+- **Punch-in** — split the run at the cap and render the second half at a tighter
+  zoom. The content continues, the framing changes, and it costs nothing: same
+  footage, same duration. `holdMotionFilter` already zooms, so the filter exists.
+- **Skip forward** — costs a held frame, because nine of eleven beats had ZERO
+  slack (the ribbon sizes a window to its line). It trades a long hold for a
+  frozen one, which is worse.
+- **Raise the cap** — 4s for 16:9 is recorded in the constants as reasoned, never
+  measured. A median hold of 1.29s is not a slow video.
+
+## 2026-09-20 — the source's own letterbox is cut away before framing
+
+**Bug the user saw:** black bands top and bottom of the render, where the blurred
+backfill should have been. `fitMode` was `contain`, which exists to fill exactly
+that space, and it did nothing.
+
+**Why:** the film was delivered as 2.39:1 inside a 16:9 file, so its bars are
+PIXELS. ffmpeg cannot tell them from picture, the framing step saw 16:9 going
+into a 16:9 frame, decided the fit was exact, and the bars rode through.
+Measured: a 1280x720 source whose actual picture is 1280x536 at y=92.
+
+**Fix:** the script run samples the source with `cropdetect` at five points and
+stores the content rectangle in the analysis blob; `buildShotFilter` cuts to it
+FIRST, before framing. Everything downstream then reasons about a 2.39:1 source
+and the backfill fills the bars it now knows about. Verified end to end:
+`cropdetect` on the rendered sample returns the full frame — no bars left.
+
+**Five samples, loosest wins.** A film that opens on night reads as bars for a
+second, so a bar only one sample saw is a dark shot, not a border. The detection
+takes the crop every sample agreed on, and returns null — changing nothing —
+when the bars are under 8px or nothing could be read at all.
+
+**The rounding trap, which cost a pass:** offsets and dimensions cannot be
+rounded the same way. Clamping both to a minimum of 2 turned `x: 0` into `x: 2`
+and pushed a full-width crop two pixels off the right edge. A zero OFFSET is
+valid; a zero dimension is not.
+
+**A mock render has no analysis**, so it frames the raw file exactly as before.
+
+## 2026-09-20 — the colour grade stops being invisible
+
+**Decision:** `MOVIE_RECAP_LOOK` goes from `1.06 / 1.08 / 0.98` to
+`1.12 / 1.18 / 0.96` (contrast / saturation / gamma). Picked off a four-way
+comparison rendered from the user's own footage rather than reasoned about.
+
+**Rejected with it, and worth not re-proposing blind:**
+
+- **`unsharp=5:5:0.5`** on top of a stronger grade. It claws back the softness the
+  0.95 slowdown and the letterbox crop introduce, and it lifts the source's grain
+  with it.
+- **Teal-orange** (`saturation 0.85` plus a `colorbalance` pushing shadows blue
+  and highlights warm). It is the recap-channel look and moves furthest from the
+  source, which is worth something when the footage is someone else's — but it
+  was further from the original than the user wanted.
+
+**Also:** the transform test asserted the literal `eq=contrast=1.06:...`, so a
+tuned number broke a test that was not about tuning. It reads `MOVIE_RECAP_LOOK`
+now and checks that every part of the grade reaches the chain.
+
+## 2026-09-20 — blur is a LIST of areas, not one
+
+**Decision:** `movie_recap_projects.blur_regions` (jsonb) replaces the single
+`blur_enabled` + `blur_x/y/width/height`. A source routinely carries a channel
+logo, a watermark and a burned-in subtitle at once, and one rectangle cannot
+cover three corners. Add and remove areas in the Customize step; drag each in the
+preview; an empty list is the off switch, so the toggle is gone.
+
+**The old columns are still there and are no longer read.** The migration copies
+what they held into the list, so nobody loses a region they had set. Dropping
+them is a separate decision nobody has asked for.
+
+**Capped at 8**, in the route and again on the Add button. Each region is another
+split/crop/overlay in the filter graph, and past a handful that is a slower
+render for a frame nobody can read anyway.
+
+**Regions may overlap.** Nothing merges or de-duplicates them: a region blurred
+twice is simply blurred twice, which is what someone dragging one box over
+another asked for.

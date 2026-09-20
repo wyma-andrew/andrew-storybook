@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Film, Upload } from "lucide-react";
-import { toast, useFilePicker } from "@geckoui/geckoui";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, Film, Trash2, Upload } from "lucide-react";
+import { ConfirmDialog, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize } from "@/lib/movie-recap";
@@ -82,6 +83,8 @@ export function MovieRecapSource({
   const { trigger: startMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart").POST());
   const { trigger: signPart } = useWrite((api) => api("movie-recaps/:id/source/multipart/part").POST());
   const { trigger: completeMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart/complete").POST());
+  const { trigger: deleteProject, loading: deleting } = useWrite((api) => api("movie-recaps/:id").DELETE());
+  const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -238,6 +241,30 @@ export function MovieRecapSource({
     }
   }
 
+  // At this step the project IS the source: its name, framing and object key all
+  // came from the file, and the transcript and every render hang off it. So
+  // removing the video removes the project rather than leaving a project with a
+  // hole where its source was — see history/movie-recap.md.
+  function confirmDelete() {
+    if (!project) return;
+    ConfirmDialog.show({
+      title: "Delete this video?",
+      content: `“${project.sourceFileName}” and everything generated from it will be permanently deleted, and the project with it.`,
+      confirmButtonLabel: "Delete",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        const result = await deleteProject({ params: { id: project.id } });
+        if (result.error) {
+          toast.error(result.error.error);
+          return;
+        }
+        dismiss();
+        toast.success("Video deleted.");
+        router.push("/movie-recap");
+      },
+    });
+  }
+
   const { dropzoneRef, dragging, openFilePicker } = useFilePicker<HTMLDivElement>({
     accept: "video/*",
     onChange: (_files, newFiles) => {
@@ -283,8 +310,14 @@ export function MovieRecapSource({
       )}
 
       {project && (
-        <div className="grid gap-3 rounded-xl border border-line bg-panel-2 p-4 sm:grid-cols-3">
-          {details.map(([label, value]) => <div key={label}><div className="text-[11px] uppercase tracking-wide text-fg-3">{label}</div><div className="mt-1 truncate text-sm text-fg">{value}</div></div>)}
+        <div className="rounded-xl border border-line bg-panel-2 p-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {details.map(([label, value]) => <div key={label}><div className="text-[11px] uppercase tracking-wide text-fg-3">{label}</div><div className="mt-1 truncate text-sm text-fg">{value}</div></div>)}
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <p className="text-xs text-fg-3">Removing the video deletes this project and everything generated from it.</p>
+            <LoadingButton variant="danger" loading={deleting} disabled={uploading} onClick={confirmDelete}><Trash2 size={15} /> Delete video</LoadingButton>
+          </div>
         </div>
       )}
 

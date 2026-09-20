@@ -34,11 +34,16 @@ describe("the Movie Recap voices' delivery rate", () => {
     // The rate is not cosmetic: beat durations are MEASURED from the synthesized
     // audio, so losing it silently makes every future render longer and slower
     // than the one before it, with nothing failing to say so.
+    // Pinned to a direction, not to a number: the rate is tuned against real
+    // exports (it went +15% -> +20% on 2026-09-20) and a test that hard-codes
+    // the value only ever fails the person who tuned it.
     const azure = VOICES.filter((voice) => voice.providerId === "azure");
     expect(azure.length).toBeGreaterThan(0);
     for (const voice of azure) {
-      expect(voice.params.rate).toBe("+15%");
-      expect(buildSsml(voice.params, "hello")).toContain(`<prosody rate="+15%">`);
+      const rate = voice.params.rate ?? "";
+      expect(rate).toMatch(/^\+\d+%$/);
+      expect(Number(rate.replace(/[+%]/g, ""))).toBeGreaterThan(0);
+      expect(buildSsml(voice.params, "hello")).toContain(`<prosody rate="${rate}">`);
     }
   });
 

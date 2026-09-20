@@ -1,21 +1,18 @@
-import { execFile } from "node:child_process";
-import { createReadStream } from "node:fs";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
-import { generateMovieRecapNarration, openai, type RecapScene, type TranscriptSegment } from "./openai";
-import { describeScenes, detectScenes, extractKeyframes, type MotionTrack } from "./movie-recap-scenes";
-import { ffprobeFor, readSourceCaptions } from "./movie-recap-captions";
+import { type TranscriptSegment } from "./openai";
+import { type MotionTrack } from "./movie-recap-scenes";
+import { FFMPEG, run } from "./movie-recap-ffmpeg";
+import { narrationClip, probeDurationS } from "./movie-recap-narration";
+import { estimateSpokenSeconds, MIN_SEGMENT_S } from "./movie-recap-speech";
 import { getObjectText, movieRecapObjectKey, putObject } from "./r2";
-import { pickShotSpeed } from "./movie-recap";
-import { buildShotFilter, shotFilterContext } from "./movie-recap-transform";
-import { planBeat, type SourceWindow, SPEED_RAMP_MAX, SPEED_RAMP_MIN } from "./movie-recap-shots";
-import { synthesize } from "./tts/synthesize";
+import { trimFailureMessage } from "./movie-recap";
+import { buildShotFilter, holdMotionFilter, shotFilterContext } from "./movie-recap-transform";
+import { holdDeficit, planBeat, playedSourceSeconds, type SourceWindow } from "./movie-recap-shots";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
-  MOVIE_RECAP_COPYRIGHT_TRANSFORM,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
@@ -23,34 +20,20 @@ import {
   MOVIE_RECAP_TARGET_DIMENSIONS,
   movieRecapBlurRadius,
   movieRecapPacing,
+  MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_TARGET_FPS,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
 
-const execFileAsync = promisify(execFile);
 
 const round2 = (value: number) => Number(value.toFixed(2));
 
-// Whisper rejects an upload over 25MB. That is a real ceiling on this feature,
-// not a formality: the extraction used to be 16kHz mono PCM, which is 32,000
-// bytes a second, so anything longer than about 13.6 MINUTES failed — and the
-// whole point is recapping feature-length films. Measured on a 131s source:
-// 4,204,190 bytes of WAV against 245,693 of Opus.
-//
-// Opus at 16kbps mono is ~1,870 bytes a second, which puts the ceiling near 3.9
-// hours and covers any film. It is a speech codec at a speech bitrate, so the
-// quality cost is small: transcribing the same clip as WAV and as Opus returned
-// the same dialogue apart from one proper noun. The narration prompt summarizes
-// rather than quotes, so that is a fair trade for the feature working at all.
-const TRANSCRIBE_AUDIO_BITRATE = "16k";
-const WHISPER_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-
 // Homebrew's plain `ffmpeg` formula no longer bundles libass/freetype (they
 // moved to the keg-only `ffmpeg-full`), and burning styled Burmese subtitles
-// needs libass + harfbuzz. FFMPEG_PATH points at a build that has them;
-// without it everything still runs except styled subtitle burn-in.
-const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+// needs libass + harfbuzz. FFMPEG_PATH (see lib/movie-recap-ffmpeg.ts) points at
+// a build that has them; without it everything still runs except styled
+// subtitle burn-in.
 const SUBTITLE_FONT = process.env.MOVIE_RECAP_SUBTITLE_FONT || "Noto Sans Myanmar";
 // ASS has one weight control — a Bold flag — so anything between regular and
 // bold has to be selected by naming the family fontconfig maps to that cut.
@@ -76,21 +59,6 @@ function subtitleFace(weight: number) {
 // For another font: (hhea ascender - descender) / unitsPerEm.
 const ASS_FONT_SIZE_RATIO = Number(process.env.MOVIE_RECAP_SUBTITLE_FONT_RATIO) || 2.184;
 
-// Rough Burmese spoken pace. A real render now measures its synthesized audio
-// and uses that instead; this estimate is the fallback for a MOCK render, which
-// never calls TTS (that is the point of mock — no API spend), and for a segment
-// whose synthesis returned nothing usable.
-// Burmese is not space-delimited — spaces mark phrase breaks, not words — so a
-// word count is meaningless here: every narration line came out as ~4 "words"
-// and got the same 1.7s no matter its length, which is what made shots flash by
-// and subtitles unreadable. Characters are the usable proxy, but the rate is
-// not flat: getting into a caption costs the most, and the rest is read faster
-// once it has started. A flat rate therefore overpays long lines — the first
-// LEAD_IN_CHARS run at the careful rate, everything after at the continuation
-// rate.
-const LEAD_IN_CHARS = 20;
-const CHARS_PER_SECOND_BURMESE = 12.5;
-const CONTINUATION_CHARS_PER_SECOND = 36;
 // Nothing holds a single shot longer than this, however long its line — beyond
 // it the beat drags whatever the text says. Cues are compressed to fit, but
 // never past ABS_MAX_CUE_CHARS_PER_SECOND, so an over-long line runs over the
@@ -105,9 +73,6 @@ const CONTINUATION_CHARS_PER_SECOND = 36;
 // groups the scenes (see lib/prompts/movie-recap-narration.ts); the planner
 // decides how many of them a given beat can actually afford.
 const ABS_MAX_CUE_CHARS_PER_SECOND = 26;
-// Floors, applied after the estimate. A recap beat shorter than this reads as a
-// flash cut however well the narration fits it.
-const MIN_SEGMENT_S = 2;
 // A caption has to survive being read, not just being displayed: never shorter
 // than this, and never faster than MAX_CUE_CHARS_PER_SECOND.
 const MIN_CUE_S = 1;
@@ -124,20 +89,6 @@ const TARGET_DIMENSIONS = MOVIE_RECAP_TARGET_DIMENSIONS;
 // provider is free to return whatever rate it likes.
 const NARRATION_SAMPLE_RATE = 24000;
 
-// Azure pads every clip it returns with silence — measured at ~0.18s before the
-// speech and ~0.81s after it on a 4.85s clip. That silence is part of the file,
-// so its duration sizes the beat, and the picture sits on a frame through all of
-// it: five beats of narration carried nearly five seconds of dead air. Clips are
-// trimmed back to their speech, and a single deliberate gap is added instead.
-const SILENCE_THRESHOLD_DB = -40;
-// Left either side of the speech so trimming can never clip a soft first or last
-// syllable.
-const SPEECH_MARGIN_S = 0.06;
-// The breath between one line and the next. Real narration has one; what it does
-// not have is a different one every time, set by whatever the TTS felt like
-// appending.
-const BEAT_GAP_S = 0.15;
-
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 
 // One render per project at a time (enforced by the route's "already
@@ -145,7 +96,17 @@ type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 // separate cancel request reach an in-flight render — no queue/job system
 // needed. Only works within one Node process, which is this app's whole
 // deployment target (see history/movie-recap.md).
-const activeRenders = new Map<string, AbortController>();
+//
+// On `globalThis`, NOT plain module state, and that is a fix rather than a
+// style: recompiling this file — which `next dev` does on every save — handed
+// the route a FRESH EMPTY map while the pipeline it was meant to cancel kept
+// running inside the old module instance. Cancel then found no controller,
+// concluded nothing was running, reset the row, and left a render the UI called
+// cancelled still cutting segments and still about to overwrite that row. Two
+// renders ended up running at once this way.
+const activeRenders: Map<string, AbortController> = ((globalThis as typeof globalThis & {
+  __movieRecapRenders?: Map<string, AbortController>;
+}).__movieRecapRenders ??= new Map());
 
 export function cancelMovieRecapRender(projectId: string) {
   const controller = activeRenders.get(projectId);
@@ -164,24 +125,6 @@ export function segmentFilters(...parts: string[]) {
   return [...parts, `fps=${MOVIE_RECAP_TARGET_FPS}`].join(",");
 }
 
-async function run(cmd: string, args: string[], signal?: AbortSignal) {
-  await execFileAsync(cmd, args, { maxBuffer: 1024 * 1024 * 64, signal });
-}
-
-// What a file ACTUALLY came out as, which is not what it was asked for: every
-// segment is cut to `-t slot` and then resampled to a constant frame grid, so
-// its real length is a whole number of frames — up to 1/MOVIE_RECAP_TARGET_FPS
-// short of its slot. Unreadable duration means "do not compensate".
-async function probeDurationS(file: string, signal?: AbortSignal) {
-  const { stdout } = await execFileAsync(
-    ffprobeFor(FFMPEG),
-    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file],
-    { maxBuffer: 1024 * 1024, signal }
-  );
-  const value = Number(stdout.trim());
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
 // Real progress: the client polls the project row while render_status is
 // "running" (see history/movie-recap.md) — cheap, since these are plain row
 // updates between ffmpeg/OpenAI calls that already take real wall-clock time,
@@ -193,11 +136,16 @@ function setProgress(db: Db, projectId: string, stage: MovieRecapRenderStage, cu
     .eq("id", projectId);
 }
 
-function estimateSpokenSeconds(text: string) {
-  const characters = text.replace(/\s+/g, "").length;
-  const leadIn = Math.min(characters, LEAD_IN_CHARS) / CHARS_PER_SECOND_BURMESE;
-  const rest = Math.max(0, characters - LEAD_IN_CHARS) / CONTINUATION_CHARS_PER_SECOND;
-  return Math.max(MIN_SEGMENT_S, leadIn + rest);
+// The ROW is the authority on whether this render should still be going, not
+// just the AbortController. A cancel that cannot reach this pipeline's
+// controller — an older module instance after a hot reload, or a restart — still
+// writes `failed` there, and without this that reset changed nothing: the render
+// kept cutting and then overwrote the row with its own result. Checked between
+// beats rather than inside them, which is often enough to stop within seconds
+// and cheap enough to ignore (one indexed read per beat).
+async function cancelledElsewhere(db: Db, projectId: string) {
+  const { data } = await db.from("movie_recap_projects").select("render_status").eq("id", projectId).single();
+  return Boolean(data) && data!.render_status !== "running";
 }
 
 // Give every cue enough time to be read: at least MIN_CUE_S, and never above
@@ -224,40 +172,6 @@ function timeCaptionChunks(chunks: string[], segmentS: number, maxSegment: numbe
   return { durations: squeezed, segmentS: squeezed.reduce((sum, value) => sum + value, 0) };
 }
 
-// Cuts a synthesized clip back to the speech inside it. ffmpeg reports where the
-// silence runs are; the first non-silent sample and the last are the bounds, with
-// SPEECH_MARGIN_S left on either side. A clip that is silent end to end, or that
-// ffmpeg reports nothing for, is passed through untouched — better a long beat
-// than one with its first word missing.
-async function trimToSpeech(inputPath: string, outputPath: string, durationSeconds: number, signal?: AbortSignal) {
-  // ffmpeg writes silencedetect to stderr and exits 0; a failure still carries
-  // whatever it managed to report, so both paths feed the same parse.
-  const args = ["-hide_banner", "-i", inputPath, "-af", `silencedetect=noise=${SILENCE_THRESHOLD_DB}dB:d=0.1`, "-f", "null", "-"];
-  const report = await execFileAsync(FFMPEG, args, { maxBuffer: 1024 * 1024 * 16, signal })
-    .then((result) => result.stderr)
-    .catch((error: { stderr?: string }) => error.stderr ?? "");
-
-  const starts = [...report.matchAll(/silence_start:\s*(-?[\d.]+)/g)].map((m) => Number(m[1]));
-  const ends = [...report.matchAll(/silence_end:\s*([\d.]+)/g)].map((m) => Number(m[1]));
-  // A leading run is one starting at (or just after) zero. A trailing run is one
-  // whose END lands on the end of the file: ffmpeg closes the final run at EOF
-  // rather than leaving it open, so testing for a missing `silence_end` finds
-  // nothing and the clip keeps its tail.
-  const leading = starts.length && starts[0] <= 0.05 && ends.length ? ends[0] : 0;
-  const lastEnd = ends.length ? ends[ends.length - 1] : 0;
-  const closesAtEof = ends.length === starts.length && lastEnd >= durationSeconds - 0.02;
-  const trailing = closesAtEof || ends.length < starts.length ? starts[starts.length - 1] : durationSeconds;
-
-  const from = Math.max(0, leading - SPEECH_MARGIN_S);
-  const to = Math.min(durationSeconds, trailing + SPEECH_MARGIN_S);
-  // Nothing usable detected, or the clip is silence end to end: pass it through
-  // rather than risk cutting a word off.
-  if (!(to > from) || to - from < 0.2) return { path: inputPath, durationSeconds };
-
-  await run(FFMPEG, ["-y", "-i", inputPath, "-ss", from.toFixed(3), "-to", to.toFixed(3), "-c:a", "pcm_s16le", outputPath], signal);
-  return { path: outputPath, durationSeconds: Number((to - from).toFixed(3)) };
-}
-
 // Blur/logo apply once, on the whole concatenated video, not per-segment —
 // both are fixed positions/regions for the entire recap, so a single final
 // pass is equivalent to per-segment and far simpler.
@@ -278,15 +192,19 @@ function buildOverlayFilter(project: MovieRecapProject, assPath: string | null, 
     label = "padded";
   }
 
-  if (project.blurEnabled) {
-    const bx = Math.round((project.blurX / 100) * w);
-    const by = Math.round((project.blurY / 100) * h);
-    const bw = Math.min(w - bx, Math.max(2, Math.round((project.blurWidth / 100) * w)));
-    const bh = Math.min(h - by, Math.max(2, Math.round((project.blurHeight / 100) * h)));
-    parts.push(`[${label}]split=2[base][toBlur]`);
-    parts.push(`[toBlur]crop=${bw}:${bh}:${bx}:${by},boxblur=${movieRecapBlurRadius(MOVIE_RECAP_BLUR.radius, project.aspectRatio)}:${MOVIE_RECAP_BLUR.passes}[blurred]`);
-    parts.push(`[base][blurred]overlay=${bx}:${by}[blurred_full]`);
-    label = "blurred_full";
+  // One split/crop/overlay per region, chained. Each is independent — they may
+  // overlap, and a region blurred twice is simply blurred twice.
+  const radius = movieRecapBlurRadius(MOVIE_RECAP_BLUR.radius, project.aspectRatio);
+  for (const [index, region] of project.blurRegions.entries()) {
+    const bx = Math.round((region.x / 100) * w);
+    const by = Math.round((region.y / 100) * h);
+    const bw = Math.min(w - bx, Math.max(2, Math.round((region.width / 100) * w)));
+    const bh = Math.min(h - by, Math.max(2, Math.round((region.height / 100) * h)));
+    if (bw < 2 || bh < 2) continue;
+    parts.push(`[${label}]split=2[base${index}][toBlur${index}]`);
+    parts.push(`[toBlur${index}]crop=${bw}:${bh}:${bx}:${by},boxblur=${radius}:${MOVIE_RECAP_BLUR.passes}[blurred${index}]`);
+    parts.push(`[base${index}][blurred${index}]overlay=${bx}:${by}[blurred_full${index}]`);
+    label = `blurred_full${index}`;
   }
 
   // Styled subtitles are burned in here, before the logo, so the logo always
@@ -521,63 +439,14 @@ function mockNarration(project: MovieRecapProject): MovieRecapNarrationSegment[]
 // Dialogue spoken inside a scene's own time range, joined into one string for
 // the narration model. A scene with none is an action beat — its visual
 // description is the only thing describing it.
-// Whisper, with the audio compressed first. Extracted from the pipeline so the
-// caller reads as the one decision it is: use the source's captions, or listen
-// to it.
-async function transcribeSource(
-  db: Db,
-  projectId: string,
-  localSource: string,
-  workDir: string,
-  signal: AbortSignal
-): Promise<TranscriptSegment[]> {
-  await setProgress(db, projectId, "extracting_audio");
-  const audioPath = path.join(workDir, "audio.ogg");
-  await run(
-    FFMPEG,
-    ["-y", "-i", localSource, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", TRANSCRIBE_AUDIO_BITRATE, audioPath],
-    signal
-  );
-  // Checked rather than assumed: the ceiling is wide but not infinite, and the
-  // API's own error for an oversized upload does not say what to do about it.
-  const audioBytes = (await stat(audioPath)).size;
-  if (audioBytes > WHISPER_MAX_UPLOAD_BYTES) {
-    throw new Error(
-      `The source is too long to transcribe in one pass (${(audioBytes / 1024 / 1024).toFixed(1)}MB of audio against a 25MB limit).`
-    );
-  }
-  await setProgress(db, projectId, "transcribing");
-  const transcription = await openai().audio.transcriptions.create(
-    { file: createReadStream(audioPath), model: "whisper-1", response_format: "verbose_json" },
-    { signal }
-  );
-  const rawSegments = (transcription as unknown as { segments?: { start: number; end: number; text: string }[] }).segments ?? [];
-  return rawSegments.map((segment) => ({ start: segment.start, end: segment.end, text: segment.text }));
-}
-
-function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS: number) {
+// PARKED with the narration model that consumed it — nothing calls this while
+// the script is typed by hand. See history/movie-recap.md.
+export function dialogueForScene(transcript: TranscriptSegment[], startS: number, endS: number) {
   return transcript
     .filter((line) => line.end > startS && line.start < endS)
     .map((line) => line.text.trim())
     .join(" ")
     .trim();
-}
-
-// The analysis blob goes to R2 rather than a column: the motion track alone is
-// one value per 0.25s of source, and the project row is re-read every two
-// seconds while a render runs. Values are rounded — the planner compares them to
-// each other to find the liveliest scene, so two decimals is well past what it
-// can act on, and it roughly halves the blob.
-async function saveRenderAnalysis(db: Db, project: MovieRecapProject, analysis: MovieRecapRenderAnalysis) {
-  const key = movieRecapObjectKey(project.id, "analysis", "analysis.json");
-  const compact: MovieRecapRenderAnalysis = {
-    spares: analysis.spares,
-    cuts: analysis.cuts.map((value) => round2(value)),
-    motion: analysis.motion ? { stepS: analysis.motion.stepS, values: analysis.motion.values.map((value) => round2(value)) } : null,
-  };
-  await putObject(key, Buffer.from(JSON.stringify(compact)), "application/json");
-  await db.from("movie_recap_projects").update({ render_analysis_key: key }).eq("id", project.id);
-  return key;
 }
 
 // Null on anything unreadable — a missing object, a bucket change, a half-written
@@ -605,7 +474,7 @@ async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieReca
  * useful for comparing runs, and it lives in the browser's localStorage rather
  * than the database (see history/movie-recap.md). Null when the render failed.
  */
-export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { mock = false, reuse = false } = {}) {
+export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { mock = false } = {}) {
   const controller = new AbortController();
   activeRenders.set(project.id, controller);
   const signal = controller.signal;
@@ -615,7 +484,7 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       .from("movie_recap_projects")
       .update({
         render_status: "failed",
-        render_error: error,
+        render_error: trimFailureMessage(error),
         // The stage is deliberately NOT cleared here. It is the only record of
         // WHERE the render failed, and the Review tab's progress bar marks that
         // step red — clearing it would leave a failed render with a bar showing
@@ -633,22 +502,23 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     // length below reads from here.
     const pacing = movieRecapPacing(project.aspectRatio);
 
-    await db
-      .from("movie_recap_projects")
-      .update({ render_status: "running", render_is_mock: mock, render_error: null, render_started_at: new Date().toISOString() })
-      .eq("id", project.id);
+    // The route already claimed this row — status, mock flag, cleared error and
+    // start time all landed there in the one statement that won the claim. This
+    // used to write them again here, which is what left the claim non-atomic.
 
     // What the transform currently covers: zoom, colour, mirror (16:9) and the
     // blurred letterbox fill. What it does NOT: source-continuity limits, forced
     // speed changes, and freeze/zoom cadence — each of those changes a shot's
     // duration or its placement, so they belong to the planner, not the filter.
     console.log(
-      `[MovieRecapRender] project=${project.id} copyrightFree=${project.copyrightFree} — shot filter: ${buildShotFilter(shotFilterContext(project))}`
+      `[MovieRecapRender] project=${project.id} shot filter: ${buildShotFilter(shotFilterContext(project))}`
     );
 
-    let transcript: TranscriptSegment[] = [];
     let narration: MovieRecapNarrationSegment[];
     let spareScenes: SourceWindow[] = [];
+    // The source's own letterbox, found by the script run. A mock render has no
+    // analysis, so it frames the raw file — the same thing it did before.
+    let sourceCrop: MovieRecapRenderAnalysis["crop"] = null;
     // Both left unset by a mock render, which never runs detection.
     let sourceCuts: number[] = [];
     let sourceMotion: MotionTrack | null = null;
@@ -658,165 +528,50 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // API spend. Everything after this point is the real pipeline, so
       // framing/logo/subtitle design can be checked for free (see history).
       narration = mockNarration(project);
-      console.log(`[MovieRecapRender] project=${project.id} MOCK render — scene detection, vision, transcription and narration skipped.`);
-    } else if (reuse) {
-      // Re-render from the stored script. The source still has to come down —
-      // ffmpeg cuts every shot from it — but nothing that READS the source for
-      // meaning runs again: no detection, no vision pass, no transcription, no
-      // narration model. That is the whole cost of a render bar TTS, and it is
-      // paid to produce a script the user has already edited by hand.
-      const analysis = await loadRenderAnalysis(project);
-      if (!analysis) throw new Error("The saved analysis for this script is missing. Render again from the source.");
+      console.log(`[MovieRecapRender] project=${project.id} MOCK render — the script run, vision and narration skipped.`);
+    } else {
+      // EVERY real render cuts the saved script and nothing else. Reading the
+      // source, dividing the story across its scenes and speaking it all belong
+      // to the script run (lib/movie-recap-script.ts), which happens first and
+      // which the user has read the measurements from. What is left here is
+      // ffmpeg — plus cache reads for audio that run has already paid for.
       narration = project.renderScript ?? [];
-      if (!narration.length) throw new Error("There is no saved script to render.");
+      if (!narration.length) throw new Error("Build the script first — there is nothing to render.");
+      const analysis = await loadRenderAnalysis(project);
+      if (!analysis) throw new Error("The saved analysis for this script is missing. Build the script again.");
       spareScenes = analysis.spares;
       sourceCuts = analysis.cuts;
       sourceMotion = analysis.motion;
+      sourceCrop = analysis.crop ?? null;
 
       await setProgress(db, project.id, "downloading_source");
       await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", path.join(workDir, "source.mp4")], signal);
       console.log(
-        `[MovieRecapRender] project=${project.id} RE-RENDER from the saved script — ${narration.length} beats, ` +
-          `${spareScenes.length} spare scenes, detection/vision/transcription/script skipped.`
-      );
-    } else {
-      // 0. Pull the source down once. Scene detection decodes the whole file,
-      // and every later ffmpeg seek would otherwise re-fetch over the network.
-      await setProgress(db, project.id, "downloading_source");
-      const localSource = path.join(workDir, "source.mp4");
-      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", localSource], signal);
-
-      // 1a. The video's own structure: where the cuts are.
-      await setProgress(db, project.id, "detecting_scenes");
-      const detected = await detectScenes(localSource, workDir, signal);
-      const rows = detected.scenes;
-      // Every cut, including the ones merged away to build the scene list. The
-      // shot planner needs them so a shot is never laid across one of the film's
-      // own edits — see history/movie-recap.md.
-      sourceCuts = detected.cuts;
-      sourceMotion = detected.motion;
-
-      // 1b. What each scene LOOKS like — a transcript cannot see an action
-      // beat, and those are most of a recap. One keyframe per scene.
-      await setProgress(db, project.id, "describing_scenes", 0, rows.length);
-      const frames = await extractKeyframes(FFMPEG, localSource, rows, workDir, pacing.keyframesPerScene, signal);
-      const visuals = await describeScenes(frames, signal, (done, total) =>
-        setProgress(db, project.id, "describing_scenes", done, total)
-      );
-
-      // 1c. What each scene SOUNDS like.
-      //
-      // The source's own subtitle track first, when it has one: exact wording,
-      // exact timings, no API call, no upload limit, no wait. Most sources do
-      // not carry one — a download or a cutter export usually strips it — so
-      // this fails soft and transcription stays the normal path.
-      await setProgress(db, project.id, "reading_captions");
-      const captions = await readSourceCaptions(FFMPEG, localSource, workDir, project.sourceDurationSeconds, signal);
-      if (captions) {
-        console.info(
-          `[MovieRecapRender] project=${project.id} read ${captions.segments.length} cues from the source's ` +
-            `${captions.stream.codec} subtitle track${captions.stream.language ? ` (${captions.stream.language})` : ""} — skipping transcription`
-        );
-        transcript = captions.segments;
-      } else {
-        transcript = await transcribeSource(db, project.id, localSource, workDir, signal);
-      }
-
-      const scenes: RecapScene[] = rows.map((row, index) => ({
-        index,
-        startS: Number(row.start.toFixed(2)),
-        endS: Number(row.end.toFixed(2)),
-        visual: visuals.get(index)?.visual ?? "",
-        dialogue: dialogueForScene(transcript, row.start, row.end),
-      }));
-      // Where inside each scene the description came from, carried separately
-      // because the narration model has no use for it — the SHOT PLANNER does.
-      // With several frames per scene this is the model's chosen peak, so the
-      // cut lands on the action rather than a fixed third of the way in.
-      const keyframeFractionOf = (index: number) => visuals.get(index)?.keyframeFraction;
-
-      // 3. Narration script over the scenes (2. copyright-free video transform
-      // is applied per-segment below, alongside the render).
-      await setProgress(db, project.id, "writing_script");
-      const selected = await generateMovieRecapNarration(scenes, pacing, signal);
-      // The model returns scene indexes, not timestamps, so every clip lands on
-      // a real cut. Out-of-range indexes are dropped rather than clamped — a
-      // wrong index means the model lost track, not that it meant the last scene.
-      // A scene used twice would show the same footage under two different
-      // lines, which reads as a mistake even when the prompt allows it by
-      // accident. First use wins.
-      const usedScenes = new Set<number>();
-      narration = selected
-        .map((line) => ({
-          text: line.text.trim(),
-          shots: (line.sceneIndexes ?? [])
-            .filter((index) => {
-              if (!scenes[index] || usedScenes.has(index)) return false;
-              usedScenes.add(index);
-              return true;
-            })
-            .map((index) => ({
-              sourceStartS: scenes[index].startS,
-              sourceEndS: scenes[index].endS,
-              keyframeFraction: keyframeFractionOf(index),
-            })),
-        }))
-        .filter((line) => line.text && line.shots.length)
-        .sort((a, b) => a.shots[0].sourceStartS - b.shots[0].sourceStartS);
-      // Scenes the model passed over are not waste: a beat whose line outruns
-      // its own scenes borrows the nearest of these rather than holding one
-      // frame for four seconds.
-      spareScenes = scenes
-        .filter((scene) => !usedScenes.has(scene.index))
-        .map((scene) => ({
-          sourceStartS: scene.startS,
-          sourceEndS: scene.endS,
-          keyframeFraction: keyframeFractionOf(scene.index),
-        }));
-      if (!narration.length) throw new Error("The AI returned no narration segments.");
-      // Everything the planner reads that came out of the SOURCE, kept so an
-      // edited script can be re-rendered without paying for any of it again.
-      // Written before the render rather than after: a render that fails while
-      // cutting still leaves a script and an analysis worth re-running.
-      await saveRenderAnalysis(db, project, { spares: spareScenes, cuts: sourceCuts, motion: sourceMotion });
-      // The script lands on the row here too, not only on success. A render that
-      // dies while cutting has already spent the vision pass and the script
-      // model; losing the words it bought would mean buying them twice.
-      await db
-        .from("movie_recap_projects")
-        .update({ render_script: narration satisfies MovieRecapNarrationSegment[] })
-        .eq("id", project.id);
-      console.log(
-        `[MovieRecapRender] project=${project.id} ${rows.length} scenes detected from ${detected.cuts.length + 1} cuts` +
-          `${detected.motion ? "" : " (no motion track)"}, ` +
-          `${transcript.length} transcript lines, ${narration.length} narration beats.`
+        `[MovieRecapRender] project=${project.id} cutting ${narration.length} beat(s); ` +
+          `detection, the vision pass and the split are not run here.`
       );
     }
 
-    // 4. Narration audio. One synthesis call per beat rather than one for the
-    // whole script, because each beat needs its own measured duration to size
-    // its video segment — a single track would have to be split again on
-    // silence, which is guesswork.
-    //
-    // Mock renders never synthesize: staying free of API spend is the whole
-    // reason mock exists, so a mock render still runs on the character-count
-    // estimate and comes out silent.
+    // Narration audio, one clip per beat. On a normal render every one of these
+    // is a cache hit — the script run spoke them all to measure them — so this
+    // costs a download each and no API call. A clip is only synthesized here if
+    // the cache lost it.
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
     const spokenAudio: ({ path: string; durationSeconds: number } | null)[] = narration.map(() => null);
 
     if (!mock) {
       await setProgress(db, project.id, "synthesizing_narration", 0, narration.length);
+      let cacheHits = 0;
       for (const [i, segment] of narration.entries()) {
-        const result = await synthesize({ text: segment.text, voice, signal });
-        const rawPath = path.join(workDir, `narration-${i}-raw.wav`);
-        await writeFile(rawPath, result.audio);
-        const wavPath = path.join(workDir, `narration-${i}.wav`);
-        const trimmed = await trimToSpeech(rawPath, wavPath, result.durationSeconds, signal);
-        spokenAudio[i] = { path: trimmed.path, durationSeconds: trimmed.durationSeconds };
+        if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+        const clip = await narrationClip({ projectId: project.id, voice, text: segment.text, slot: i, workDir, signal });
+        if (clip.cached) cacheHits++;
+        spokenAudio[i] = clip;
         await setProgress(db, project.id, "synthesizing_narration", i + 1, narration.length);
       }
       console.log(
-        `[MovieRecapRender] project=${project.id} synthesized ${narration.length} narration beats with ${voice.providerId}:${voice.id}.`
+        `[MovieRecapRender] project=${project.id} narration ready for ${narration.length} beat(s): ` +
+          `${cacheHits} from cache, ${narration.length - cacheHits} synthesized.`
       );
     }
 
@@ -827,7 +582,13 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     const sourceForClips = mock ? project.sourceUrl! : path.join(workDir, "source.mp4");
     // Framing and the copyright-free transform both live in
     // lib/movie-recap-transform.ts; the same chain is used for every shot.
-    const vf = buildShotFilter(shotFilterContext(project));
+    const vf = buildShotFilter(shotFilterContext(project, sourceCrop));
+    if (sourceCrop) {
+      console.log(
+        `[MovieRecapRender] project=${project.id} source letterbox cut: ${sourceCrop.width}x${sourceCrop.height} at ${sourceCrop.x},${sourceCrop.y}`
+      );
+    }
+    const sourceLengthOf = (shot: SourceWindow) => Math.max(0.05, shot.sourceEndS - shot.sourceStartS);
     const segmentPaths: string[] = [];
     // The length each BEAT was rendered to, reused below to pad that beat's
     // narration clip onto the same timeline. One entry per beat, not per shot:
@@ -843,59 +604,100 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
     let cursor = 0;
 
     for (const [i, segment] of narration.entries()) {
-      // Subtitles decide the beat's length, not the other way round: split the
-      // line into cues, give each one enough time to be read, and take the
-      // total as this beat's target. It is never below MIN_SEGMENT_S.
+      if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
       const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
       const spokenS = spokenAudio[i]?.durationSeconds ?? estimateSpokenSeconds(segment.text);
-      const timed = timeCaptionChunks(chunks, spokenS, pacing.maxSegmentS);
-      // timeCaptionChunks caps a beat at `pacing.maxSegmentS`, which was the right
-      // call against an estimate but would now cut real speech off mid-word.
-      // Measured audio wins (history/movie-recap.md: "narration audio duration
-      // is authoritative"); the cues stretch with it so captions stay on the
-      // words being spoken instead of finishing early.
-      const stretch = spokenAudio[i] && spokenS > timed.segmentS ? spokenS / timed.segmentS : 1;
-      const cueDurations = stretch === 1 ? timed.durations : timed.durations.map((value) => value * stretch);
-      // One deliberate breath per beat, now that the clip carries no silence of
-      // its own. The last beat gets none — a recap should not end on dead air.
-      const gapS = !mock && spokenAudio[i] && i < narration.length - 1 ? BEAT_GAP_S : 0;
-      const targetS = timed.segmentS * stretch + gapS;
 
-      // Everything about which footage this beat plays — borrowing unused
-      // scenes, how many cuts it gets, and keeping any run of source under
-      // MAX_CONTINUOUS_SOURCE_S — is decided in lib/movie-recap-shots.ts.
-      // The speed callback has to be the SAME call the segment loop makes
-      // below, or the planner measures continuity against a speed the render
-      // does not use.
-      const speedFor = project.copyrightFree
-        ? (shotIndex: number) => pickShotSpeed(MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds, project.id, i, shotIndex)
-        : undefined;
-      const plan = planBeat({
-        pacing,
-        shots: segment.shots,
-        spares: spareScenes,
-        targetS,
-        speedFor,
-        cuts: sourceCuts,
-        motion: sourceMotion,
+      let shots: SourceWindow[];
+      // ONE SLOT PER SHOT. A beat used to divide its length evenly across its
+      // cuts, which is right when the planner invented the windows — they were
+      // all the same size by construction. A scene's own cuts are not, so an
+      // even slot would stretch one piece and squeeze the next.
+      let slots: number[];
+
+      if (mock) {
+        // Subtitles decide a mock beat's length, not the other way round: split
+        // the line into cues, give each one enough time to be read, and take the
+        // total as the target. It is never below MIN_SEGMENT_S.
+        const timed = timeCaptionChunks(chunks, spokenS, pacing.maxSegmentS);
+        const plan = planBeat({
+          pacing,
+          shots: segment.shots,
+          spares: spareScenes,
+          targetS: timed.segmentS,
+          cuts: sourceCuts,
+          motion: sourceMotion,
+        });
+        spareScenes = spareScenes.filter((_, index) => !plan.sparesUsed.includes(index));
+        shots = plan.shots;
+        slots = shots.map(() => plan.slotS);
+        if (plan.warning) console.warn(`[MovieRecapRender] project=${project.id} beat=${i + 1} ${plan.warning}`);
+      } else {
+        // THE SCENE-ALIGNED PATH. The shots are already decided — they are the
+        // film's own scene, cut into pieces that clear the continuity limit
+        // (lib/movie-recap-scene-plan.ts) — so nothing here chooses footage.
+        // It only decides how long each of those pieces holds the screen.
+        shots = segment.shots;
+        // SCREEN seconds, not source seconds: every shot plays at
+        // MOVIE_RECAP_PLAYBACK_SPEED, so a 5.7s scene holds the screen for 6.0s.
+        // Comparing the speech against raw source here is what made the slowdown
+        // buy nothing — the extra seconds have to be visible to the slot maths.
+        const footage = shots.map((shot) => sourceLengthOf(shot) / MOVIE_RECAP_PLAYBACK_SPEED);
+        const totalFootageS = footage.reduce((total, value) => total + value, 0);
+        if (spokenS >= totalFootageS) {
+          // The speech still outruns its scene after the rate fit clamped. Every
+          // piece plays in full and the leftover lands on the LAST shot alone —
+          // one held push-in at the end of the beat, rather than a stutter at the
+          // end of every shot, which is what spreading it produced (measured:
+          // 154 held moments in one export, history/movie-recap.md 2026-09-19).
+          slots = [...footage];
+          slots[slots.length - 1] += spokenS - totalFootageS;
+        } else {
+          // The speech came in short: every piece gives up the same fraction, so
+          // the beat still ends where the line does and the cuts stay evenly
+          // spaced inside the scene.
+          const keep = spokenS / totalFootageS;
+          slots = footage.map((value) => value * keep);
+        }
+      }
+
+      // QUANTIZE THE BOUNDARIES BETWEEN SLOTS, NOT THE SLOTS. A segment is cut to
+      // `-t slot` and then resampled to MOVIE_RECAP_TARGET_FPS, so its real
+      // length is a whole number of frames — an arbitrary float slot silently
+      // loses the remainder. Captions and the narration track are laid out on
+      // these same numbers, so this is what keeps all three on one timeline.
+      //
+      // Rounding each slot on its own let the error ACCUMULATE: a beat of 49
+      // shots came out 0.123s shorter than its own speech, and the narration is
+      // cut to the picture (`-t slotS` below), so the end of the line was
+      // clipped. Rounding the running total instead bounds a beat's error to a
+      // single frame however many shots it has.
+      let quantized = 0;
+      let elapsed = 0;
+      slots = slots.map((value) => {
+        elapsed += value;
+        const boundary = Math.round(elapsed * MOVIE_RECAP_TARGET_FPS) / MOVIE_RECAP_TARGET_FPS;
+        const slot = boundary - quantized;
+        quantized = boundary;
+        return slot;
       });
-      spareScenes = spareScenes.filter((_, index) => !plan.sparesUsed.includes(index));
-      const { shots, shotCount } = plan;
-      // QUANTIZE THE SLOT TO THE FRAME GRID. A segment is cut to `-t slot` and
-      // then resampled to MOVIE_RECAP_TARGET_FPS, so its real length is a whole
-      // number of frames — an arbitrary float slot silently loses the remainder,
-      // every shot, in the same direction. Captions and the narration track are
-      // both laid out on this same number, so rounding it here is what keeps all
-      // three on one timeline instead of drifting apart over a long recap.
-      const slotS = Math.round(plan.slotS * MOVIE_RECAP_TARGET_FPS) / MOVIE_RECAP_TARGET_FPS;
-      if (plan.warning) console.warn(`[MovieRecapRender] project=${project.id} beat=${i + 1} ${plan.warning}`);
+      const shotCount = shots.length;
+      const beatS = slots.reduce((total, value) => total + value, 0);
+      const heldS = shots.reduce((total, shot, index) => total + holdDeficit(sourceLengthOf(shot), slots[index]), 0);
+      if (heldS > 0.1) {
+        console.warn(
+          `[MovieRecapRender] project=${project.id} beat=${i + 1} ${heldS.toFixed(2)}s has no footage behind it — ` +
+            `this block has more narration than its timestamps can cover.`
+        );
+      }
       console.log(
-        `[MovieRecapRender] project=${project.id} beat=${i + 1} ${targetS.toFixed(2)}s -> ${shotCount} shot(s) of ${slotS.toFixed(2)}s ` +
-          `(borrowed ${plan.sparesUsed.length}).`
+        `[MovieRecapRender] project=${project.id} beat=${i + 1} ${beatS.toFixed(2)}s -> ${shotCount} shot(s) ` +
+          `[${slots.map((value) => value.toFixed(2)).join(", ")}].`
       );
 
       for (const [shotIndex, shot] of shots.entries()) {
-        const sourceDurationS = Math.max(0.05, shot.sourceEndS - shot.sourceStartS);
+        const slotS = slots[shotIndex];
+        const sourceDurationS = sourceLengthOf(shot);
         const ratio = slotS / sourceDurationS;
 
         if (ratio < EXTREME_RATIO_MIN || ratio > EXTREME_RATIO_MAX) {
@@ -906,72 +708,46 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
 
         const segPath = path.join(workDir, `seg-${i}-${shotIndex}.mp4`);
 
-        if (project.copyrightFree) {
-          // Speed is an INPUT here, not something derived from how long the shot
-          // has to last. Pick a speed that is never 1.0, then take `slot * speed`
-          // seconds of source and play them at that speed: the output is still
-          // exactly `slot` long, so nothing downstream moves and the narration
-          // stays aligned. This is why the transform can change every shot's
-          // speed without touching the planner.
-          const speed = pickShotSpeed(MOVIE_RECAP_COPYRIGHT_TRANSFORM.speeds, project.id, i, shotIndex);
-          const takenS = Math.min(slotS * speed, sourceDurationS);
-          // `-ss`/`-t` BEFORE `-i` — input-side seeking. As output options they
-          // are applied AFTER the filter chain, so `setpts` has already re-timed
-          // the stream and the window means something else entirely (measured:
-          // a 1.4s slot came out 1.30s and 1.47s at two different speeds).
-          //
-          // Then `tpad` holds the last frame — covering both a scene shorter than
-          // the window and the frame of rounding a speed change leaves — and the
-          // output-side `-t` cuts back to exactly the slot. Belt and braces, but
-          // the alternative is audio drifting away from the picture.
-          const filters = segmentFilters(vf, `setpts=PTS/${speed.toFixed(4)}`, `tpad=stop_mode=clone:stop_duration=${(slotS + 0.2).toFixed(3)}`);
-          await run(
-            FFMPEG,
-            ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", takenS.toFixed(3), "-i", sourceForClips, "-an",
-             "-vf", filters, "-t", slotS.toFixed(3), "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
-            signal
-          );
-          segmentPaths.push(segPath);
-          shotLog.push({
-            beat: i + 1,
-            shot: shotIndex + 1,
-            slotS: round2(slotS),
-            sourceStartS: round2(shot.sourceStartS),
-            sourceEndS: round2(shot.sourceStartS + takenS),
-            sourceS: round2(takenS),
-            padS: round2(Math.max(0, slotS - takenS / speed)),
-            speed,
-            skipS: lastSourceEndS === null ? null : round2(shot.sourceStartS - lastSourceEndS),
-          });
-          lastSourceEndS = shot.sourceStartS + takenS;
-          continue;
-        }
+        // TWO branches, and `setpts` is in both: the playback speed is global,
+        // so the only question is whether the scene is long enough to fill the
+        // slot at that speed.
+        const usedS = playedSourceSeconds(sourceDurationS, slotS);
+        const padS = holdDeficit(sourceDurationS, slotS);
+        const slow = `setpts=PTS/${MOVIE_RECAP_PLAYBACK_SPEED}`;
+        const filters =
+          padS > 0
+            ? // Freeze-pad: the scene runs out before its slot does, so hold the
+              // last frame — and move it, so the hold reads as a choice rather
+              // than as a stall.
+              segmentFilters(
+                vf,
+                slow,
+                `tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`,
+                holdMotionFilter({ aspectRatio: project.aspectRatio, slotS, fps: MOVIE_RECAP_TARGET_FPS })
+              )
+            : // Trim: the scene has footage to spare, so only `slot * speed` of
+              // it is read in the first place.
+              segmentFilters(vf, slow);
 
-        const args = ["-y", "-i", sourceForClips, "-ss", String(shot.sourceStartS), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p"];
-
-        // How much ORIGINAL footage this shot ends up showing, which is not its
-        // slot: the three branches below each use a different amount.
-        let usedS = sourceDurationS;
-
-        if (ratio >= SPEED_RAMP_MIN && ratio <= SPEED_RAMP_MAX) {
-          // Speed-ramp: stretch/compress playback so the clip's own length becomes its slot.
-          args.push("-to", String(shot.sourceEndS), "-vf", segmentFilters(vf, `setpts=PTS*${ratio.toFixed(4)}`));
-        } else if (slotS < sourceDurationS) {
-          // Trim: the scene runs longer than its slot, so cut it down. The slot
-          // is never below MIN_SHOT_S, so a trim cannot produce a flash frame.
-          args.push("-to", String(shot.sourceStartS + slotS), "-vf", segmentFilters(vf));
-          usedS = slotS;
-        } else {
-          // Freeze-pad: the slot outlasts the scene, hold the last frame.
-          const padS = slotS - sourceDurationS;
-          args.push("-to", String(shot.sourceEndS), "-vf", segmentFilters(vf, `tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`));
-        }
-        args.push(segPath);
-        await run(FFMPEG, args, signal);
+        // `-ss`/`-t` BEFORE `-i` — INPUT-side seeking, and this is a performance
+        // decision, not a style one. As output options ffmpeg decodes the file
+        // from the start and throws frames away until it reaches `-ss`, so every
+        // shot re-reads the whole film up to its own cut point. Measured on a
+        // 17-minute source, one 3.5s shot at 241s: 17.0s output-side against
+        // 1.54s input-side, for byte-identical output (105 frames, 3.500s). At
+        // ~300 shots that is the difference between an hour and a few minutes,
+        // and it is what made a full render outlive its own request.
+        //
+        // Input-side seeking makes `-t` a DURATION from the seek point, where
+        // output-side `-to` was an absolute timestamp — so the branches above hand
+        // over how much source to read, not where to stop.
+        await run(
+          FFMPEG,
+          ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", usedS.toFixed(3), "-i", sourceForClips, "-an",
+           "-vf", filters, "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
+          signal
+        );
         segmentPaths.push(segPath);
-        // Only the freeze branch leaves the slot unfilled; a ramp plays the whole
-        // scene over the slot, and a trim has footage to spare.
-        const padS = ratio > SPEED_RAMP_MAX && slotS > sourceDurationS ? slotS - sourceDurationS : 0;
         shotLog.push({
           beat: i + 1,
           shot: shotIndex + 1,
@@ -980,12 +756,12 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
           sourceEndS: round2(shot.sourceStartS + usedS),
           sourceS: round2(usedS),
           padS: round2(padS),
-          speed: null,
+          speed: MOVIE_RECAP_PLAYBACK_SPEED,
           skipS: lastSourceEndS === null ? null : round2(shot.sourceStartS - lastSourceEndS),
         });
         lastSourceEndS = shot.sourceStartS + usedS;
       }
-      beatDurations.push(slotS * shotCount);
+      beatDurations.push(beatS);
 
       await setProgress(db, project.id, "rendering_segments", i + 1, narration.length);
 
@@ -998,19 +774,25 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       // each cue is held for exactly its shot. A mock line is deliberately left
       // whole, so the burned caption is the same words the step-3 preview shows.
       if (mock) {
-        for (const [chunkIndex, chunk] of chunks.entries()) {
-          const chunkS = cueDurations[chunkIndex];
-          cues.push({ start: cursor, end: cursor + chunkS, text: chunk });
-          cursor += chunkS;
+        const share = beatS / Math.max(1, chunks.length);
+        for (const chunk of chunks) {
+          cues.push({ start: cursor, end: cursor + share, text: chunk });
+          cursor += share;
         }
       } else {
         // May come back shorter than `shotCount` — a line with fewer words than
         // cuts cannot be divided that finely, so the longest pieces take the
-        // extra shots instead.
+        // extra shots instead. `spread` says how many shots each cue covers, so
+        // the cue is held for the sum of THOSE shots' slots rather than for a
+        // multiple of one average slot: on the scene-aligned path the slots
+        // differ, and an average would slide the captions off the speech.
         const aligned = splitIntoNChunks(segment.text, shotCount);
         const spread = spreadCuesOverShots(aligned, shotCount);
+        let shotCursor = 0;
         for (const [chunkIndex, chunk] of aligned.entries()) {
-          const heldS = slotS * spread[chunkIndex];
+          const covered = slots.slice(shotCursor, shotCursor + spread[chunkIndex]);
+          shotCursor += spread[chunkIndex];
+          const heldS = covered.reduce((total, value) => total + value, 0);
           cues.push({ start: cursor, end: cursor + heldS, text: chunk });
           cursor += heldS;
         }
@@ -1095,10 +877,14 @@ export async function runMovieRecapRender(db: Db, project: MovieRecapProject, { 
       .update({
         render_status: "done",
         render_error: null,
-        // A re-render never re-reads the source, so it has no transcript to
-        // write — leaving the column alone keeps the one the full render found.
-        ...(mock ? { render_transcript: null } : reuse ? {} : { render_transcript: transcript }),
-        render_script: narration satisfies MovieRecapNarrationSegment[],
+        // Nothing reads the source for meaning any more, so no render produces
+        // a transcript to store. The column keeps whatever an older run left.
+        ...(mock ? { render_transcript: null } : {}),
+        // `render_script` is NOT written here. It belongs to the script run, and
+        // only a resync replaces it (the user's rule, history/movie-recap.md).
+        // A real render reads it back unchanged so writing it was a no-op — but
+        // a MOCK render's narration is canned lines, and this line overwrote an
+        // measured script with them.
         render_output_url: outputUrl,
         render_output_object_key: outputKey,
         render_stage: null,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOVIE_RECAP_PACING } from "./constants/movie-recap";
+import { MOVIE_RECAP_KEYFRAMES_PER_SCENE } from "./constants/movie-recap";
 import { keyframeFractions, SINGLE_KEYFRAME_FRACTION } from "./movie-recap-scenes";
 
 describe("keyframeFractions", () => {
@@ -25,9 +25,9 @@ describe("keyframeFractions", () => {
     }
   });
 
-  it("returns one fraction per frame for every pacing profile", () => {
-    for (const pacing of Object.values(MOVIE_RECAP_PACING)) {
-      expect(keyframeFractions(pacing.keyframesPerScene)).toHaveLength(pacing.keyframesPerScene);
-    }
+  it("returns one fraction per frame the vision pass asks for", () => {
+    // One count for both aspect ratios: how well a scene is READ is not a
+    // presentation choice (history/movie-recap.md).
+    expect(keyframeFractions(MOVIE_RECAP_KEYFRAMES_PER_SCENE)).toHaveLength(MOVIE_RECAP_KEYFRAMES_PER_SCENE);
   });
 });

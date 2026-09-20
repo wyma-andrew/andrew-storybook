@@ -12,10 +12,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const cancelled = cancelMovieRecapRender(data.id);
   if (!cancelled && data.render_status === "running") {
-    // No live AbortController for this id — a dev-server restart (or any
-    // process restart) wipes the in-memory map without ever reaching the
-    // pipeline's own catch block, orphaning the row at "running" forever.
-    // Nothing is actually running, so it's safe to just reset it here.
+    // No live AbortController for this id — a process restart wipes the map
+    // without ever reaching the pipeline's own catch block, orphaning the row at
+    // "running" forever. Resetting it here is what unsticks that.
+    //
+    // This used to assume nothing could still be running, and that was wrong: a
+    // hot reload gave this route a fresh empty map while the old module's
+    // pipeline carried on, so the reset changed nothing and the render went on
+    // to overwrite the row with its own result. Two things fixed that — the map
+    // now lives on `globalThis` so a reload keeps it, and the pipeline re-reads
+    // this status between beats and stops itself when it is no longer "running".
+    // So the write below is an instruction to any surviving run, not just a
+    // tidy-up. See history/movie-recap.md.
     await db
       .from("movie_recap_projects")
       .update({

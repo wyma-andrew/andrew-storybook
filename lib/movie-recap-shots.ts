@@ -6,7 +6,7 @@
 // every cut in the video, and because the invariant below is only checkable in
 // a test if nothing around it needs ffmpeg.
 
-import type { MovieRecapPacing } from "./constants/movie-recap";
+import { MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
 
 export type SourceWindow = {
   sourceStartS: number;
@@ -107,27 +107,18 @@ export function movingFraction(track: MotionTrack, fromS: number, toS: number, c
   return counted ? moving / counted : 0;
 }
 
-// Hybrid duration match: within this ratio band the render speed-ramps the
-// segment to fit its slot, which means it plays the scene WHOLE. Outside it the
-// scene is trimmed (or freeze-padded). The planner has to know which, because
-// "how much source does this shot actually show" is what continuity is measured
-// on — so the band lives here and the render imports it.
-export const SPEED_RAMP_MIN = 0.85;
-export const SPEED_RAMP_MAX = 1.15;
 
 const round3 = (value: number) => Number(value.toFixed(3));
 const lengthOf = (window: SourceWindow) => window.sourceEndS - window.sourceStartS;
 const byStart = (a: SourceWindow, b: SourceWindow) => a.sourceStartS - b.sourceStartS;
 const midpoint = (window: SourceWindow) => (window.sourceStartS + window.sourceEndS) / 2;
 
-// How many seconds of SOURCE a shot shows, which is not its slot: a trimmed
-// shot shows less than its scene, a freeze-padded one shows all of it and then
-// holds, and a speed-ramped one shows all of it faster. Mirrors the four
+// How many seconds of SOURCE a shot shows, which is not its slot: everything
+// plays at MOVIE_RECAP_PLAYBACK_SPEED, so a slot needs `slot * speed` seconds of
+// footage and shows all it has when the scene is shorter. Mirrors the two
 // branches in the render's segment loop — change one and change both.
-export function playedSourceSeconds(windowS: number, slotS: number, speed: number | null) {
-  if (speed !== null) return Math.min(slotS * speed, windowS);
-  if (slotS >= windowS) return windowS;
-  return slotS / windowS >= SPEED_RAMP_MIN ? windowS : slotS;
+export function playedSourceSeconds(windowS: number, slotS: number) {
+  return Math.min(slotS * MOVIE_RECAP_PLAYBACK_SPEED, windowS);
 }
 
 // Fallback for a window with no described moment of its own: a third of the way
@@ -283,12 +274,6 @@ export function minShotsFor(targetS: number, pacing: MovieRecapPacing) {
 // shot index, so which one a scene ends up with is not known while scenes are
 // being chosen — the fastest is the safe assumption, since it needs the most
 // footage.
-function topSpeed(speedFor: ((shotIndex: number) => number) | undefined, count: number) {
-  if (!speedFor) return 1;
-  let top = 1;
-  for (let i = 0; i < count; i++) top = Math.max(top, speedFor(i));
-  return top;
-}
 
 function motionOf(window: SourceWindow, motion?: MotionTrack | null) {
   return motion ? motionMean(motion, window.sourceStartS, window.sourceEndS) : 0;
@@ -351,15 +336,10 @@ function borrow(
 // the point: borrowing another scene is only worth a cut if the alternative was
 // actually a freeze.
 //
-// A small deficit is NOT counted. Inside the speed-ramp band the render slows
-// the clip to fill its slot and the scene still plays whole, so there is nothing
-// to fix and nothing to borrow for. Only the gap past that band is a freeze.
-export function holdDeficit(windowS: number, slotS: number, speed: number | null) {
-  // Copyright-free: the render takes `slot * speed` seconds and plays them at
-  // `speed`, so a scene shorter than that window is padded by the difference.
-  if (speed !== null) return Math.max(0, slotS - Math.min(slotS * speed, windowS) / speed);
-  if (windowS >= slotS) return 0;
-  return slotS / windowS > SPEED_RAMP_MAX ? slotS - windowS : 0;
+// The render takes `slot * speed` seconds and plays them at `speed`, so a scene
+// shorter than that window is padded by the difference.
+export function holdDeficit(windowS: number, slotS: number) {
+  return Math.max(0, slotS - playedSourceSeconds(windowS, slotS) / MOVIE_RECAP_PLAYBACK_SPEED);
 }
 
 // Which of a beat's scenes survive when it cannot afford them all. Dropping the
@@ -515,10 +495,6 @@ export type BeatPlan = {
  * audio. The shots returned always add up to it exactly — the narration track is
  * padded to the same number, so any drift desynchronizes speech from picture.
  *
- * `speedFor` is the copyright-free transform's per-shot speed, or undefined when
- * the transform is off. It is needed here because a sped-up shot consumes more
- * source than its slot, which changes where the next shot has to start.
- *
  * `cuts` is every cut detection found, including the ones merged away when the
  * scene list was built. Without it a shot can be planned across one of the
  * film's own edits and arrive as two.
@@ -531,7 +507,6 @@ export function planBeat({
   spares,
   targetS,
   pacing,
-  speedFor,
   cuts = [],
   motion,
 }: {
@@ -540,7 +515,6 @@ export function planBeat({
   targetS: number;
   /** The aspect ratio's pacing profile; see MOVIE_RECAP_PACING. */
   pacing: MovieRecapPacing;
-  speedFor?: (shotIndex: number) => number;
   /** Every cut detection found, so a shot is never planned across one. */
   cuts?: number[];
   /** Picture motion across the source, so a shot lands on its liveliest second. */
@@ -552,11 +526,10 @@ export function planBeat({
   const need = Math.max(Math.min(shotsNeededFor(targetS, pacing), affordable), minCount);
 
   // How much SOURCE a shot of this length needs, which is not its slot: the
-  // copyright-free transform plays `slot * speed` seconds, so at 1.07x a 2.9s
-  // slot wants 3.1s of footage. Testing against the slot alone let scenes
-  // through that were 4-7% too short, and the render held a frame for the
-  // difference. The fastest speed is used, so the test never under-provisions.
-  const footageFor = (slot: number) => slot * topSpeed(speedFor, Math.max(need, 1));
+  // render plays `slot * speed` seconds at MOVIE_RECAP_PLAYBACK_SPEED. Testing
+  // against the slot alone let scenes through that were too short, and the
+  // render held a frame for the difference.
+  const footageFor = (slot: number) => slot * MOVIE_RECAP_PLAYBACK_SPEED;
   const first = borrow(shots, spares, need, footageFor(targetS / need), motion);
   let pool = first.picked;
   let used = first.used;
@@ -592,7 +565,7 @@ export function planBeat({
   const deficitOf = (windows: SourceWindow[], count: number) => {
     const slot = targetS / count;
     return windows.reduce(
-      (total, window, index) => total + holdDeficit(lengthOf(window), slot, speedFor ? speedFor(index) : null),
+      (total, window) => total + holdDeficit(lengthOf(window), slot),
       0
     );
   };
@@ -623,13 +596,8 @@ export function planBeat({
   // the vision pass described. Everything downstream — the continuity check here
   // and the four ffmpeg branches in the render — works on that piece, so a shot
   // shows the moment its line is about rather than whatever the scene opened on.
-  const planned: Planned[] = scenes.map((scene, index) =>
-    focusWindow(
-      scene,
-      playedSourceSeconds(lengthOf(scene), slotS, speedFor ? speedFor(index) : null),
-      cuts,
-      motion
-    )
+  const planned: Planned[] = scenes.map((scene) =>
+    focusWindow(scene, playedSourceSeconds(lengthOf(scene), slotS), cuts, motion)
   );
 
   // Anything the render will have to hold a frame through. The coverage pass
@@ -638,11 +606,11 @@ export function planBeat({
   // under a long line freezes and there is no cut to buy. Logged because a
   // silent version of it shipped once, as 1.3s of cloned frames per shot.
   //
-  // Note this counts the WHOLE gap, including the part the speed ramp absorbs —
-  // unlike holdDeficit, which counts only the freeze. Deliberately the louder
-  // of the two: one decides whether to spend a cut, the other tells a human the
-  // beat is thin.
-  const padding = planned.reduce((total, shot) => total + Math.max(0, slotS - lengthOf(shot.window)), 0);
+  // A window shorter than its slot is NOT a gap: everything plays at
+  // MOVIE_RECAP_PLAYBACK_SPEED, so `slot * speed` seconds of footage fill the
+  // slot exactly. Measuring the raw difference made every healthy shot report
+  // 5% of its slot as held frames.
+  const padding = planned.reduce((total, shot) => total + holdDeficit(lengthOf(shot.window), slotS), 0);
 
   const broken = breakContinuity(planned, slotS, pacing);
   if (padding > 0.1 && !warning) {

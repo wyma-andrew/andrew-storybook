@@ -54,7 +54,7 @@ app/
     (story)/
       stories/                 Story list/detail and three-step chapter UI (URL: /stories)
     (movie-recap)/
-      movie-recap/             Recap project list + four-step editor (URL: /movie-recap)
+      movie-recap/             Recap project list + five-step editor (URL: /movie-recap)
     account/                   Email display and password change
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
@@ -165,12 +165,13 @@ its visual prompt to improve image-model recognition without changing that key.
 - API: `app/api/(movie-recap)/movie-recaps/`
 - Storage: Cloudflare R2 multipart source upload and presigned logo PUT
 
-Users create resumable recap projects, upload one browser-playable source,
+Users create resumable recap projects, upload one browser-playable source, read
+paste its transcript and Burmese story at the Transcript step,
 choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
-movable blur configuration, and a per-project copyright-free toggle that drives
-the per-shot transform in `lib/movie-recap-transform.ts` (a per-project zoom,
-colour, mirror, and a blurred fill behind letterbox bars) plus a per-shot playback
-speed that is never the source's own. Subtitle appearance is a two-option preset (yellow or
+movable blur configuration. Every shot gets the house look from
+`lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a
+blurred fill behind letterbox bars (`MOVIE_RECAP_LOOK`); there is no toggle, and
+no per-shot speed. Subtitle appearance is a two-option preset (yellow or
 white text, black shadow, no background box) whose size follows the aspect ratio;
 only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
 aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
@@ -180,34 +181,75 @@ same local file is reselected. Generate currently records
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
 
-The render preview (`lib/movie-recap-render.ts`) runs the real pipeline:
-download, scene detection, a vision pass (one keyframe per scene on 16:9, three
-on 9:16 so the model describes the event across them and names which frame is
-its peak — that peak is where the shot is later cut from), then the source's dialogue — read from
-its own subtitle track when it has a usable one (`lib/movie-recap-captions.ts`),
-otherwise transcribed with Whisper — then the narration script and narration
-audio through `lib/tts/` (Azure Speech). Each beat's
-measured audio duration sizes its video segment; the padded narration track is
-muxed into the export. Which footage each beat cuts between — borrowing unused
-scenes (for the cut count and again to avoid held frames), and the hard rule that
-a run of source is never on screen past the continuity limit — is decided in
-`lib/movie-recap-shots.ts`. Pacing is per aspect ratio, because the aspect ratio
+The recap is built in two runs: a SCRIPT run that reads the source and measures
+the narration, and a RENDER that cuts what was approved. The script run turns the
+hand-typed Burmese story into beats. Each timestamped block gives the footage between its own
+stamp and the next (`lib/movie-recap-manual-script.ts` parses them); the source's
+own cuts then divide that footage into scenes (`lib/movie-recap-scene-plan.ts`),
+and **one beat is one scene**. The block's passage is split across its scenes by
+a vision-assisted pass (`splitMovieRecapBeat` in `lib/openai.ts`, one keyframe
+per scene), verified character-for-character against the user's own text and
+otherwise replaced by a mechanical sentence split (`lib/movie-recap-scene-text.ts`).
+Subtitle-reading/Whisper and the narration model stay parked — the functions
+remain, nothing calls them, and the Dialogue step shows as skipped on the
+progress bar (`MOVIE_RECAP_PARKED_STEPS`).
+
+Building that script is its own run (`lib/movie-recap-script.ts`,
+`POST movie-recaps/:id/script`), and it stops before anything is cut: it speaks
+every beat through `lib/tts/` (Azure Speech) and stores the MEASURED length on
+each one, so a beat whose narration outruns the footage behind it is a number the
+user can act on rather than a held frame discovered an hour into a render. The
+Review step's script panel shows footage, narration and overrun per beat; editing
+a line re-speaks that beat alone (`POST movie-recaps/:id/script/beat`), and
+`PATCH movie-recaps/:id/script` records the approval that the render refuses to
+run without. Any text change clears it. Synthesized narration is cached in R2
+under the project prefix, keyed by a hash of the voice and the line, which is
+what makes fixing one beat cost one beat.
+
+The render (`lib/movie-recap-render.ts`) is then ffmpeg: it loads the approved
+script plus the analysis blob, reads every narration clip from the cache, cuts
+each beat into shots that clear the continuity limit (`splitSceneIntoShots`),
+holds a frame under any narration its footage cannot cover
+(`holdMotionFilter` pushes in so the hold reads as a choice), and muxes the
+padded narration track into the export. `lib/movie-recap-shots.ts` still holds
+the borrowing planner and serves the mock render; `lib/movie-recap-ribbon.ts` is
+an unwired alternative that trades timestamp accuracy for never freezing (see
+`history/movie-recap.md`). Pacing is per aspect ratio, because the aspect ratio
 is the format: `MOVIE_RECAP_PACING` in `lib/constants/movie-recap.ts` gives 9:16
 (TikTok, Facebook) a fast 1.5-2.5s shot band and 16:9 (YouTube) a 2-4s one, and
-also sets each one's narration line budget and subtitle offset. A mock render skips every paid step, including TTS, and
-comes out silent. Each render
-also returns a per-shot log (slot, source range, held-frame seconds), which the
-Review step keeps per project in the browser's localStorage
-(`lib/movie-recap-render-history.ts`) — it is not stored server-side.
+also sets each one's subtitle offset. It holds presentation only: the narration
+line budget and the vision pass's keyframe count are shared constants, so an
+aspect ratio decides how the recap is cut and framed, never what it says (see
+`history/movie-recap.md`). A mock render skips TTS and comes out silent. Each render also returns a per-shot
+log (slot, source range, held-frame seconds), which the Review step keeps per
+project in the browser's localStorage (`lib/movie-recap-render-history.ts`) — it
+is not stored server-side.
+
+The wizard is Add Source -> Transcript -> Narrative Script -> Customize Video ->
+Review. The Narrative Script step owns everything about the beats: building them,
+reading their measurements, editing a line, and approving. Only its **Resync with
+Script** button goes back to the transcript and rebuilds from scratch — every
+other action reads the stored beats, which is what makes an edit cost one beat.
+Project name, output language and voice moved into Customize Video as its first
+section; there is no separate settings step.
+
+The Transcript step takes two texts by hand — the source transcript and the
+Burmese story written from it — stored on the project row (`transcript_text`,
+`transcript_story`) via `PATCH movie-recaps/:id`
+(`components/movie-recap/MovieRecapTranscript.tsx`). The automatic read and AI
+retelling are parked, not removed: `POST movie-recaps/:id/transcript`,
+`lib/movie-recap-transcript.ts` and `MovieRecapTranscriptProgress.tsx` still
+exist and nothing calls them (see `history/movie-recap.md`). The render still
+calls `readSourceTranscript` from that module for its own dialogue.
 
 A finished render leaves its script on the row (`render_script`) and everything
 the planner derived from the source — spare scenes, cuts, motion — in R2
 (`render_analysis_key`). The Review step lists the script line by line
 (`components/movie-recap/MovieRecapScript.tsx`); editing a line and re-rendering
 (`POST movie-recaps/:id/render` with `reuse`) skips detection, the vision pass,
-transcription and the script model, and runs TTS and ffmpeg on the words as
-written. Only the text is patchable — the shots under a beat are the planner's
-own output.
+the split pass and transcription, and runs TTS and ffmpeg on the words as
+written. Only the text is patchable — the shots under a beat are already the
+finished cut.
 
 ### Burmese Voice Lab
 
