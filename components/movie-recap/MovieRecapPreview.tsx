@@ -197,17 +197,19 @@ export function MovieRecapPreview({
 
             {project.logoEnabled && (
               <div
-                className="pointer-events-none absolute flex"
+                className="pointer-events-none absolute z-20 flex"
                 style={{
                   ...logoPosition[project.logoPlacement],
-                  width: `${MOVIE_RECAP_LOGO_BOX.widthPct}%`,
+                  width: `${project.aspectRatio === "9:16" ? MOVIE_RECAP_LOGO_BOX.portraitWidthPct : MOVIE_RECAP_LOGO_BOX.widthPct}%`,
                   height: `${MOVIE_RECAP_LOGO_BOX.heightPct}%`,
                   opacity: project.logoOpacity / 100,
                 }}
               >
-                {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
+                {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain object-left" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
               </div>
             )}
+
+            {project.logoEnabled && project.logoWatermarkText && <span className="pointer-events-none absolute inset-0 z-30 grid place-items-center select-none px-4 text-center text-xs font-bold uppercase tracking-[0.14em] text-fg opacity-30">{project.logoWatermarkText}</span>}
 
             {/* No tint and no drop shadow on the blur region: the export only
                 blurs it, so the old `bg-panel/35` wash made the preview darker

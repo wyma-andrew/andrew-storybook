@@ -434,10 +434,10 @@ export function movieRecapBackfillBlurCssPx(frameWidthPx: number, aspectRatio: M
   );
 }
 
-// Logo geometry is shared by the CSS preview and the ffmpeg overlay so the two
-// can't drift — the render used to scale to 18% width with no height cap while
-// the preview also capped height, making rendered logos larger than previewed.
-export const MOVIE_RECAP_LOGO_BOX = { widthPct: 18, heightPct: 12, marginPct: 4 } as const;
+// Logo geometry is shared by the CSS preview and the ffmpeg overlay. Logo files
+// are square, so the contain box is square too rather than using independent
+// percentages of the frame width and height.
+export const MOVIE_RECAP_LOGO_BOX = { widthPct: 10, portraitWidthPct: 10, heightPct: 8, marginPct: 4 } as const;
 
 // The stand-in caption the step-3 preview draws. It is also the mock render's
 // first line, so a mock render puts the EXACT same words on screen as the

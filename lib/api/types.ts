@@ -82,6 +82,8 @@ export type MovieRecapProject = {
   logoUrl: string | null;
   logoContentType: string | null;
   logoSizeBytes: number | null;
+  logoWatermarkText: string | null;
+  logoTemplateId: string | null;
   logoPlacement: MovieRecapLogoPlacement;
   logoOpacity: number;
   // Every area of the frame to blur out, as PERCENTAGES of the output. A source
@@ -142,6 +144,22 @@ export type MovieRecapProject = {
   renderFootageUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MovieRecapLogoTemplate = {
+  id: string;
+  name: string;
+  logoEnabled: boolean;
+  logoFileName: string;
+  logoObjectKey: string;
+  logoUrl: string;
+  logoContentType: string;
+  logoSizeBytes: number;
+  logoWatermarkText: string | null;
+  logoPlacement: MovieRecapProject["logoPlacement"];
+  logoOpacity: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -248,6 +266,7 @@ export type MovieRecapProjectPatch = Partial<{
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;
+  logoWatermarkText: string | null;
   blurRegions: MovieRecapBlurRegion[];
   renderScript: MovieRecapNarrationSegment[];
   transcriptText: string;

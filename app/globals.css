@@ -38,6 +38,8 @@
   --color-on-accent: var(--c-on-accent);
   --color-ok: var(--c-ok);
   --color-warn: var(--c-warn);
+  --color-rednote: var(--c-rednote);
+  --color-on-rednote: var(--c-on-rednote);
 
   --color-matched: var(--c-matched);
   --color-matched-bg: var(--c-matched-bg);
@@ -96,6 +98,8 @@ html.dark {
   --c-on-accent: #0a0f18;
   --c-ok: #5f8f6a;
   --c-warn: #8f7a4a;
+  --c-rednote: #ff2e4d;
+  --c-on-rednote: #ffffff;
 
   --c-matched: #8fb99a;
   --c-matched-bg: #152018;
@@ -207,6 +211,8 @@ html.light {
   --c-on-accent: #ffffff;
   --c-ok: #3f7a4f;
   --c-warn: #8a6a25;
+  --c-rednote: #ff2e4d;
+  --c-on-rednote: #ffffff;
 
   --c-matched: #2f6b42;
   --c-matched-bg: #e6f0e7;

@@ -47,6 +47,8 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     logoUrl: (r.logo_url as string) ?? null,
     logoContentType: (r.logo_content_type as string) ?? null,
     logoSizeBytes: r.logo_size_bytes == null ? null : Number(r.logo_size_bytes),
+    logoWatermarkText: (r.logo_watermark_text as string) ?? null,
+    logoTemplateId: (r.logo_template_id as string) ?? null,
     logoPlacement: r.logo_placement as MovieRecapProject["logoPlacement"],
     logoOpacity: Number(r.logo_opacity),
     blurRegions: Array.isArray(r.blur_regions) ? (r.blur_regions as MovieRecapProject["blurRegions"]) : [],
@@ -82,6 +84,24 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     renderFootageUrl: (r.render_footage_url as string) ?? null,
     renderStartedAt: (r.render_started_at as string) ?? null,
     renderCompletedAt: (r.render_completed_at as string) ?? null,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  };
+}
+
+export function mapMovieRecapLogoTemplate(r: Row) {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    logoEnabled: Boolean(r.logo_enabled),
+    logoFileName: r.logo_file_name as string,
+    logoObjectKey: r.logo_object_key as string,
+    logoUrl: r.logo_url as string,
+    logoContentType: r.logo_content_type as string,
+    logoSizeBytes: Number(r.logo_size_bytes),
+    logoWatermarkText: (r.logo_watermark_text as string) ?? null,
+    logoPlacement: r.logo_placement as MovieRecapProject["logoPlacement"],
+    logoOpacity: Number(r.logo_opacity),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };

@@ -64,6 +64,14 @@ a `--c-*` variable is what makes `bg-panel` mean something different under
   rather than a hex, because that prop also paints the arrow and cannot be done
   in CSS.
 
+## 2026-09-22 — RedNote transcript link uses a dedicated accent token
+
+**Decision:** the RedNote transcript link uses the requested `#ff2e4d` color
+through `rednote` and `on-rednote` theme tokens in both palettes.
+
+**Why:** the link is a distinct external source action and needs to stand apart
+from the normal transcript controls without putting a raw color in JSX.
+
 ## 2026-09-12 — Scene badge weight belongs to the theme, hue to the scene
 
 **Decision: `sceneColorVars` emits only `--scene-hue`. Saturation, lightness and

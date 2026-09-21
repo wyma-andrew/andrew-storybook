@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       logo_url: body.url,
       logo_content_type: contentType,
       logo_size_bytes: sizeBytes,
+      logo_template_id: null,
       status: "draft",
       updated_at: new Date().toISOString(),
     })
@@ -65,6 +66,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       logo_url: null,
       logo_content_type: null,
       logo_size_bytes: null,
+      logo_template_id: null,
       status: "draft",
       updated_at: new Date().toISOString(),
     })

@@ -7,6 +7,20 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 migrations.
 
+## 2026-09-22 — Normalize pasted source transcript lines
+
+**Decision:** source transcript paste/import keeps only lines that contain both
+a timestamp and source text, normalizing each to one timestamped line.
+
+**Why:** transcript websites can paste the source line together with a
+translation line, or leave trailing standalone timestamps. Translation-only
+and standalone timestamp lines are not useful to the source reference and
+should not reach the recap workflow.
+
+**Consequence:** source text pasted as a timestamp-only line followed by its
+text is not reconstructed; the supported input format is timestamp plus source
+text on the same line.
+
 ## 2026-09-22 — Preview omits the redundant uploaded-video label
 
 **Decision:** the Movie Recap customization preview starts directly with the
@@ -30,6 +44,83 @@ field in the Customize Video form.
 
 **Why:** the form field label already identifies the project setting, so the
 extra heading adds visual noise without clarifying the control group.
+
+## 2026-09-22 — Logo settings can be saved and applied as immutable templates
+
+**Decision:** the Logo tab offers `Save this template` and `Apply template`.
+Saving asks for a name and snapshots the current logo file, enabled state,
+placement, and opacity. Applying a template copies those values to the current
+project; later edits affect only that project and never mutate the saved
+template.
+
+**Why:** recurring recap projects should not require re-uploading and
+re-positioning the same brand mark, while a template must remain a stable preset
+that can be reused unchanged.
+
+**Consequence:** template logos use independent R2 objects. A project logo can
+be replaced or removed without breaking a saved template, and applying a
+template immediately stores its copied logo asset on the current project while
+the user may still adjust placement or opacity before continuing.
+
+Logo upload, removal, and template application merge only their logo fields
+into the browser's current project draft. This preserves unsaved settings from
+the other Customize tabs until the user explicitly continues or saves.
+
+The Upload logo button shows a small preview of the currently selected logo;
+before upload it keeps the upload icon.
+
+The preview logo overlay sits above the video layer so the video element's
+stacking order cannot hide it.
+
+Apply template is placed above the Add Logo switch. Applying a template always
+enables the logo overlay so the selected template is immediately visible in the
+preview.
+
+When a logo is present, the file picker is replaced by an icon-only close action;
+upload becomes available again only after the current logo is removed.
+
+The uploaded logo remains visible as a small thumbnail beside the close action,
+and saving a template is kept as the final action below the logo controls.
+
+Apply template now sits beside Save this template at the bottom of the Logo tab;
+Save uses the primary button style and Apply uses the outlined primary style.
+
+Both actions live outside the collapsible logo controls. Choose is always visible;
+Save is shown only while Add Logo is enabled, and Save uses the secondary
+outlined style while Choose uses primary.
+
+The active template status is displayed on its own row below the action buttons
+so the controls remain visually grouped.
+
+The template chooser presents each saved logo as a selectable card with a
+thumbnail, readable name, file name, placement/opacity badges, and a directional
+hover cue instead of a plain text row.
+
+Each card also has a separate delete action. Deleting is immediate inside the
+chooser and refreshes the list; no nested confirmation dialog is used because
+the chooser is already rendered in a dialog root.
+
+Choosing a template enters editing mode. The save action becomes `Update
+template` and replaces that template's independent logo asset/configuration;
+newly saved templates enter that same editing mode immediately. `Clear` removes
+the current project's logo and resets the watermark, placement, and opacity
+inputs, then exits editing mode; it never deletes the saved template.
+
+Logo placement uses a compact select control rather than four separate buttons
+to keep the Logo tab smaller while retaining all four placement choices.
+
+The logo contain box uses a `10% × 8%` width/height percentage budget
+in both the browser preview and ffmpeg render, with the logo aligned by its
+placement corner.
+
+The chooser cards do not use a chevron affordance; their left/right padding is
+balanced so the thumbnail, details, and delete action sit evenly in the row.
+
+The Logo tab also has an optional Watermark text field. When filled, the text is
+centered over the entire video frame in the customization preview and is included
+when saving or applying a logo template.
+It uses a subtle watermark treatment by default: small text, increased letter
+spacing, and reduced opacity.
 
 ## 2026-09-14 — Phase one is a resumable configuration project, not a render job (SUPERSEDED 2026-09-18 — the Generate button is removed; phase two shipped)
 

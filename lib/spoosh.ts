@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
@@ -110,6 +110,15 @@ export type ApiSchema = {
       body: { fileName: string; objectKey: string; url: string; contentType: string; sizeBytes: number };
     };
     DELETE: { data: MovieRecapProject };
+  };
+  "movie-recap-logo-templates": {
+    GET: { data: MovieRecapLogoTemplate[] };
+    POST: { data: MovieRecapLogoTemplate; body: { projectId: string; name: string; logoWatermarkText?: string | null } };
+  };
+  "movie-recap-logo-templates/:id": {
+    POST: { data: MovieRecapProject; body: { projectId: string } };
+    PATCH: { data: MovieRecapLogoTemplate; body: { projectId: string; logoWatermarkText?: string | null; logoPlacement?: MovieRecapProject["logoPlacement"]; logoOpacity?: number } };
+    DELETE: { data: null };
   };
   // Reads the source's dialogue and translates it — the wizard's Transcript
   // step. Synchronous like the render: the request stays open for the whole

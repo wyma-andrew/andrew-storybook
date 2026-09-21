@@ -5,15 +5,10 @@ import { ChevronRight, Copy, ExternalLink, FileText, Languages } from "lucide-re
 import { Dialog, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { Button as AppButton, LinkButton } from "@/components/ui/Button";
+import { formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
 
 function cleanImportedTranscript(raw: string) {
-  return raw
-    .replace(/&#x20;|&#32;|&nbsp;/gi, " ")
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line && !/^\d{1,2}:\d{2}(?::\d{2})?$/.test(line))
-    .join("\n");
+  return formatMovieRecapSourceTranscript(raw.replace(/&#x20;|&#32;|&nbsp;/gi, " "));
 }
 
 function formatTimestampedStoryPaste(raw: string) {
@@ -176,27 +171,39 @@ export function MovieRecapTranscript({
         reference and nothing downstream reads it.
       </p>
       <div className="mb-6">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col items-start gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <LinkButton
+              href="https://www.youtube-transcript.io/"
+              target="_blank"
+              rel="noreferrer"
+              variant="primary"
+              className="inline-flex items-center gap-2"
+            >
+              Get YouTube Transcript
+              <ExternalLink size={15} aria-hidden="true" />
+            </LinkButton>
+            <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+            <AppButton
+              variant="secondary"
+              className="inline-flex items-center gap-2"
+              onClick={() => showTranscriptImport((imported) => {
+                onChange({ transcriptText: imported });
+              })}
+            >
+              Import
+            </AppButton>
+          </div>
           <LinkButton
-            href="https://www.youtube-transcript.io/"
+            href="https://captioner.io/en/rednote"
             target="_blank"
             rel="noreferrer"
-            variant="primary"
-            className="inline-flex items-center gap-2"
+            variant="secondary"
+            className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
           >
-            Get YouTube Transcript
+            Get RedNote Transcript
             <ExternalLink size={15} aria-hidden="true" />
           </LinkButton>
-          <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
-          <AppButton
-            variant="secondary"
-            className="inline-flex items-center gap-2"
-            onClick={() => showTranscriptImport((imported) => {
-              onChange({ transcriptText: imported });
-            })}
-          >
-            Import
-          </AppButton>
         </div>
       </div>
 
@@ -211,6 +218,15 @@ export function MovieRecapTranscript({
             <Textarea
               value={text}
               onChange={(event) => onChange({ transcriptText: event.target.value })}
+              onPaste={(event) => {
+                const pasted = event.clipboardData.getData("text/plain");
+                const formatted = formatMovieRecapSourceTranscript(pasted);
+                if (formatted === pasted) return;
+                event.preventDefault();
+                const target = event.currentTarget;
+                const next = `${text.slice(0, target.selectionStart)}${formatted}${text.slice(target.selectionEnd)}`;
+                onChange({ transcriptText: next });
+              }}
               rows={14}
               placeholder="Paste the source transcript here."
             />

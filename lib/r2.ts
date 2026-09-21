@@ -121,6 +121,10 @@ export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" |
   return `${prefix}${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
+export function movieRecapLogoTemplateObjectKey(templateId: string, fileName: string) {
+  return `movie-recap-logo-templates/${templateId}/logo/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+}
+
 function splitName(basename: string) {
   const dot = basename.lastIndexOf(".");
   return dot > 0 ? { stem: basename.slice(0, dot), ext: basename.slice(dot) } : { stem: basename, ext: "" };

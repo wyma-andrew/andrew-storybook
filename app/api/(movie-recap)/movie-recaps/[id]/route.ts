@@ -110,6 +110,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.logo_opacity = value;
     changesConfiguration = true;
   }
+  if (body?.logoWatermarkText !== undefined) {
+    if (body.logoWatermarkText !== null && typeof body.logoWatermarkText !== "string") {
+      return NextResponse.json({ error: "Watermark text must be text or empty." }, { status: 400 });
+    }
+    const value = typeof body.logoWatermarkText === "string" ? body.logoWatermarkText.trim().slice(0, 120) : null;
+    patch.logo_watermark_text = value || null;
+    changesConfiguration = true;
+  }
 
   if (body?.blurRegions !== undefined) {
     if (!Array.isArray(body.blurRegions)) {

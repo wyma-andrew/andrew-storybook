@@ -222,7 +222,8 @@ function buildOverlayFilter(project: MovieRecapProject, assPath: string | null, 
     // Same contain-box as the customize-step preview (MOVIE_RECAP_LOGO_BOX):
     // fit inside width AND height, never just width — scaling on width alone
     // made a tall logo render larger than it previewed.
-    const logoW = Math.round((w * MOVIE_RECAP_LOGO_BOX.widthPct) / 100);
+    const logoWidthPct = project.aspectRatio === "9:16" ? MOVIE_RECAP_LOGO_BOX.portraitWidthPct : MOVIE_RECAP_LOGO_BOX.widthPct;
+    const logoW = Math.round((w * logoWidthPct) / 100);
     const logoH = Math.round((h * MOVIE_RECAP_LOGO_BOX.heightPct) / 100);
     const marginX = Math.round((w * MOVIE_RECAP_LOGO_BOX.marginPct) / 100);
     const marginY = Math.round((h * MOVIE_RECAP_LOGO_BOX.marginPct) / 100);
