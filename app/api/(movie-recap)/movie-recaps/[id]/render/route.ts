@@ -9,7 +9,8 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json().catch(() => null);
-  const mock = body?.mock === true;
+  const silentTiming = body?.silentTiming === true;
+  const mock = body?.mock === true && !silentTiming;
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // A real render cuts an APPROVED script and nothing else. Building it, speaking
   // it and measuring every beat is the script run's job, and the approval is the
   // user saying they have read those measurements — see history/movie-recap.md.
-  if (!mock) {
+  if (!mock && !silentTiming) {
     if (!(project.renderScript?.length && project.renderAnalysisKey)) {
       return NextResponse.json({ error: "Build the script first — there is nothing to render." }, { status: 400 });
     }
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
   // its own status/result onto the row rather than throwing.
-  const renderLog = await runMovieRecapRender(db, project, { mock });
+  const renderLog = await runMovieRecapRender(db, project, { mock, silentTiming });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });

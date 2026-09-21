@@ -1,42 +1,37 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, Check, ClipboardCopy, FileText, MoreHorizontal, RefreshCw, Scissors, Undo2 } from "lucide-react";
-import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Textarea } from "@geckoui/geckoui";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { beatFootageS, beatOverrunS, formatDuration } from "@/lib/movie-recap";
-import { buildOverrunPrompt, parseBeatEdits } from "@/lib/movie-recap-beat-transfer";
+import { MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap";
+import { formatDuration } from "@/lib/movie-recap";
+import { apiClient } from "@/lib/spoosh";
+import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 
 /**
- * The script, MEASURED, before anything is cut.
- *
- * This is the step the whole pipeline was rearranged around. Every beat's line
- * has been spoken and timed against the footage behind it, so an overrun — words
- * with no picture left to play under them — is a number here rather than a held
- * frame discovered an hour into a render. Shortening a line re-speaks that beat
- * and nothing else. See history/movie-recap.md.
+ * The narration timeline, measured once and cached per beat. Editing and
+ * rebuilding a line replaces only that beat plus the combined narration master;
+ * it never moves the selected scenes or rebuilds unrelated beats.
  */
 export function MovieRecapScript({
   project,
   onBuild,
-  onRecheckAll,
   onSave,
   onCancel,
   onDirtyChange,
   onApplyBeats,
   applyingBeats,
   building,
-  recheckingAll,
   checking,
   cancelling,
 }: {
   project: MovieRecapProject;
   onBuild: () => void;
-  onRecheckAll: () => void;
-  /** `measure` re-speaks the beat to time it again; false just stores the words. */
-  onSave: (index: number, text: string, measure: boolean) => void;
+  /** Rebuilds this beat's audio and the combined narration master. */
+  onSave: (index: number, text: string) => void;
   onCancel: () => void;
   /** How many beats have unsaved edits, so the wizard can guard leaving the step. */
   onDirtyChange: (count: number) => void;
@@ -44,7 +39,6 @@ export function MovieRecapScript({
   onApplyBeats: (edits: { index: number; text: string }[]) => Promise<number>;
   applyingBeats: boolean;
   building: boolean;
-  recheckingAll: boolean;
   /** Index of the beat being re-spoken, or null. */
   checking: number | null;
   cancelling: boolean;
@@ -69,11 +63,8 @@ export function MovieRecapScript({
 
   const running = project.scriptStatus === "running";
   const busy = running || project.renderStatus === "running";
-  const overruns = script.filter((beat) => beatOverrunS(beat) > 0.05).length;
   const stale = script.filter((beat) => beat.audioStale).length;
-  const totalFootageS = script.reduce((total, beat) => total + beatFootageS(beat), 0);
   const totalAudioS = script.reduce((total, beat) => total + (beat.audioS ?? 0), 0);
-  const totalOverrunS = script.reduce((total, beat) => total + beatOverrunS(beat), 0);
   // A beat with no measurement is not a beat that fits. A script left by an
   // older render has none at all, and reading `beatOverrunS` alone made the
   // summary claim every line fitted when not one had been spoken.
@@ -89,16 +80,123 @@ export function MovieRecapScript({
     .map((beat, index) => ({ index, text: beat.originalText ?? "" }))
     .filter((entry) => entry.text && entry.text !== script[entry.index].text);
 
-  const overrunPrompt = buildOverrunPrompt(script);
-
   const [reportedDirty, setReportedDirty] = useState(dirtyCount);
   if (reportedDirty !== dirtyCount) {
     setReportedDirty(dirtyCount);
     onDirtyChange(dirtyCount);
   }
 
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const previewUrls = useRef(new Map<string, string>());
+  const previewPromises = useRef(new Map<string, Promise<string | null>>());
+  const autoPlay = useRef(false);
+  const playingBeatRef = useRef<number | null>(null);
+  const [playingBeat, setPlayingBeat] = useState<number | null>(null);
+  const [previewingBeat, setPreviewingBeat] = useState<number | null>(null);
+
+  useEffect(() => {
+    const urls = previewUrls.current;
+    const promises = previewPromises.current;
+    return () => {
+      for (const url of urls.values()) URL.revokeObjectURL(url);
+      urls.clear();
+      promises.clear();
+    };
+  }, []);
+
+  function previewKey(index: number) {
+    const beat = script[index];
+    return beat ? `${index}:${beat.text}` : null;
+  }
+
+  async function loadBeatPreview(index: number, reportError: boolean) {
+    const key = previewKey(index);
+    if (!key || texts[index] !== serverTexts[index] || script[index]?.audioStale) return null;
+    const cached = previewUrls.current.get(key);
+    if (cached) return cached;
+    const pending = previewPromises.current.get(key);
+    if (pending) return pending;
+
+    const request = (async () => {
+      const result = await apiClient("movie-recaps/:id/script/beat/preview").POST({
+        params: { id: project.id },
+        body: { index },
+      });
+      if (result.error || !result.data) {
+        if (reportError) toast.error(result.error?.error ?? "Could not prepare that beat preview.");
+        return null;
+      }
+      const src = audioUrlFromBase64(result.data.audioBase64, result.data.contentType);
+      previewUrls.current.set(key, src);
+      return src;
+    })().finally(() => previewPromises.current.delete(key));
+    previewPromises.current.set(key, request);
+    return request;
+  }
+
+  function prefetchFollowingBeats(index: number) {
+    const next = Array.from({ length: MOVIE_RECAP_NARRATION_PRELOAD_BEATS }, (_, offset) => index + offset + 1)
+      .filter(
+        (candidate) =>
+          candidate < script.length && texts[candidate] === serverTexts[candidate] && !script[candidate]?.audioStale
+      );
+    void Promise.allSettled(next.map((candidate) => loadBeatPreview(candidate, false)));
+  }
+
+  async function playBeatPreview(index: number) {
+    const audio = audioRef.current;
+    if (!audio) return false;
+    setPreviewingBeat(index);
+    const src = await loadBeatPreview(index, true);
+    setPreviewingBeat(null);
+    if (!src) return false;
+
+    audio.pause();
+    audio.src = src;
+    try {
+      await audio.play();
+      playingBeatRef.current = index;
+      setPlayingBeat(index);
+      prefetchFollowingBeats(index);
+      return true;
+    } catch {
+      playingBeatRef.current = null;
+      setPlayingBeat(null);
+      toast.error("That beat preview could not be played.");
+      return false;
+    }
+  }
+
+  async function toggleBeatPreview(index: number) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playingBeat === index && !audio.paused) {
+      autoPlay.current = false;
+      audio.pause();
+      playingBeatRef.current = null;
+      setPlayingBeat(null);
+      return;
+    }
+    autoPlay.current = true;
+    if (!(await playBeatPreview(index))) autoPlay.current = false;
+  }
+
+  async function continueToNextBeat() {
+    const finished = playingBeatRef.current;
+    playingBeatRef.current = null;
+    setPlayingBeat(null);
+    if (!autoPlay.current || finished === null) return;
+    const next = finished + 1;
+    if (next >= script.length || texts[next] !== serverTexts[next] || script[next]?.audioStale) {
+      autoPlay.current = false;
+      return;
+    }
+    if (!(await playBeatPreview(next))) autoPlay.current = false;
+  }
+
   return (
     <>
+      <audio ref={audioRef} className="hidden" onEnded={() => void continueToNextBeat()} />
       <div className="mt-4 rounded-xl border border-line bg-panel-2 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div className="flex items-center gap-2">
@@ -113,34 +211,20 @@ export function MovieRecapScript({
                 {restorableAll.length === 1 ? "" : "s"}
               </LoadingButton>
             )}
-            {overrunPrompt && (
-              <Button
-                disabled={busy}
-                onClick={() => openOverrunFix(overrunPrompt, script.length, onApplyBeats)}
-              >
-                <Scissors size={14} /> Fix overruns
-              </Button>
-            )}
-            {/* Behind a menu, not in the row: one re-speaks every beat and the
-              other throws them away and rebuilds from the transcript. Neither is
-              part of reading the script, and Resync a click away from the line
-              someone had just edited was a mis-click waiting to happen. */}
+            {/* Resync is intentionally the only whole-script action. */}
             {script.length > 0 && (
               <Menu menuClassName="min-w-[220px] p-0" placement="bottom-end">
                 <MenuTrigger>
                   {({ toggleMenu }) => (
                     <Button
                       className="!h-8 !w-8 !px-0"
-                      disabled={busy || building || recheckingAll}
+                      disabled={busy || building}
                       onClick={toggleMenu}
                     >
                       <MoreHorizontal size={16} />
                     </Button>
                   )}
                 </MenuTrigger>
-                <MenuItem disabled={busy || dirty || checking !== null} onClick={onRecheckAll}>
-                  Re-check all beats
-                </MenuItem>
                 <MenuItem
                   disabled={busy || !project.transcriptStory?.trim()}
                   onClick={() => confirmResync(onBuild, dirtyCount)}
@@ -164,48 +248,33 @@ export function MovieRecapScript({
         {script.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-line bg-panel px-3 py-2.5 text-xs">
             <span className="tabular-nums text-fg-2">
-              <span className="font-medium text-fg">{totalFootageS.toFixed(0)}s</span> of video
               {unmeasured < script.length && (
                 <>
-                  {" · "}
                   <span className="font-medium text-fg">{totalAudioS.toFixed(0)}s</span> of narration
                   {unmeasured > 0 && " so far"}
                 </>
               )}
             </span>
-            {overruns > 0 && (
-              <span className="flex items-center gap-1 font-medium text-danger tabular-nums">
-                <AlertTriangle size={12} /> {overruns} beat
-                {overruns === 1 ? "" : "s"} over by {totalOverrunS.toFixed(1)}s
-              </span>
-            )}
             {unmeasured > 0 && (
               <span className="flex items-center gap-1 font-medium text-fg-2 tabular-nums">
                 <AlertTriangle size={12} /> {unmeasured} beat
-                {unmeasured === 1 ? "" : "s"} never spoken — re-check to measure {unmeasured === 1 ? "it" : "them"}
+                {unmeasured === 1 ? "" : "s"} never spoken — rebuild {unmeasured === 1 ? "it" : "them"}
               </span>
             )}
-            {overruns === 0 && unmeasured === 0 && (
-              <span className="flex items-center gap-1 font-medium text-ok">
-                <Check size={12} strokeWidth={3} /> Every beat fits its footage
-              </span>
-            )}
-            {stale > 0 && <span className="text-fg-3">{stale} not re-checked since editing</span>}
+            {unmeasured === 0 && <span className="font-medium text-ok">Narration timeline ready</span>}
+            {stale > 0 && <span className="text-fg-3">{stale} need rebuilding</span>}
             {dirty && (
               <span className="ml-auto text-fg-3">
-                Save or re-check the {dirtyCount} edited beat
+                Re Build {dirtyCount} edited beat
                 {dirtyCount === 1 ? "" : "s"} first
               </span>
             )}
-            {recheckingAll && <span className="ml-auto text-fg-3">Re-checking every beat…</span>}
           </div>
         )}
 
         {script.length > 0 && (
           <div className="space-y-3">
             {script.map((beat, index) => {
-              const footageS = beatFootageS(beat);
-              const overrunS = beatOverrunS(beat);
               const changed = texts[index] !== serverTexts[index];
               // Offered against the BOX, so it disappears the moment the original
               // is back in it — whether that came from this button or by hand.
@@ -220,15 +289,24 @@ export function MovieRecapScript({
                       {beat.shots.length === 1 ? "" : "s"}
                     </span>
                     <span className="tabular-nums">
-                      · {footageS.toFixed(1)}s of video
-                      {typeof beat.audioS === "number" && ` / ${beat.audioS.toFixed(1)}s to read`}
+                      {typeof beat.audioS === "number" && `· ${beat.audioS.toFixed(1)}s narration`}
                     </span>
-                    {overrunS > 0.05 && (
-                      <span className="flex items-center gap-1 font-medium text-danger tabular-nums">
-                        <AlertTriangle size={12} /> +{overrunS.toFixed(1)}s over
-                      </span>
-                    )}
-                    {beat.audioStale && !changed && <span className="text-fg-2">· timing not re-checked</span>}
+                    <Button
+                      className="!h-7 !w-7 !px-0"
+                      disabled={busy || changed || Boolean(beat.audioStale) || previewingBeat !== null}
+                      aria-label={playingBeat === index ? `Pause beat ${index + 1}` : `Play beat ${index + 1} at configured speed`}
+                      title={changed || beat.audioStale ? "Re Build this beat before previewing it" : "Play at configured narration speed"}
+                      onClick={() => void toggleBeatPreview(index)}
+                    >
+                      {previewingBeat === index ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : playingBeat === index ? (
+                        <Pause size={13} />
+                      ) : (
+                        <Play size={13} />
+                      )}
+                    </Button>
+                    {beat.audioStale && !changed && <span className="text-fg-2">· audio needs rebuilding</span>}
                     {changed && <span className="text-fg-2">· edited, unsaved</span>}
                   </div>
                   <Textarea
@@ -237,8 +315,18 @@ export function MovieRecapScript({
                     disabled={busy}
                     onChange={(event) => setTexts(texts.map((text, i) => (i === index ? event.target.value : text)))}
                   />
-                  {(changed || restorable) && (
+                  {(changed || restorable || beat.audioStale) && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {changed && (
+                        <Button
+                          disabled={checking !== null}
+                          onClick={() =>
+                            setTexts(texts.map((text, i) => (i === index ? serverTexts[index] : text)))
+                          }
+                        >
+                          <X size={14} /> Cancel
+                        </Button>
+                      )}
                       {restorable && (
                         // Puts the original back in the BOX, not in the row: the
                         // restore is reviewed and then saved like any other edit,
@@ -249,29 +337,15 @@ export function MovieRecapScript({
                           <Undo2 size={14} /> Restore original
                         </Button>
                       )}
-                      {/* Two buttons, deliberately. Re-check costs a TTS call and
-                        is the only thing that makes the number beside the line
-                        true again; Save is for an edit that plainly cannot have
-                        moved the timing, and marks the measurement stale rather
-                        than paying to confirm what the user already knows. */}
-                      {changed && (
-                        <>
-                          <LoadingButton
-                            variant="primary"
-                            loading={checking === index}
-                            disabled={busy || !texts[index]?.trim() || checking !== null}
-                            onClick={() => onSave(index, texts[index], true)}
-                          >
-                            <RefreshCw size={14} /> Re-check this beat
-                          </LoadingButton>
-                          <LoadingButton
-                            loading={checking === index}
-                            disabled={busy || !texts[index]?.trim() || checking !== null}
-                            onClick={() => onSave(index, texts[index], false)}
-                          >
-                            Save without re-checking
-                          </LoadingButton>
-                        </>
+                      {(changed || beat.audioStale) && (
+                        <LoadingButton
+                          variant="primary"
+                          loading={checking === index}
+                          disabled={busy || !texts[index]?.trim() || checking !== null}
+                          onClick={() => onSave(index, texts[index])}
+                        >
+                          <RefreshCw size={14} /> Re Build this beat
+                        </LoadingButton>
                       )}
                     </div>
                   )}
@@ -300,13 +374,7 @@ export function MovieRecapScript({
           {dirty && <span className="text-xs text-fg-3">Save every edited beat before rendering.</span>}
           {!dirty && stale > 0 && (
             <span className="text-xs text-fg-3">
-              {stale} beat{stale === 1 ? "" : "s"} saved without re-checking — their timings are the previous
-              wording&apos;s.
-            </span>
-          )}
-          {!dirty && overruns > 0 && (
-            <span className="text-xs text-fg-3">
-              {overruns} beat{overruns === 1 ? "" : "s"} will hold a frame.
+              Re Build {stale} beat{stale === 1 ? "" : "s"} to refresh their audio and timing.
             </span>
           )}
         </div>
@@ -315,104 +383,8 @@ export function MovieRecapScript({
   );
 }
 
-/**
- * The round trip, in a modal.
- *
- * Editing Burmese well is a job for whichever chat the user already trusts with
- * it, so this hands the overrunning lines over as one block and takes the answer
- * back as one block. Beat NUMBERS are the anchor, so a reply that reworded the
- * header still lands.
- *
- * Its own state, not the panel's: a dialog shown imperatively renders a snapshot
- * of whatever it was handed, so anything that changes while it is open — the
- * paste, whether the write is in flight — has to live inside it.
- */
-function openOverrunFix(
-  prompt: string,
-  beatCount: number,
-  onApply: (edits: { index: number; text: string }[]) => Promise<number>
-) {
-  Dialog.show({
-    className: "!w-[calc(100vw-2rem)] !max-w-[46rem]",
-    content: ({ dismiss }) => <OverrunFix prompt={prompt} beatCount={beatCount} onApply={onApply} onDone={dismiss} />,
-  });
-}
-
-function OverrunFix({
-  prompt,
-  beatCount,
-  onApply,
-  onDone,
-}: {
-  prompt: string;
-  beatCount: number;
-  onApply: (edits: { index: number; text: string }[]) => Promise<number>;
-  onDone: () => void;
-}) {
-  const [paste, setPaste] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const pasted = parseBeatEdits(paste, beatCount);
-
-  return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium">Fix the overruns somewhere else</span>
-        <Button
-          className="!h-7 !px-2 !text-xs"
-          onClick={() => {
-            void navigator.clipboard.writeText(prompt).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          }}
-        >
-          {copied ? <Check size={13} /> : <ClipboardCopy size={13} />} {copied ? "Copied" : "Copy the lines"}
-        </Button>
-      </div>
-      <p className="mb-3 text-xs text-fg-3">
-        Copy the overrunning lines with how much each has to lose, shorten them wherever you like, then paste the reply
-        back here. Keep the [Beat N] headers.
-      </p>
-      <Textarea
-        rows={10}
-        value={paste}
-        disabled={applying}
-        placeholder="Paste the shortened lines here."
-        onChange={(event) => setPaste(event.target.value)}
-      />
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-3">
-        <LoadingButton
-          variant="primary"
-          loading={applying}
-          disabled={pasted.length === 0}
-          onClick={() => {
-            setApplying(true);
-            void onApply(pasted)
-              .then((changed) => {
-                if (changed > 0) onDone();
-              })
-              .finally(() => setApplying(false));
-          }}
-        >
-          Apply {pasted.length || ""}
-        </LoadingButton>
-        <Button disabled={applying} onClick={onDone}>
-          Close
-        </Button>
-        {paste.trim() && pasted.length === 0 && <span>No [Beat N] headers found in that paste.</span>}
-        {pasted.length > 0 && (
-          <span>
-            {pasted.length} beat{pasted.length === 1 ? "" : "s"} read from the paste
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Rebuilding goes back to the Transcript step's text, so every beat edited here
-// is lost. Normal work — re-checking a line, saving one — reads the beats below
+// is lost. Normal work — rebuilding one line — reads the beats below
 // and never touches the transcript, which is why only this one asks.
 function confirmResync(run: () => void, dirtyCount: number) {
   ConfirmDialog.show({

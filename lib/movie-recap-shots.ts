@@ -6,7 +6,14 @@
 // every cut in the video, and because the invariant below is only checkable in
 // a test if nothing around it needs ffmpeg.
 
-import { MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
+import {
+  MOVIE_RECAP_EDIT,
+  MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE,
+  MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
+  MOVIE_RECAP_PLAYBACK_SPEED,
+  MOVIE_RECAP_TARGET_FPS,
+  type MovieRecapPacing,
+} from "./constants/movie-recap";
 
 export type SourceWindow = {
   sourceStartS: number;
@@ -339,7 +346,276 @@ function borrow(
 // The render takes `slot * speed` seconds and plays them at `speed`, so a scene
 // shorter than that window is padded by the difference.
 export function holdDeficit(windowS: number, slotS: number) {
-  return Math.max(0, slotS - playedSourceSeconds(windowS, slotS) / MOVIE_RECAP_PLAYBACK_SPEED);
+  const deficit = slotS - playedSourceSeconds(windowS, slotS) / MOVIE_RECAP_PLAYBACK_SPEED;
+  return deficit > 1e-9 ? deficit : 0;
+}
+
+export type MovieRecapTimelineClip = SourceWindow & {
+  slotS: number;
+  padS: number;
+  additional: boolean;
+};
+
+export type MovieRecapBeatTimeline = {
+  clips: MovieRecapTimelineClip[];
+  sparesUsed: number[];
+  durationS: number;
+  padS: number;
+};
+
+export function unusedSourceWindows(selected: SourceWindow[], durationS: number): SourceWindow[] {
+  const merged: SourceWindow[] = [];
+  for (const window of [...selected]
+    .map((item) => ({
+      sourceStartS: Math.max(0, Math.min(durationS, item.sourceStartS)),
+      sourceEndS: Math.max(0, Math.min(durationS, item.sourceEndS)),
+    }))
+    .filter((item) => item.sourceEndS - item.sourceStartS >= MOVIE_RECAP_EDIT.minSourceS)
+    .sort(byStart)) {
+    const last = merged[merged.length - 1];
+    if (last && window.sourceStartS <= last.sourceEndS + 1e-9) {
+      last.sourceEndS = Math.max(last.sourceEndS, window.sourceEndS);
+    } else {
+      merged.push({ ...window });
+    }
+  }
+
+  const unused: SourceWindow[] = [];
+  let cursor = 0;
+  for (const window of merged) {
+    if (window.sourceStartS - cursor >= MOVIE_RECAP_EDIT.minSourceS) {
+      unused.push({ sourceStartS: round3(cursor), sourceEndS: round3(window.sourceStartS) });
+    }
+    cursor = Math.max(cursor, window.sourceEndS);
+  }
+  if (durationS - cursor >= MOVIE_RECAP_EDIT.minSourceS) {
+    unused.push({ sourceStartS: round3(cursor), sourceEndS: round3(durationS) });
+  }
+  return unused;
+}
+
+export function splitTimelineAcrossDurations(
+  clips: MovieRecapTimelineClip[],
+  durations: number[],
+  playbackSpeed: number
+): MovieRecapTimelineClip[][] {
+  const perBeat: MovieRecapTimelineClip[][] = durations.map(() => []);
+  let clipIndex = 0;
+  let sourceConsumedS = 0;
+  let slotConsumedS = 0;
+
+  for (const [beatIndex, durationS] of durations.entries()) {
+    let remaining = durationS;
+    while (remaining > 1e-9 && clipIndex < clips.length) {
+      const clip = clips[clipIndex];
+      const clipRemainingS = clip.slotS - slotConsumedS;
+      const slotS = Math.min(remaining, clipRemainingS);
+      const movingS = Math.max(0, Math.min(slotS, lengthOf(clip) / playbackSpeed - slotConsumedS));
+      const sourceStartS = clip.sourceStartS + sourceConsumedS;
+      const sourceS = movingS * playbackSpeed;
+      const renderStartS = sourceS >= MOVIE_RECAP_EDIT.minSourceS
+        ? sourceStartS
+        : Math.max(clip.sourceStartS, clip.sourceEndS - MOVIE_RECAP_EDIT.minSourceS);
+      const renderEndS = sourceS >= MOVIE_RECAP_EDIT.minSourceS
+        ? sourceStartS + sourceS
+        : clip.sourceEndS;
+      perBeat[beatIndex].push({
+        sourceStartS: round3(renderStartS),
+        sourceEndS: round3(renderEndS),
+        slotS,
+        padS: Math.max(0, slotS - movingS),
+        additional: clip.additional,
+      });
+      remaining -= slotS;
+      slotConsumedS += slotS;
+      sourceConsumedS += sourceS;
+      if (clipRemainingS - slotS <= 1e-9) {
+        clipIndex++;
+        sourceConsumedS = 0;
+        slotConsumedS = 0;
+      }
+    }
+  }
+  return perBeat;
+}
+
+export type MovieRecapTimelineRates = {
+  videoSpeed: number;
+  narrationRate: number;
+};
+
+/**
+ * Resolve one video speed and one narration rate for the whole recap.
+ *
+ * A beat may reclaim the one-second gaps inside its own selected footage before
+ * this is needed. Every clip uses the same configured fixed video speed; it is
+ * never tuned per beat or per project. When the full selected span is still
+ * short at that speed, one narration rate is calculated from the recap's total
+ * narration and total selected-footage durations. Every beat uses that same
+ * rate. Adjacent footage remains a planner fallback, so an unrelated short beat
+ * can never acquire its own private speed.
+ */
+export function resolveMovieRecapTimelineRates(
+  beats: { shots: SourceWindow[]; targetS: number }[]
+): MovieRecapTimelineRates {
+  const usable = beats
+    .map(({ shots, targetS }) => ({
+      sourceS: shots.reduce((total, shot) => total + Math.max(0, lengthOf(shot)), 0),
+      targetS: Math.max(1 / MOVIE_RECAP_TARGET_FPS, targetS),
+    }))
+    .filter(({ sourceS }) => sourceS >= MOVIE_RECAP_EDIT.minSourceS);
+  if (!usable.length) {
+    return { videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED, narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE };
+  }
+
+  const videoSpeed = MOVIE_RECAP_PLAYBACK_SPEED;
+  const totalNarrationS = usable.reduce((total, beat) => total + beat.targetS, 0);
+  const totalFootageS = usable.reduce((total, beat) => total + beat.sourceS / videoSpeed, 0);
+  const rateNeeded = MOVIE_RECAP_NARRATION_PLAYBACK_RATE * (totalNarrationS / totalFootageS);
+  const unclampedNarrationRate = Math.min(
+    MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE,
+    Math.max(MOVIE_RECAP_NARRATION_PLAYBACK_RATE, rateNeeded)
+  );
+  const narrationRate = Math.ceil(unclampedNarrationRate * 1000) / 1000;
+  return { videoSpeed, narrationRate };
+}
+
+function retainedWindows(windows: SourceWindow[], additional: boolean) {
+  const kept: MovieRecapTimelineClip[] = [];
+  const stride = MOVIE_RECAP_EDIT.retainSourceS + MOVIE_RECAP_EDIT.skipSourceS;
+  for (const window of windows) {
+    for (let start = window.sourceStartS; start < window.sourceEndS - 1e-9; start += stride) {
+      const end = Math.min(window.sourceEndS, start + MOVIE_RECAP_EDIT.retainSourceS);
+      if (end - start < MOVIE_RECAP_EDIT.minSourceS) continue;
+      kept.push({ sourceStartS: round3(start), sourceEndS: round3(end), slotS: 0, padS: 0, additional });
+    }
+  }
+  return kept;
+}
+
+export function retainedMovieRecapTimeline(
+  windows: SourceWindow[],
+  playbackSpeed: number = MOVIE_RECAP_PLAYBACK_SPEED,
+  screenDurationS = Number.POSITIVE_INFINITY
+): MovieRecapTimelineClip[] {
+  const clips: MovieRecapTimelineClip[] = [];
+  let remaining = screenDurationS;
+  for (const clip of retainedWindows(windows, false)) {
+    if (remaining <= 1e-9) break;
+    const slotS = Math.min(lengthOf(clip) / playbackSpeed, remaining);
+    clips.push({
+      ...clip,
+      sourceEndS: round3(clip.sourceStartS + slotS * playbackSpeed),
+      slotS,
+    });
+    remaining -= slotS;
+  }
+  return clips;
+}
+
+function fullWindows(windows: SourceWindow[], additional: boolean) {
+  return windows
+    .filter((window) => lengthOf(window) >= MOVIE_RECAP_EDIT.minSourceS)
+    .map((window) => ({ ...window, slotS: 0, padS: 0, additional }));
+}
+
+function distanceFromSelected(window: SourceWindow, selected: SourceWindow[]) {
+  if (!selected.length) return window.sourceStartS;
+  return Math.min(
+    ...selected.map((shot) =>
+      window.sourceEndS < shot.sourceStartS
+        ? shot.sourceStartS - window.sourceEndS
+        : window.sourceStartS > shot.sourceEndS
+          ? window.sourceStartS - shot.sourceEndS
+          : 0
+    )
+  );
+}
+
+/**
+ * Build a picture timeline for the requested duration. Real renders call this
+ * once for the whole narration; mocks may still use it for one beat. Selected
+ * windows come first with the configured retain/skip cadence, then their skipped
+ * seconds are reclaimed, then unused source is consumed. Only the final global
+ * shortage is freeze-padded. Excess footage is trimmed to the exact duration.
+ */
+export function planMovieRecapBeatTimeline({
+  shots,
+  spares,
+  targetS,
+  playbackSpeed = MOVIE_RECAP_PLAYBACK_SPEED,
+}: {
+  shots: SourceWindow[];
+  spares: SourceWindow[];
+  targetS: number;
+  playbackSpeed?: number;
+}): MovieRecapBeatTimeline {
+  const wanted = Math.max(1 / MOVIE_RECAP_TARGET_FPS, targetS);
+  const retained = retainedWindows(shots, false);
+  const retainedScreenS = retained.reduce((total, clip) => total + lengthOf(clip) / playbackSpeed, 0);
+  // Reclaim the configured one-second gaps only when the normal 3-on/1-off cut
+  // cannot cover this beat. Full windows preserve source order; appending the
+  // skipped seconds later would make the scene jump backwards in time.
+  const selected = retainedScreenS + 1e-9 >= wanted ? retained : fullWindows(shots, false);
+  const rankedSpares = spares
+    .map((window, index) => ({ window, index }))
+    .sort((a, b) => distanceFromSelected(a.window, shots) - distanceFromSelected(b.window, shots));
+  const candidates = [
+    ...selected.map((clip) => ({ clip, spareIndex: null as number | null })),
+    // Borrowing is the final source-footage fallback. Use the nearest adjacent
+    // scene continuously and trim it to the exact deficit, avoiding a parade of
+    // unrelated 3-second inserts when one nearby scene is sufficient.
+    ...rankedSpares.flatMap(({ window, index }) =>
+      fullWindows([window], true).map((clip) => ({ clip, spareIndex: index }))
+    ),
+  ];
+
+  const clips: MovieRecapTimelineClip[] = [];
+  const used = new Set<number>();
+  let remaining = wanted;
+  for (const { clip, spareIndex } of candidates) {
+    if (remaining <= 1e-9) break;
+    const sourceS = lengthOf(clip);
+    const screenS = sourceS / playbackSpeed;
+    const slotS = Math.min(remaining, screenS);
+    const usedSourceS = slotS * playbackSpeed;
+    clips.push({
+      ...clip,
+      sourceEndS: round3(clip.sourceStartS + usedSourceS),
+      slotS,
+      padS: 0,
+    });
+    if (spareIndex !== null) used.add(spareIndex);
+    remaining -= slotS;
+  }
+
+  if (!clips.length) {
+    const fallback = shots[0] ?? spares[0];
+    if (!fallback) throw new Error("This narration beat has no footage to render.");
+    const sourceEndS = Math.min(fallback.sourceEndS, fallback.sourceStartS + MOVIE_RECAP_EDIT.minSourceS);
+    const availableS = Math.max(0, sourceEndS - fallback.sourceStartS) / playbackSpeed;
+    clips.push({
+      sourceStartS: fallback.sourceStartS,
+      sourceEndS,
+      slotS: wanted,
+      padS: Math.max(0, wanted - availableS),
+      additional: !shots.length,
+    });
+    if (!shots.length) used.add(0);
+    remaining = 0;
+  } else if (remaining > 1e-9) {
+    const last = clips[clips.length - 1];
+    last.slotS += remaining;
+    last.padS += remaining;
+    remaining = 0;
+  }
+
+  return {
+    clips,
+    sparesUsed: [...used],
+    durationS: clips.reduce((sum, clip) => sum + clip.slotS, 0),
+    padS: clips.reduce((sum, clip) => sum + clip.padS, 0),
+  };
 }
 
 // Which of a beat's scenes survive when it cannot afford them all. Dropping the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { segmentFilters } from "./movie-recap-render";
+import { segmentFilters, silentTimingFilter } from "./movie-recap-render";
 import { MOVIE_RECAP_PACING, MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
 import {
   focusWindow,
@@ -8,10 +8,129 @@ import {
   type MotionTrack,
   MIN_JUMP_S,
   planBeat,
+  planMovieRecapBeatTimeline,
   playedSourceSeconds,
+  resolveMovieRecapTimelineRates,
+  retainedMovieRecapTimeline,
   shotsNeededFor,
+  splitTimelineAcrossDurations,
   type SourceWindow,
+  unusedSourceWindows,
 } from "./movie-recap-shots";
+
+describe("movie recap master timeline", () => {
+  it("keeps footage duration independent from narration duration", () => {
+    const clips = retainedMovieRecapTimeline([{ sourceStartS: 0, sourceEndS: 8 }], 0.75);
+
+    expect(clips.map(({ sourceStartS, sourceEndS, slotS }) => ({ sourceStartS, sourceEndS, slotS }))).toEqual([
+      { sourceStartS: 0, sourceEndS: 3, slotS: 4 },
+      { sourceStartS: 4, sourceEndS: 7, slotS: 4 },
+    ]);
+  });
+
+  it("processes the full source cadence to the source's exact screen duration", () => {
+    const clips = retainedMovieRecapTimeline([{ sourceStartS: 0, sourceEndS: 5 }], 0.75, 5);
+
+    expect(clips).toHaveLength(2);
+    expect(clips[1].sourceStartS).toBe(4);
+    expect(clips[1].sourceEndS).toBe(4.75);
+    expect(clips.reduce((total, clip) => total + clip.slotS, 0)).toBe(5);
+  });
+
+  it("reclaims the selected scene's skipped seconds before borrowing", () => {
+    const plan = planMovieRecapBeatTimeline({
+      shots: [{ sourceStartS: 0, sourceEndS: 8 }],
+      spares: [{ sourceStartS: 100, sourceEndS: 110 }],
+      targetS: 9,
+    });
+
+    expect(plan.sparesUsed).toEqual([]);
+    expect(plan.clips).toHaveLength(1);
+    expect(plan.clips[0].sourceStartS).toBe(0);
+    expect(plan.clips[0].sourceEndS).toBeCloseTo(6.75, 3);
+    expect(plan.padS).toBe(0);
+  });
+
+  it("keeps one fixed video speed before raising one narration rate", () => {
+    expect(
+      resolveMovieRecapTimelineRates([{ shots: [{ sourceStartS: 0, sourceEndS: 7.2 }], targetS: 10 }])
+    ).toEqual({ videoSpeed: 0.75, narrationRate: 1.094 });
+
+    expect(
+      resolveMovieRecapTimelineRates([{ shots: [{ sourceStartS: 0, sourceEndS: 6.5 }], targetS: 10 }])
+    ).toEqual({ videoSpeed: 0.75, narrationRate: 1.1 });
+  });
+
+  it("fits the global narration rate to total footage rather than one short beat", () => {
+    const rates = resolveMovieRecapTimelineRates([
+      { shots: [{ sourceStartS: 0, sourceEndS: 3 }], targetS: 6 },
+      { shots: [{ sourceStartS: 10, sourceEndS: 16 }], targetS: 6 },
+    ]);
+
+    // 12s narration over 12s of processed footage needs no increase. The first
+    // beat alone is short, but it must not give the whole recap an excessive
+    // narration speed; its local gap is handled by the footage fallbacks.
+    expect(rates).toEqual({ videoSpeed: 0.75, narrationRate: 1.05 });
+  });
+
+  it("borrows the closest adjacent scene only after selected footage is exhausted", () => {
+    const plan = planMovieRecapBeatTimeline({
+      shots: [{ sourceStartS: 0, sourceEndS: 1 }],
+      spares: [
+        { sourceStartS: 100, sourceEndS: 110 },
+        { sourceStartS: 2, sourceEndS: 12 },
+      ],
+      targetS: 5,
+      playbackSpeed: 0.75,
+    });
+
+    expect(plan.sparesUsed).toEqual([1]);
+    expect(plan.clips.at(-1)?.sourceStartS).toBe(2);
+    expect(plan.padS).toBe(0);
+  });
+
+  it("finds every unused source interval before allowing a final freeze", () => {
+    expect(
+      unusedSourceWindows(
+        [
+          { sourceStartS: 5, sourceEndS: 10 },
+          { sourceStartS: 15, sourceEndS: 20 },
+        ],
+        25
+      )
+    ).toEqual([
+      { sourceStartS: 0, sourceEndS: 5 },
+      { sourceStartS: 10, sourceEndS: 15 },
+      { sourceStartS: 20, sourceEndS: 25 },
+    ]);
+  });
+
+  it("splits one global footage timeline at narration boundaries without changing its timing", () => {
+    const beats = splitTimelineAcrossDurations(
+      [{ sourceStartS: 0, sourceEndS: 6, slotS: 8, padS: 0, additional: false }],
+      [3, 5],
+      0.75
+    );
+
+    expect(beats).toEqual([
+      [{ sourceStartS: 0, sourceEndS: 2.25, slotS: 3, padS: 0, additional: false }],
+      [{ sourceStartS: 2.25, sourceEndS: 6, slotS: 5, padS: 0, additional: false }],
+    ]);
+  });
+
+  it("leaves shortage padding only at the end of the global timeline", () => {
+    const beats = splitTimelineAcrossDurations(
+      [{ sourceStartS: 0, sourceEndS: 3, slotS: 5, padS: 1, additional: false }],
+      [4, 1],
+      0.75
+    );
+
+    expect(beats[0][0].padS).toBe(0);
+    expect(beats[1][0].padS).toBe(1);
+    expect(beats[1][0].sourceEndS - beats[1][0].sourceStartS).toBeCloseTo(0.05);
+    expect(beats.flat().reduce((total, clip) => total + clip.slotS, 0)).toBe(5);
+  });
+});
 
 // The short-form profile is what every test below plans against unless it says
 // otherwise: its numbers are the measured ones, and the suite was written to
@@ -606,8 +725,8 @@ describe("playedSourceSeconds", () => {
     expect(playedSourceSeconds(6, 1.4)).toBeCloseTo(1.4 * MOVIE_RECAP_PLAYBACK_SPEED, 6);
   });
 
-  it("is the whole scene when the scene runs out before the slot does", () => {
-    expect(playedSourceSeconds(2, 2.2)).toBe(2);
+  it("uses only slot * speed while the scene still has footage", () => {
+    expect(playedSourceSeconds(2, 2.2)).toBeCloseTo(2.2 * MOVIE_RECAP_PLAYBACK_SPEED);
   });
 });
 
@@ -650,6 +769,13 @@ describe("segmentFilters", () => {
     // A source that is not 30fps would otherwise concatenate against 30fps
     // segments at its own rate.
     expect(segmentFilters("scale=720:1280")).toBe("scale=720:1280,fps=30");
+  });
+});
+
+describe("silentTimingFilter", () => {
+  it("turns each 3 retained seconds into the skipped 4-second source cycle", () => {
+    expect(silentTimingFilter()).toContain("mod(n\\,120)\\,90");
+    expect(silentTimingFilter()).toContain("setpts=N/(22.5*TB)");
   });
 });
 

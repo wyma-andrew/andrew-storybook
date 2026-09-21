@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { narrationHash } from "./movie-recap-narration";
+import { narrationHash, narrationPlaybackRateForDuration } from "./movie-recap-narration";
 
 const azure = { providerId: "azure", id: "azure-thiha" };
 
@@ -35,5 +35,15 @@ describe("narrationHash", () => {
     expect(narrationHash({ providerId: "azure", id: "a" }, "b")).not.toBe(
       narrationHash({ providerId: "azure", id: "a\nb" }, "")
     );
+  });
+});
+
+describe("narrationPlaybackRateForDuration", () => {
+  it("keeps the base rate when narration already fits", () => {
+    expect(narrationPlaybackRateForDuration([42], 45)).toBe(1.05);
+  });
+
+  it("allows the global rate to exceed the former ceiling to fit exactly", () => {
+    expect(narrationPlaybackRateForDuration([50.4], 45)).toBeCloseTo(1.12, 3);
   });
 });

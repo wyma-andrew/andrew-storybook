@@ -85,6 +85,7 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
               <th className="px-3 py-2 text-right font-medium">Length</th>
               <th className="px-3 py-2 text-right font-medium">Shots</th>
               <th className="px-3 py-2 text-right font-medium">Avg shot</th>
+              <th className="px-3 py-2 text-right font-medium">Video / audio</th>
               <th className="px-3 py-2 text-right font-medium">Held</th>
               <th className="w-10 px-2 py-2" />
             </tr>
@@ -136,6 +137,9 @@ function ExpandableRow({
         <td className="px-3 py-2 text-fg">
           {new Date(entry.createdAt).toLocaleString()}
           {entry.mock && <span className="ml-2 rounded bg-chip px-1.5 py-0.5 text-xs text-fg-3">mock</span>}
+          {entry.timingTest && (
+            <span className="ml-2 rounded bg-chip px-1.5 py-0.5 text-xs text-fg-3">silent timing test</span>
+          )}
         </td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">{entry.durationS.toFixed(2)}s</td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">
@@ -143,6 +147,9 @@ function ExpandableRow({
           <span className="text-fg-3"> / {entry.beats} beats</span>
         </td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">{avgS.toFixed(2)}s</td>
+        <td className="px-3 py-2 text-right tabular-nums text-fg-3">
+          {entry.shots[0] ? `${entry.shots[0].speed.toFixed(2)}x` : "—"} / {entry.narrationRate ? `${entry.narrationRate.toFixed(2)}x` : "—"}
+        </td>
         <td className={`px-3 py-2 text-right tabular-nums ${entry.padS > 0.1 ? "text-danger" : "text-ok"}`}>
           {entry.padS.toFixed(2)}s
         </td>
@@ -154,7 +161,7 @@ function ExpandableRow({
       </tr>
       {open && (
         <tr className="border-b border-line last:border-0">
-          <td colSpan={7} className="bg-sunken px-3 py-3">
+          <td colSpan={8} className="bg-sunken px-3 py-3">
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="text-fg-3">

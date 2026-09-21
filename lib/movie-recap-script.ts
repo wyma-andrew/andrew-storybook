@@ -7,13 +7,18 @@ import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import { detectContentCrop } from "./movie-recap-crop";
 import { groupBlocks, parseTimestampedBlocks } from "./movie-recap-manual-script";
 import { dominantRun, layoutBlockRibbon, scenesInBlock, splitSceneIntoShots } from "./movie-recap-scene-plan";
-import type { SourceWindow } from "./movie-recap-shots";
+import { type SourceWindow } from "./movie-recap-shots";
 import { resolveSceneTexts, splitIntoSentences } from "./movie-recap-scene-text";
-import { narrationClip } from "./movie-recap-narration";
-import { beatFootageS, beatOverrunS, trimFailureMessage } from "./movie-recap";
-import { getObjectText, movieRecapObjectKey, putObject } from "./r2";
+import { ensureNarrationMaster, narrationClip, narrationPlaybackRateForDuration } from "./movie-recap-narration";
+import { beatFootageS, trimFailureMessage } from "./movie-recap";
+import { movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
-import { movieRecapPacing } from "./constants/movie-recap";
+import {
+  MOVIE_RECAP_EDIT,
+  MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
+  MOVIE_RECAP_PLAYBACK_SPEED,
+  movieRecapPacing,
+} from "./constants/movie-recap";
 import type {
   MovieRecapNarrationSegment,
   MovieRecapProject,
@@ -36,6 +41,17 @@ type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 // cache. See history/movie-recap.md, 2026-09-19.
 
 const round2 = (value: number) => Number(value.toFixed(2));
+
+function narrationTimelineRates(clips: { durationSeconds: number }[], sourceDurationS: number) {
+  return {
+    videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED,
+    narrationRate: narrationPlaybackRateForDuration(
+      clips.map((clip) => clip.durationSeconds),
+      sourceDurationS,
+      MOVIE_RECAP_NARRATION_PLAYBACK_RATE
+    ),
+  };
+}
 
 // Same reasoning as the render's own map: one script run per project, reachable
 // from a separate cancel request, surviving the module reload `next dev` does on
@@ -240,33 +256,50 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
       await setStage(db, project.id, "writing_script", blockIndex + 1, blocks.length);
     }
 
-    // SPEAK EVERY BEAT AND MEASURE IT. This is the whole reason the script run
-    // exists: an overrun is a held frame in the finished video, and no estimate
-    // is good enough to decide whether a line needs shortening.
+    // Narration is the master timeline. Speak each beat once, keep the
+    // content-addressed clips, then save a combined narration.wav and its beat
+    // boundaries. Picture selection is not moved to make the words fit.
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
     await setStage(db, project.id, "synthesizing_narration", 0, narration.length);
     let cacheHits = 0;
+    const narrationClips = [];
     for (const [i, beat] of narration.entries()) {
       if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
       const clip = await narrationClip({ projectId: project.id, voice, text: beat.text, slot: i, workDir, signal });
+      narrationClips.push(clip);
       if (clip.cached) cacheHits++;
       beat.audioS = round2(clip.durationSeconds);
       await setStage(db, project.id, "synthesizing_narration", i + 1, narration.length);
     }
+    const rates = narrationTimelineRates(narrationClips, project.sourceDurationSeconds);
+    const master = await ensureNarrationMaster({
+      projectId: project.id,
+      voice,
+      texts: narration.map((beat) => beat.text),
+      workDir,
+      signal,
+      clips: narrationClips,
+      playbackRate: rates.narrationRate,
+    });
+    narration.forEach((beat, index) => {
+      beat.audioS = round2(master.timings[index].durationS);
+      beat.narrationRate = rates.narrationRate;
+      beat.videoSpeed = rates.videoSpeed;
+    });
 
-    layoutNarrationRibbon(narration, pacing, detected.cuts);
-
-    const overrunS = narration.reduce((total, beat) => total + beatOverrunS(beat), 0);
     console.log(
       `[MovieRecapScript] project=${project.id} ${blocks.length} block(s) -> ${flatScenes.length} scene(s) ` +
         `(${splitScenes.length} described) -> ` +
-        `${narration.length} beat(s); ${modelSplits} split by the model; ${cacheHits} clip(s) from cache; ` +
-        `${overrunS.toFixed(2)}s of narration with no footage behind it.`
+        `${narration.length} beat(s); ${modelSplits} split by the model; ${cacheHits} clip(s) from cache.`
     );
 
-    // The analysis is what lets the render cut without reading the source for
-    // meaning again. No spares: a beat plays its own scene and borrows nothing.
-    const analysis: MovieRecapRenderAnalysis = { spares: [], cuts: detected.cuts.map(round2), motion: null, crop };
+    const selected = narration.flatMap((beat) => beat.shots);
+    const spares = flatScenes.filter((scene) =>
+      !selected.some((shot) =>
+        Math.min(scene.sourceEndS, shot.sourceEndS) - Math.max(scene.sourceStartS, shot.sourceStartS) > MOVIE_RECAP_EDIT.minSourceS
+      )
+    );
+    const analysis: MovieRecapRenderAnalysis = { spares, cuts: detected.cuts.map(round2), motion: null, crop };
     const analysisKey = movieRecapObjectKey(project.id, "analysis", "analysis.json");
     await putObject(analysisKey, Buffer.from(JSON.stringify(analysis)), "application/json");
 
@@ -301,21 +334,6 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
   } finally {
     activeScriptRuns.delete(project.id);
     await rm(workDir, { recursive: true, force: true });
-  }
-}
-
-// The film's own edits, from the blob the script run left in R2. Failing soft is
-// deliberate: without them the ribbon still lays footage correctly, it just
-// divides each beat evenly instead of on the edits.
-async function loadCuts(project: MovieRecapProject): Promise<number[]> {
-  if (!project.renderAnalysisKey) return [];
-  try {
-    const text = await getObjectText(project.renderAnalysisKey);
-    if (!text) return [];
-    const parsed = JSON.parse(text) as MovieRecapRenderAnalysis;
-    return Array.isArray(parsed.cuts) ? parsed.cuts : [];
-  } catch {
-    return [];
   }
 }
 
@@ -389,24 +407,36 @@ export async function remeasureMovieRecapScript(db: Db, project: MovieRecapProje
     if (!script.length) throw new Error("There is no script to check.");
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
     const measured: MovieRecapNarrationSegment[] = [];
+    const clips = [];
 
     await setStage(db, project.id, "synthesizing_narration", 0, script.length);
     let cacheHits = 0;
     for (const [i, beat] of script.entries()) {
       if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
       const clip = await narrationClip({ projectId: project.id, voice, text: beat.text, slot: i, workDir, signal });
+      clips.push(clip);
       if (clip.cached) cacheHits++;
       measured.push({ ...beat, audioS: round2(clip.durationSeconds), audioStale: false });
       await setStage(db, project.id, "synthesizing_narration", i + 1, script.length);
     }
 
-    const analysis = await loadCuts(project);
-    layoutNarrationRibbon(measured, movieRecapPacing(project.aspectRatio), analysis);
-
-    const overrunS = measured.reduce((total, beat) => total + beatOverrunS(beat), 0);
+    const rates = narrationTimelineRates(clips, project.sourceDurationSeconds);
+    const master = await ensureNarrationMaster({
+      projectId: project.id,
+      voice,
+      texts: measured.map((beat) => beat.text),
+      workDir,
+      signal,
+      clips,
+      playbackRate: rates.narrationRate,
+    });
+    measured.forEach((beat, index) => {
+      beat.audioS = round2(master.timings[index].durationS);
+      beat.narrationRate = rates.narrationRate;
+      beat.videoSpeed = rates.videoSpeed;
+    });
     console.log(
-      `[MovieRecapScript] project=${project.id} re-measured ${measured.length} beat(s); ${cacheHits} from cache; ` +
-        `${overrunS.toFixed(2)}s of narration with no footage behind it.`
+      `[MovieRecapScript] project=${project.id} re-measured ${measured.length} beat(s); ${cacheHits} from cache.`
     );
 
     await db
@@ -500,18 +530,42 @@ export async function saveMovieRecapBeat(
   const workDir = measure ? await mkdtemp(path.join(tmpdir(), "movie-recap-beat-")) : null;
   try {
     let patch: Partial<MovieRecapNarrationSegment>;
+    let rebuiltClip: Awaited<ReturnType<typeof narrationClip>> | null = null;
     if (workDir) {
       const voice = resolveMovieRecapVoice(project.voiceProfileId);
-      const clip = await narrationClip({ projectId: project.id, voice, text, slot: `beat-${index}`, workDir });
-      patch = { audioS: round2(clip.durationSeconds), audioStale: false };
+      rebuiltClip = await narrationClip({ projectId: project.id, voice, text, slot: `beat-${index}`, workDir });
+      patch = { audioS: round2(rebuiltClip.durationSeconds), audioStale: false };
     } else {
       patch = { audioStale: true };
     }
-    const updated = script.map((entry, i) => (i === index ? { ...entry, text, ...patch } : entry));
-    // The beat's length changed, so the footage under every beat in ITS group
-    // moves with it — that is the whole point of the ribbon. Beats in other
-    // groups are untouched, because nothing borrows across a group.
-    if (measure) layoutNarrationRibbon(updated, movieRecapPacing(project.aspectRatio), await loadCuts(project));
+    let updated = script.map((entry, i) => (i === index ? { ...entry, text, ...patch } : entry));
+    if (measure && workDir) {
+      const voice = resolveMovieRecapVoice(project.voiceProfileId);
+      const clips: Awaited<ReturnType<typeof narrationClip>>[] = [];
+      for (const [i, entry] of updated.entries()) {
+        clips.push(
+          i === index && rebuiltClip
+            ? rebuiltClip
+            : await narrationClip({ projectId: project.id, voice, text: entry.text, slot: `beat-master-${i}`, workDir })
+        );
+      }
+      const rates = narrationTimelineRates(clips, project.sourceDurationSeconds);
+      const master = await ensureNarrationMaster({
+        projectId: project.id,
+        voice,
+        texts: updated.map((entry) => entry.text),
+        workDir,
+        clips,
+        playbackRate: rates.narrationRate,
+      });
+      updated = updated.map((entry, i) => ({
+        ...entry,
+        audioS: round2(master.timings[i].durationS),
+        narrationRate: rates.narrationRate,
+        videoSpeed: rates.videoSpeed,
+        ...(i === index ? { audioStale: false } : {}),
+      }));
+    }
     await db
       .from("movie_recap_projects")
       .update({ render_script: updated satisfies MovieRecapNarrationSegment[] })

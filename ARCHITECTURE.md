@@ -181,8 +181,8 @@ same local file is reselected. Generate currently records
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
 
-The recap is built in two runs: a SCRIPT run that reads the source and measures
-the narration, and a RENDER that cuts what was approved. The script run turns the
+The recap is built in two runs: a SCRIPT run that reads the source and creates
+the narration timeline, and a RENDER that cuts the saved beats. The script run turns the
 hand-typed Burmese story into beats. Each timestamped block gives the footage between its own
 stamp and the next (`lib/movie-recap-manual-script.ts` parses them); the source's
 own cuts then divide that footage into scenes (`lib/movie-recap-scene-plan.ts`),
@@ -195,39 +195,51 @@ remain, nothing calls them, and the Dialogue step shows as skipped on the
 progress bar (`MOVIE_RECAP_PARKED_STEPS`).
 
 Building that script is its own run (`lib/movie-recap-script.ts`,
-`POST movie-recaps/:id/script`), and it stops before anything is cut: it speaks
-every beat through `lib/tts/` (Azure Speech) and stores the MEASURED length on
-each one, so a beat whose narration outruns the footage behind it is a number the
-user can act on rather than a held frame discovered an hour into a render. The
-Review step's script panel shows footage, narration and overrun per beat; editing
-a line re-speaks that beat alone (`POST movie-recaps/:id/script/beat`), and
-`PATCH movie-recaps/:id/script` records the approval that the render refuses to
-run without. Any text change clears it. Synthesized narration is cached in R2
-under the project prefix, keyed by a hash of the voice and the line, which is
-what makes fixing one beat cost one beat.
+`POST movie-recaps/:id/script`), and it stops before anything is cut. It speaks
+every beat through `lib/tts/` (Azure Speech), caches each content-addressed beat,
+then stores a combined `narration.wav` and JSON beat boundaries in R2. Narration
+is the master audio timeline. Picture and audio durations are independent:
+the complete source uses a fixed 0.75x picture rate while narration starts at
+the configured 1.05x rate. If narration would outlast the full-source picture,
+one uncapped global narration rate is calculated from the cached raw beat
+durations so it ends on or just inside the final video frame; shorter narration
+stays at 1.05x. Editing and choosing **Re Build this beat**
+re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`) and rebuilds
+the combined master from cached clips; video speed is absent from both audio
+cache keys. Each saved beat has an inline playable preview from
+`POST movie-recaps/:id/script/beat/preview`; it reuses the raw beat cache and
+applies the same configured overall narration rate as the master. The UI has no
+whole-script fit/recheck action. Starting one beat preview continues through
+the following saved beats; while one plays, the next three configured-speed WAVs
+are prepared concurrently and kept as browser object URLs for smooth handoff.
 
-The render (`lib/movie-recap-render.ts`) is then ffmpeg: it loads the approved
-script plus the analysis blob, reads every narration clip from the cache, cuts
-each beat into shots that clear the continuity limit (`splitSceneIntoShots`),
-holds a frame under any narration its footage cannot cover
-(`holdMotionFilter` pushes in so the hold reads as a choice), and muxes the
-padded narration track into the export. `lib/movie-recap-shots.ts` still holds
-the borrowing planner and serves the mock render; `lib/movie-recap-ribbon.ts` is
-an unwired alternative that trades timestamp accuracy for never freezing (see
-`history/movie-recap.md`). Pacing is per aspect ratio, because the aspect ratio
-is the format: `MOVIE_RECAP_PACING` in `lib/constants/movie-recap.ts` gives 9:16
-(TikTok, Facebook) a fast 1.5-2.5s shot band and 16:9 (YouTube) a 2-4s one, and
-also sets each one's subtitle offset. It holds presentation only: the narration
-line budget and the vision pass's keyframe count are shared constants, so an
-aspect ratio decides how the recap is cut and framed, never what it says (see
-`history/movie-recap.md`). A mock render skips TTS and comes out silent. Each render also returns a per-shot
+The render (`lib/movie-recap-render.ts`) is then ffmpeg. The shared timeline
+planner in `lib/movie-recap-shots.ts` samples the complete source in a configurable
+3 source seconds retained / 1 source second skipped cadence and plays every
+retained clip at 0.75x, trimming only the last partial cadence cycle so picture
+duration equals the original source duration. It does not trim, borrow or freeze footage to match
+narration. Captions follow the cached narration beat timings independently. The
+final MP4 keeps whichever stream is longer: narration may continue after the
+video stream ends, or selected footage may continue silently after narration
+ends. Source audio is muted;
+mirroring and held-frame motion happen per clip, while captions, blur regions
+and the logo are overlaid after concatenation and therefore remain unmirrored.
+Long captions are split across the planned clip slots. A mock render skips TTS
+and comes out silent. Each render also returns a per-shot
 log (slot, source range, held-frame seconds), which the Review step keeps per
 project in the browser's localStorage (`lib/movie-recap-render-history.ts`) — it
 is not stored server-side.
 
+The Review step also has a **Render Silent Timing Test** diagnostic. It bypasses
+the script and processes the complete original source as one continuous cadence:
+3 source seconds retained, 1 skipped, retained frames played at fixed 0.75x,
+original audio removed, and the final partial cycle trimmed to the probed source
+duration. It uses the normal render status, cancellation, R2 output and player,
+and replaces the current preview output without changing narration caches.
+
 The wizard is Add Source -> Transcript -> Narrative Script -> Customize Video ->
 Review. The Narrative Script step owns everything about the beats: building them,
-reading their measurements, editing a line, and approving. Only its **Resync with
+reading narration timing, and editing a line. Only its **Resync with
 Script** button goes back to the transcript and rebuilds from scratch — every
 other action reads the stored beats, which is what makes an edit cost one beat.
 Project name, output language and voice moved into Customize Video as its first

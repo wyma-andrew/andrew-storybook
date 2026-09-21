@@ -4889,3 +4889,245 @@ render for a frame nobody can read anyway.
 **Regions may overlap.** Nothing merges or de-duplicates them: a region blurred
 twice is simply blurred twice, which is what someone dragging one box over
 another asked for.
+
+## 2026-09-21 — narration is the master; footage uses a 3-on/1-off cut at 0.75x (supersedes the 2026-09-20 global-speed and ribbon-fit decisions)
+
+**Decision, confirmed by the user:** the saved narration owns the timeline.
+Selected source windows are sampled by retaining 3 source seconds, skipping the
+next 1 source second, and repeating. Retained clips play at one global 0.75x.
+Each beat trims its last clip to the saved narration boundary. If selected
+footage cannot fill that boundary, the planner consumes the nearest unused
+relevant scene with the same cadence; only after that pool is exhausted may the
+last processed frame be held.
+
+This supersedes the 2026-09-20 decisions that every source second plays as a
+continuous ribbon and that the single global picture speed is 0.95. It also
+supersedes the wired renderer's selected-footage-then-freeze shortage policy.
+Those entries remain above as superseded reasoning, not current behavior.
+
+**Narration caching stays.** Per-beat clips remain content-addressed by voice,
+rate and text. The script pass also saves a combined `narration.wav` and its JSON
+beat boundaries under a content-derived master key. The master key contains no
+video speed or edit-cadence value, so changing picture speed never regenerates
+speech. Editing and re-checking one beat synthesizes only that beat, then rebuilds
+the combined master from the unchanged cached clips. The old whole-script
+fit/re-check UI and transcript overrun warnings are removed; selected scenes are
+not relaid to make narration fit.
+
+**One timing function serves preview and render.** `planMovieRecapBeatTimeline`
+returns the retained source windows, screen slots, additional-scene usage and
+final held gap. Both mock preview and the real render use it, then quantize the
+same running clip boundaries to the configured output FPS. Caption chunks are
+spread over those exact slots.
+
+**FFmpeg layer order matters.** Each clip is cut with input-side `-ss`/`-t`, its
+original audio is removed, the picture is framed/graded/horizontally flipped,
+retimed with `setpts=PTS/0.75`, and any final gap is cloned with `tpad` before the
+hold-motion zoom. Captions, blur regions and the logo are applied only after all
+clips are concatenated, so none of those overlays is mirrored. The cached
+narration master is muxed unchanged at 1.0x.
+
+## 2026-09-21 (later) — the narration master plays at 1.05x (supersedes 1.0x above)
+
+**Decision, confirmed by the user:** apply one configurable 1.05x overall rate
+while assembling `narration.wav`. This slightly shortens every beat and reduces
+the chance that the picture exhausts selected and fallback footage.
+
+The content-addressed TTS clips remain untouched at their provider output speed.
+`atempo=1.05` is applied only to the combined master parts, and the timing JSON
+is calculated from each sped-up duration before video planning. The master cache
+key includes this overall rate, so changing it rebuilds the master WAV and beat
+manifest but does not synthesize unchanged beats again. Video remains 0.75x.
+
+## 2026-09-21 (later) — every narration beat has a configured-speed preview
+
+**Decision:** each saved beat in the Narrative Script panel has a play/pause
+button. The preview route reads that beat's content-addressed Azure clip, applies
+the same `MOVIE_RECAP_NARRATION_PLAYBACK_RATE` and frame-grid duration used by
+the master builder, and returns a WAV for browser playback. It does not use the
+raw provider speed, so what the user hears beside the line is what the render
+will mux.
+
+The browser caches object URLs by beat index plus saved text for the lifetime of
+the panel. Unsaved edits disable the button rather than playing audio for the old
+text under a new textbox. The preview uses the lightweight typed Spoosh client,
+which performs no cache invalidation because it changes no project state. A missing raw beat cache may synthesize that
+beat; a normal script already has it, so playback is an R2 read plus ffmpeg only.
+
+**Sequential playback and read-ahead:** pressing any beat starts an autoplay run
+from that beat through the saved beats below it. While a beat plays, the next
+`MOVIE_RECAP_NARRATION_PRELOAD_BEATS` previews (currently 3) are requested in
+parallel through the typed Spoosh client and stored as browser object URLs.
+In-flight requests are de-duplicated by beat index plus saved text, so autoplay
+can await the same request prefetch already started. Manual pause stops the run.
+An unsaved beat also stops it, because silently playing the previously saved
+line under edited text would make review untrustworthy.
+
+## 2026-09-21 (later) — beat edits have one action: Re Build this beat
+
+**Decision, by the user:** `Re-check this beat` no longer exists as a product
+action. An edited or stale beat offers one primary action labelled exactly
+`Re Build this beat`. It saves the text, synthesizes that beat when its raw cache
+does not already match, updates its configured-speed duration, and rebuilds the
+combined narration master from cached neighbouring beats.
+
+`Save without re-checking` is removed from the UI. A stale beat left by an older
+save or a bulk restore also exposes `Re Build this beat`; its playable preview
+and sequential autoplay stay disabled until rebuilding completes, so the panel
+cannot present old audio as if it belonged to the current line. The legacy
+server request shape still accepts `measure: false` for compatibility, but the
+current UI never sends it.
+
+## 2026-09-21 (later) — an unsaved beat edit can be cancelled locally
+
+**Decision:** once a beat's textbox differs from its last saved text, the row
+shows `Cancel` beside `Re Build this beat`. Cancelling restores only that
+textbox to the last server-saved value. It makes no API request and therefore
+does not synthesize narration, rebuild the master, or change cached timing.
+
+This is deliberately separate from `Restore original`: restore stages the
+script-run's original wording as a new unsaved edit, while cancel discards the
+current draft and returns to the most recently saved wording.
+
+## 2026-09-21 (later) — reclaim selected footage and use uniform global rates before borrowing
+
+**Decision, confirmed by the user (supersedes the shortage order above):** an
+underfilled beat must not immediately insert an unrelated spare scene. It first
+uses the normal 3-source-seconds retained / 1-source-second skipped cadence. If
+that is short, it reclaims the skipped seconds from the same selected scenes in
+source order. If the full selected spans are still short, the planner resolves
+one video speed for the entire recap, from the configured 0.75x default down to
+the configured 0.70x safe floor. If more compression is required, it resolves
+one narration rate for every beat, from 1.05x up to the configured 1.10x ceiling.
+
+Only after those options are exhausted may a beat borrow footage, and the spare
+is ranked by distance from the selected scene boundary so the closest adjacent
+scene wins. It is trimmed to the remaining gap. Freeze remains the final
+fallback. A scene-specific picture speed or beat-specific narration speed was
+explicitly rejected: one render carries one `videoSpeed` and one
+`narrationRate`, repeated in its saved beat manifest so rebuilds, inline audio
+previews and renders reproduce the same timing.
+
+The resolved narration rate is part of the master WAV cache key. Changing the
+rate may therefore rebuild `narration.wav` and its timing JSON from cached raw
+beats, but it never re-synthesizes unchanged Azure beat audio. Changing picture
+speed alone remains absent from the raw narration cache key.
+
+## 2026-09-21 (later) — video playback is fixed at 0.75x
+
+**Decision, confirmed by the user (supersedes the adaptive 0.75x–0.70x range
+above):** every processed clip in every recap plays at the configured fixed
+0.75x. Each retained 3 source seconds therefore occupies exactly 4 screen
+seconds. The planner must not choose a different picture speed for a beat or tune
+one for a particular project's shortage. Reclaiming skipped selected footage,
+the single global narration-rate adjustment, adjacent-scene borrowing and the
+final freeze fallback keep their existing order.
+
+## 2026-09-21 (later) — narration rate closes only the total shortage
+
+**Decision, confirmed by the user:** with picture fixed at 0.75x, calculate the
+single narration rate from the complete recap rather than from its most
+underfilled beat. For baseline narration duration `N`, available selected
+footage duration `F`, and baseline rate `R`, the rate is `R × N / F` when
+`N > F`, capped by the configured narration ceiling. When the narration is two
+seconds longer, this removes only that total two-second shortage instead of
+letting one short beat over-speed every other beat. All beats still share the
+same rate; a beat-local gap proceeds to adjacent footage and then freeze.
+
+## 2026-09-21 (later) — full-source silent timing diagnostic
+
+**Decision, by the user:** Review exposes a separate `Render Silent Timing Test`
+action to verify the 3-on/1-off arithmetic without narration or scene selection.
+It processes the complete original source continuously, normalizes it to the
+configured output FPS, keeps 3 seconds of each 4-second cycle, retimes retained
+frames at the fixed 0.75x, removes all audio, and trims the last partial cycle to
+the source file's probed duration. Thus each complete 4-second source cycle
+becomes 4 output seconds and the complete diagnostic matches source duration.
+
+This is deliberately not the mock recap: it uses no canned beats, captions,
+logo, scene selection or narration. It shares the render status/cancel path and
+replaces the current preview output so the existing player can inspect it. It
+does not read, write or invalidate narration caches.
+
+## 2026-09-21 (later) — footage has one global boundary, not one boundary per beat
+
+**Decision, confirmed by the user (supersedes the per-beat shortage and freeze
+parts of the 2026-09-21 timeline decisions above):** narration remains one
+continuous master track, and the picture is now planned once against its total
+duration. A narration beat no longer forces its own footage to end, borrow, or
+freeze. Beat timings remain only for caption placement and for splitting the
+already-decided global picture plan into encodable files.
+
+The global plan keeps the saved scene selection first and uses the configured
+3-source-seconds retained / 1-source-second skipped cadence at fixed 0.75x. If
+that cannot cover the complete narration, it reclaims the selected gaps and
+then uses source intervals not selected by any beat, nearest intervals first.
+A held frame is permitted only for a shortage that remains after the complete
+source is exhausted. Excess picture is trimmed at the single final narration
+boundary.
+
+The one narration rate is calculated against the processed full-source
+duration, not against any individual beat. A render re-resolves that rate from
+the saved beat durations, so an existing project adopts this policy immediately;
+when the rate changes it rebuilds only the combined master from cached raw beat
+audio and updates the saved timing metadata, without another Azure synthesis.
+This deliberately relaxes exact
+scene-to-line cut alignment: captions still follow the saved narration beat
+timings, but a picture clip may continue through a beat boundary. The accepted
+tradeoff is semantic looseness at an individual boundary in exchange for no
+early freeze while usable source footage remains.
+
+## 2026-09-21 (later) — rendered MP4 metadata is front-loaded
+
+**Decision:** final recap exports use FFmpeg `-movflags +faststart`, matching the
+silent timing diagnostic, and the Review player requests metadata on load. This
+moves the MP4 index to the beginning so a browser can start playback through
+ordinary R2 byte-range delivery without first downloading the end of the file.
+HLS/DASH packaging is intentionally deferred; it is unnecessary for the current
+single-file preview and download flow. Existing files keep their old layout and
+must be rendered again to gain fast-start playback.
+
+## 2026-09-21 (later) — audio and footage durations are independent
+
+**Decision, confirmed by the user (supersedes duration fitting, global shortage
+recovery, final trimming and dynamic narration-rate decisions above):** the
+narration master plays at the configured fixed 1.05x without inspecting footage
+duration. Selected footage independently applies the configured 3-second keep /
+1-second skip cadence and fixed 0.75x playback. There is no borrowing, narration
+speed adjustment, narration-boundary trim or footage freeze added to make the
+two streams end together.
+
+The final MP4 omits FFmpeg `-shortest`. If picture ends first, narration
+continues to its natural end and the player may continue displaying its last
+decoded frame; no extra frames are encoded. If narration ends first, picture
+continues silently to its own end. Captions remain tied to narration beat
+timings, so they follow speech rather than picture cuts. The output duration is
+the longer natural stream duration.
+
+## 2026-09-21 (later) — normal render uses the complete source timeline
+
+**Decision, confirmed by the user (supersedes selected-scene picture rendering
+above):** normal narration renders process the complete original source with the
+same 3-second keep / 1-second skip / fixed 0.75x timing proven by the silent
+diagnostic. The last partial cadence window is trimmed so a 45-second source
+produces exactly 45 seconds of picture. Scene selection remains saved as script
+context but no longer removes footage from the rendered picture timeline.
+
+Narration is muxed independently and cannot shorten that 45-second picture. If
+narration is shorter, the remaining full-source picture plays silently; if it is
+longer, audio continues after the 45-second video stream ends.
+
+## 2026-09-21 (later) — narration speeds up only when it exceeds the full source
+
+**Decision, confirmed by the user (supersedes the fixed-1.05x part of the
+independent-duration decision above):** 1.05x remains the baseline narration
+rate. When the measured narration master would be longer than the processed
+full-source picture, calculate one uniform rate from every cached raw beat so
+the complete narration ends on or just inside the final picture frame. If
+narration is already shorter, leave it at 1.05x and let the remaining footage
+play silently.
+
+The former 1.10x ceiling does not apply to this fit; the user explicitly allowed
+the calculated rate to exceed it. Frame-grid rounding for every beat is included
+when finding the minimum sufficient rate. A rate change rebuilds only the cached
+master WAV and timing manifest, never unchanged Azure speech clips.

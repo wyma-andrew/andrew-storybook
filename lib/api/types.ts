@@ -30,7 +30,7 @@ export type MovieRecapRenderShot = {
   sourceS: number;
   /** Seconds with no footage behind them — a held frame. Should be 0. */
   padS: number;
-  /** Playback speed this shot ran at; MOVIE_RECAP_PLAYBACK_SPEED for every shot. */
+  /** Playback speed this shot ran at; identical for every shot in one render. */
   speed: number;
   /** Source seconds jumped since the previous shot ended. Null for the first. */
   skipS: number | null;
@@ -39,12 +39,16 @@ export type MovieRecapRenderShot = {
 export type MovieRecapRenderLog = {
   createdAt: string;
   mock: boolean;
+  /** Full-source, silent 3-on/1-off cadence diagnostic. */
+  timingTest?: boolean;
   /** Total recap length: the sum of every slot. */
   durationS: number;
   beats: number;
   shots: MovieRecapRenderShot[];
   /** Total held-frame seconds across the render. */
   padS: number;
+  /** One narration rate shared by every beat in this render. */
+  narrationRate?: number;
 };
 
 export type MovieRecapProject = {
@@ -189,6 +193,11 @@ export type MovieRecapNarrationSegment = {
   // script step: more audio than footage is a held frame in the finished video,
   // and the fix — fewer words, or a later timestamp — is the user's.
   audioS?: number;
+  // One pair of rates is resolved for the entire script. They are repeated on
+  // each beat because render_script is the durable narration manifest and a
+  // single-beat preview must reproduce the rendered audio exactly.
+  narrationRate?: number;
+  videoSpeed?: number;
   // The line as the script run first wrote it. Written once, at the birth of the
   // beat, and carried through every edit — the restore point for a paste or a
   // rewrite that turned out worse than what it replaced.

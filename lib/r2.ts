@@ -108,6 +108,10 @@ export function movieRecapNarrationKey(projectId: string, hash: string) {
   return `${movieRecapProjectPrefix(projectId)}narration/${hash}.wav`;
 }
 
+export function movieRecapNarrationTimingKey(projectId: string, hash: string) {
+  return `${movieRecapProjectPrefix(projectId)}narration/${hash}.beats.json`;
+}
+
 export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
   return `${movieRecapProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }

@@ -122,16 +122,21 @@ export type ApiSchema = {
   "movie-recaps/:id/script/cancel": {
     POST: { data: MovieRecapProject };
   };
-  // Writes ONE edited beat back. `measure` (default true) re-speaks it to time
-  // it; false stores the words and marks the beat's measurement stale, for an
-  // edit that cannot have moved the timing. Every other beat, and the scene
-  // split behind all of them, is left alone.
+  // Rebuilds ONE edited beat: writes its text, replaces its audio and timing,
+  // and rebuilds the combined narration master from cached neighbours. The
+  // legacy `measure: false` path remains server-compatible but has no UI action.
   "movie-recaps/:id/script/beat": {
     POST: { data: MovieRecapProject; body: { index: number; text: string; measure?: boolean } };
   };
+  "movie-recaps/:id/script/beat/preview": {
+    POST: {
+      data: { audioBase64: string; contentType: "audio/wav"; durationSeconds: number; cached: boolean };
+      body: { index: number };
+    };
+  };
   // Writes SEVERAL edited beats back in one go — the paste half of the copyable
-  // prompt. Never speaks them: the beats are marked stale and a re-check
-  // afterwards measures only the lines that changed.
+  // prompt. Never speaks them: changed beats are marked stale and must each be
+  // rebuilt from the Narrative Script panel.
   "movie-recaps/:id/script/beats": {
     POST: {
       data: MovieRecapProject & { changed: number };
@@ -144,7 +149,10 @@ export type ApiSchema = {
     // `renderLog` is how every shot actually came out. It rides on the response
     // instead of being stored: the browser keeps a per-project history of it in
     // localStorage. Null when the render failed.
-    POST: { data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null }; body: { mock?: boolean } };
+    POST: {
+      data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null };
+      body: { mock?: boolean; silentTiming?: boolean };
+    };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

@@ -133,16 +133,32 @@ export const MOVIE_RECAP_SUBTITLE_POSITIONS = [
 //
 // These live here rather than in the render so the numbers are readable in one
 // place and can be shown in the UI later without importing the render.
-// Every shot plays at this speed. Not a ratio band and not per shot — one
-// number for the whole recap, so the picture never changes pace mid-recap
-// (user's decision, 2026-09-20; the conditional speed-ramp it replaced is in
-// history/movie-recap.md).
-//
-// 0.95 is the knee, measured on a 49-beat script: it turns 14 freeze beats into
-// 6 and 10.39s of held frame into 7.78s, and slowing further buys almost nothing
-// because everything left is one block whose text is 34% longer than its
-// timestamps. Below ~0.93 the slow motion starts to read as a choice.
-export const MOVIE_RECAP_PLAYBACK_SPEED = 0.95;
+// The source-selection cadence and playback rate are one policy because every
+// timing calculation needs all three values. The planner, mock preview and real
+// render read this object; ffmpeg commands do not carry private copies.
+export const MOVIE_RECAP_EDIT = {
+  retainSourceS: 3,
+  skipSourceS: 1,
+  playbackSpeed: 0.75,
+  minSourceS: 0.05,
+} as const;
+
+export const MOVIE_RECAP_PLAYBACK_SPEED = MOVIE_RECAP_EDIT.playbackSpeed;
+
+// All cached narration masters use this format. Keeping it beside the edit
+// policy makes the audio timeline just as configurable as the picture timeline.
+export const MOVIE_RECAP_NARRATION_SAMPLE_RATE = 24_000;
+
+// Applied once while the cached narration master is assembled. Individual TTS
+// beat caches stay at the provider's output rate, so tuning this value rebuilds
+// only narration.wav and its timing manifest, not the synthesized speech.
+export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.05;
+export const MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE = 1.1;
+export const MOVIE_RECAP_NARRATION_RATE_STEP = 0.001;
+
+// While one beat preview plays, prepare this many following beats so sequential
+// playback normally advances without waiting on R2 or ffmpeg.
+export const MOVIE_RECAP_NARRATION_PRELOAD_BEATS = 3;
 
 // How wide a ribbon group is: consecutive timestamped blocks are merged until
 // the group spans at least this long, and the ribbon shares footage inside it.
@@ -177,7 +193,7 @@ export const MOVIE_RECAP_LOOK = {
   // values (1.06 / 1.08 / 0.98) were chosen to be safe and read as nothing at
   // all next to the source; these were picked off a four-way comparison on real
   // footage (user's choice, 2026-09-20). Two stronger candidates were rejected
-  // with them: adding `unsharp` to claw back the softness the 0.95 slowdown and
+  // with them: adding `unsharp` to claw back the softness of slowed footage and
   // the letterbox crop introduce, which lifts grain with it, and a teal-orange
   // balance, which is the recap-channel look and further from the source than
   // the user wanted.

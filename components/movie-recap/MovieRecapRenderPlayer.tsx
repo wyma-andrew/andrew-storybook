@@ -19,6 +19,7 @@ export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject
       <video
         controls
         crossOrigin="anonymous"
+        preload="metadata"
         src={project.renderOutputUrl ?? undefined}
         className="block h-auto max-h-[70vh] w-auto max-w-full"
       />

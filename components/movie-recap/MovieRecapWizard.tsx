@@ -119,10 +119,12 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
+  const { trigger: renderSilentTiming, loading: renderingSilentTiming } = useWrite((api) =>
+    api("movie-recaps/:id/render").POST()
+  );
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
-  const { trigger: recheckBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
+  const { trigger: rebuildBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
-  const { trigger: recheckScript, loading: recheckingScript } = useWrite((api) => api("movie-recaps/:id/script/recheck").POST());
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
@@ -261,22 +263,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       return;
     }
     setProject(result.data);
-    if (result.data.scriptStatus === "ready") toast.success("Script measured. Check the beats, then approve.");
+    if (result.data.scriptStatus === "ready") toast.success("Narration timeline ready.");
     else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The script run failed.");
-  }
-
-  async function recheckWholeScript() {
-    if (!project) return;
-    merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
-    const result = await recheckScript({ params: { id: project.id } });
-    if (result.error || !result.data) {
-      toast.error(result.error?.error ?? "Could not check the script.");
-      await syncProject();
-      return;
-    }
-    setProject(result.data);
-    if (result.data.scriptStatus === "ready") toast.success("Every beat re-measured.");
-    else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The check failed.");
   }
 
   // The paste half of the copyable prompt. Returns how many beats actually
@@ -290,18 +278,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
     setProject(result.data);
     if (result.data.changed > 0) {
-      toast.success(`${result.data.changed} beat${result.data.changed === 1 ? "" : "s"} updated. Re-check to measure them.`);
+      toast.success(`${result.data.changed} beat${result.data.changed === 1 ? "" : "s"} updated. Re Build each changed beat.`);
     } else {
       toast.error("Nothing in that paste was different from what is already here.");
     }
     return result.data.changed;
   }
 
-  async function saveScriptBeat(index: number, text: string, measure: boolean) {
+  async function saveScriptBeat(index: number, text: string) {
     if (!project) return;
     setCheckingBeat(index);
     try {
-      const result = await recheckBeat({ params: { id: project.id }, body: { index, text, measure } });
+      const result = await rebuildBeat({ params: { id: project.id }, body: { index, text, measure: true } });
       if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
       else setProject(result.data);
     } finally {
@@ -336,10 +324,28 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       toast.success(
         mock
           ? "Mock preview rendered — no AI calls were made."
-          : "Rendered from the approved script — the source was not read again."
+          : "Rendered from the saved narration timeline — the source was not analyzed again."
       );
     }
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
+  }
+
+  async function renderSilentTimingTest() {
+    if (!project) return;
+    merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
+    const result = await renderSilentTiming({ params: { id: project.id }, body: { silentTiming: true } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not render the silent timing test.");
+      return;
+    }
+    setProject(result.data);
+    if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
+    if (result.data.renderStatus === "done") {
+      const durationS = result.data.renderLog?.durationS ?? project.sourceDurationSeconds;
+      toast.success(`Silent timing test rendered at ${durationS.toFixed(2)}s with no audio.`);
+    } else if (result.data.renderStatus === "failed") {
+      toast.error(result.data.renderError ?? "Silent timing test failed.");
+    }
   }
 
   async function cancelRecapRender() {
@@ -499,20 +505,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             <div>
               <h2 className="mb-1 text-lg font-semibold">Narrative Script</h2>
               <p className="mb-6 text-sm text-fg-2">
-                Your story, cut into beats on the film&apos;s own scenes and spoken so each one is measured against the
-                footage behind it. Fix anything that overruns here — the render cuts what you approve.
+                Your story stays on the selected scenes while narration defines the timing. Edit and Re Build only the
+                beat that needs adjustment; the other cached beats are reused.
               </p>
               <MovieRecapScript
                 project={project}
                 onBuild={buildRecapScript}
-                onRecheckAll={recheckWholeScript}
                 onSave={saveScriptBeat}
                 onCancel={cancelScriptRun}
                 onDirtyChange={setDirtyBeats}
                 onApplyBeats={applyScriptBeats}
                 applyingBeats={applyingBeats}
                 building={buildingScript}
-                recheckingAll={recheckingScript}
                 checking={checkingBeat}
                 cancelling={cancellingScript}
               />
@@ -719,6 +723,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               project={project}
               onRenderPreview={renderRecapPreview}
               rendering={rendering}
+              onRenderSilentTiming={renderSilentTimingTest}
+              renderingSilentTiming={renderingSilentTiming}
               onCancelRender={cancelRecapRender}
               cancelling={cancelling}
             />
@@ -750,8 +756,8 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
   ConfirmDialog.show({
     title: "Render Preview",
     content: hasRender
-      ? "This cuts the approved script below and replaces the current video. The source is not read again and the narration is already synthesized, so nothing is re-measured — only the video is rebuilt."
-      : "This cuts the approved script below over the source footage and renders the video. The narration is already synthesized, so this is ffmpeg alone, but it still takes several minutes.",
+      ? "This replaces the current video from the saved narration.wav and beat timings. The source is not analyzed again and changing video speed does not regenerate narration."
+      : "This cuts footage to the saved narration.wav timeline. The muted picture is rebuilt against the configured narration speed.",
     confirmButtonLabel: "Render",
     cancelButtonLabel: "Cancel",
     // Swallow the promise on purpose. Handing it to ConfirmDialog holds the
@@ -762,16 +768,32 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
   });
 }
 
+function confirmSilentTimingTest(project: MovieRecapProject, run: () => void) {
+  ConfirmDialog.show({
+    title: "Render Silent Timing Test",
+    content: project.renderStatus === "done"
+      ? "This replaces the current preview with a no-audio timing test of the complete original source. It does not use the narration script."
+      : "This renders the complete original source with 3 seconds kept, 1 second skipped, and fixed 0.75x video speed. The result has no audio.",
+    confirmButtonLabel: "Render test",
+    cancelButtonLabel: "Cancel",
+    onConfirm: () => { run(); },
+  });
+}
+
 function Review({
   project,
   onRenderPreview,
   rendering,
+  onRenderSilentTiming,
+  renderingSilentTiming,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
+  onRenderSilentTiming: () => void;
+  renderingSilentTiming: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
 }) {
@@ -812,7 +834,10 @@ function Review({
         <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}{mockTag}</span>
       </div>
       <p className="mb-4 text-xs text-fg-2">
-        <span className="font-medium text-fg">Mock</span> uses canned narration over the first 40s of the source — no TTS, no API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">Preview</span> cuts the approved script below; the source is not read again and the narration is already synthesized, so this is ffmpeg alone. Mock stays silent, because synthesizing costs the same as a real run. Styled subtitles are burned into the exported file by libass, exactly as designed in step 3.
+        <span className="font-medium text-fg">Mock</span> uses canned text and the shared timing planner over the source — no TTS or API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">Preview</span> uses the saved narration.wav and the same planner used by the final render. Mock stays silent. Styled subtitles are burned after mirroring, so captions and logos remain readable.
+      </p>
+      <p className="mb-4 text-xs text-fg-2">
+        <span className="font-medium text-fg">Silent timing test</span> processes the complete original source with 3 seconds kept, 1 second skipped, and fixed 0.75x video speed. It has no audio and is trimmed to the original source duration.
       </p>
       {/* The stepper replaces watching one line of text change for minutes.
           It is hidden while idle, where seven grey dots would say nothing the
@@ -826,6 +851,13 @@ function Review({
       <div className="flex flex-wrap items-center gap-3">
         <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
         <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !project.renderScript?.length} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Preview</LoadingButton>
+        <LoadingButton
+          loading={renderingSilentTiming}
+          disabled={project.renderStatus === "running"}
+          onClick={() => confirmSilentTimingTest(project, onRenderSilentTiming)}
+        >
+          Render Silent Timing Test
+        </LoadingButton>
         {!project.renderScript?.length && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
         {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
       </div>
