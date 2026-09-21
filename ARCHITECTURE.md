@@ -176,23 +176,20 @@ white text, black shadow, no background box) whose size follows the aspect ratio
 only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
 aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
-same local file is reselected. Generate currently records
+same local file is reselected. An existing project's source can be replaced through
+the same multipart path: its transcript, narration beat cache, and Customize Video
+settings remain, while the narrative timeline, source analysis, render artifacts,
+and browser render history are cleared. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
 
-The recap is built in two runs: a SCRIPT run that reads the source and creates
-the narration timeline, and a RENDER that cuts the saved beats. The script run turns the
-hand-typed Burmese story into beats. Each timestamped block gives the footage between its own
-stamp and the next (`lib/movie-recap-manual-script.ts` parses them); the source's
-own cuts then divide that footage into scenes (`lib/movie-recap-scene-plan.ts`),
-and **one beat is one scene**. The block's passage is split across its scenes by
-a vision-assisted pass (`splitMovieRecapBeat` in `lib/openai.ts`, one keyframe
-per scene), verified character-for-character against the user's own text and
-otherwise replaced by a mechanical sentence split (`lib/movie-recap-scene-text.ts`).
-Subtitle-reading/Whisper and the narration model stay parked — the functions
-remain, nothing calls them, and the Dialogue step shows as skipped on the
-progress bar (`MOVIE_RECAP_PARKED_STEPS`).
+The recap is built in two runs: a SCRIPT run creates the narration timeline, and
+a RENDER processes the full source independently. Each timestamped Burmese-story
+block becomes one narration beat (`lib/movie-recap-manual-script.ts`). The script
+run downloads the source only to detect embedded letterbox bars; it does no scene
+detection, keyframe extraction, vision description, scene-based text splitting,
+or spare-footage planning.
 
 Building that script is its own run (`lib/movie-recap-script.ts`,
 `POST movie-recaps/:id/script`), and it stops before anything is cut. It speaks
@@ -229,6 +226,13 @@ and comes out silent. Each render also returns a per-shot
 log (slot, source range, held-frame seconds), which the Review step keeps per
 project in the browser's localStorage (`lib/movie-recap-render-history.ts`) — it
 is not stored server-side.
+
+A completed render persists three R2 artifacts on `movie_recap_projects`: the
+combined MP4, the processed footage-only MP4, and the cached narration master
+WAV. Review displays the combined video plus a full-width audio player and
+separate authenticated download links for footage and narration. Download GETs
+validate project access through RLS, then redirect to short-lived R2 URLs with
+attachment filenames; large media bytes do not pass through the Next server.
 
 The Review step also has a **Render Silent Timing Test** diagnostic. It bypasses
 the script and processes the complete original source as one continuous cadence:

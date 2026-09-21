@@ -19,9 +19,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (project.sourceUploadStatus !== "ready" || !project.sourceUrl) {
     return NextResponse.json({ error: "The source video is not ready." }, { status: 400 });
   }
-  // A real render cuts an APPROVED script and nothing else. Building it, speaking
-  // it and measuring every beat is the script run's job, and the approval is the
-  // user saying they have read those measurements — see history/movie-recap.md.
+  // A real render needs the measured narration and the source crop prepared by
+  // the script run. Audio and full-source footage are rendered independently.
   if (!mock && !silentTiming) {
     if (!(project.renderScript?.length && project.renderAnalysisKey)) {
       return NextResponse.json({ error: "Build the script first — there is nothing to render." }, { status: 400 });

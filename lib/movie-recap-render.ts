@@ -10,7 +10,7 @@ import {
   probeDurationS,
 } from "./movie-recap-narration";
 import { estimateSpokenSeconds, MIN_SEGMENT_S } from "./movie-recap-speech";
-import { getObjectText, movieRecapObjectKey, putObject } from "./r2";
+import { getObjectText, movieRecapObjectKey, publicUrlFor, putObject } from "./r2";
 import { trimFailureMessage } from "./movie-recap";
 import { buildShotFilter, holdMotionFilter, shotFilterContext } from "./movie-recap-transform";
 import {
@@ -480,8 +480,7 @@ async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieReca
   if (!text) return null;
   try {
     const parsed = JSON.parse(text) as MovieRecapRenderAnalysis;
-    if (!Array.isArray(parsed.spares) || !Array.isArray(parsed.cuts)) return null;
-    return { spares: parsed.spares, cuts: parsed.cuts, motion: parsed.motion ?? null };
+    return { crop: parsed.crop ?? null };
   } catch {
     return null;
   }
@@ -556,6 +555,10 @@ export async function runMovieRecapRender(
           render_error: null,
           render_output_url: outputUrl,
           render_output_object_key: outputKey,
+          render_audio_url: null,
+          render_audio_object_key: null,
+          render_footage_url: outputUrl,
+          render_footage_object_key: outputKey,
           render_stage: null,
           render_progress_current: null,
           render_progress_total: null,
@@ -650,6 +653,7 @@ export async function runMovieRecapRender(
     const videoSpeed = renderRates.videoSpeed;
     const narrationRate = renderRates.narrationRate;
     let narrationPath: string | null = null;
+    let narrationAudioKey: string | null = null;
     let narrationTimings: { beat: number; startS: number; endS: number; durationS: number }[] = [];
 
     if (!mock) {
@@ -663,6 +667,7 @@ export async function runMovieRecapRender(
         playbackRate: narrationRate,
       });
       narrationPath = master.path;
+      narrationAudioKey = master.audioKey;
       narrationTimings = master.timings;
       if (narration.some((segment, index) =>
         segment.narrationRate !== narrationRate || segment.audioS !== round2(master.timings[index].durationS)
@@ -866,30 +871,35 @@ export async function runMovieRecapRender(
     const concatPath = path.join(workDir, "concat.mp4");
     await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatPath], signal);
 
-    // 6. Burn in blur, subtitles, and logo — one final pass on the whole video.
-    // Subtitles always burn in: styled-and-burned is the only mode (see
-    // history/movie-recap.md), so there is nothing to branch on.
-    let outputPath = concatPath;
+    // Burn captions/logo into the footage-only artifact first. The combined
+    // output then stream-copies these exact video frames and adds narration, so
+    // downloading footage never produces a visually different render.
+    const footagePath = path.join(workDir, "footage.mp4");
     const assPath = path.join(workDir, "subtitles.ass");
     await writeFile(assPath, buildAss(project, cues), "utf-8");
     {
       await setProgress(db, project.id, "applying_overlays");
-      outputPath = path.join(workDir, "output.mp4");
       const inputs = ["-i", concatPath];
-      // buildOverlayFilter only ever names inputs 0 and 1, so the narration
-      // track goes last and its index depends on whether a logo was added.
       if (project.logoEnabled && project.logoUrl) inputs.push("-i", project.logoUrl);
-      const narrationIndex = narrationPath ? inputs.length / 2 : null;
-      if (narrationPath) inputs.push("-i", narrationPath);
-      const audioArgs =
-        narrationIndex === null
-          ? ["-an"]
-          : ["-map", `${narrationIndex}:a`, "-c:a", "aac", "-b:a", "128k"];
       await run(
         FFMPEG,
         [
           "-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath),
-          "-map", "[vout]", ...audioArgs, "-c:v", "libx264", "-pix_fmt", "yuv420p",
+          "-map", "[vout]", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+          "-movflags", "+faststart", footagePath,
+        ],
+        signal
+      );
+    }
+
+    let outputPath = footagePath;
+    if (narrationPath) {
+      outputPath = path.join(workDir, "output.mp4");
+      await run(
+        FFMPEG,
+        [
+          "-y", "-i", footagePath, "-i", narrationPath,
+          "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
           "-movflags", "+faststart", outputPath,
         ],
         signal
@@ -898,9 +908,14 @@ export async function runMovieRecapRender(
 
     await setProgress(db, project.id, "uploading");
     const outputDurationS = await probeDurationS(outputPath, signal);
-    const outputBuffer = await readFile(outputPath);
+    const [outputBuffer, footageBuffer] = await Promise.all([readFile(outputPath), readFile(footagePath)]);
     const outputKey = movieRecapObjectKey(project.id, "render", `recap-${project.id}.mp4`);
-    const outputUrl = await putObject(outputKey, outputBuffer, "video/mp4");
+    const footageKey = movieRecapObjectKey(project.id, "render", `footage-${project.id}.mp4`);
+    const [outputUrl, footageUrl] = await Promise.all([
+      putObject(outputKey, outputBuffer, "video/mp4"),
+      putObject(footageKey, footageBuffer, "video/mp4"),
+    ]);
+    const audioUrl = narrationAudioKey ? publicUrlFor(narrationAudioKey) : null;
 
     await db
       .from("movie_recap_projects")
@@ -917,6 +932,10 @@ export async function runMovieRecapRender(
         // measured script with them.
         render_output_url: outputUrl,
         render_output_object_key: outputKey,
+        render_audio_url: audioUrl,
+        render_audio_object_key: narrationAudioKey,
+        render_footage_url: footageUrl,
+        render_footage_object_key: footageKey,
         render_stage: null,
         render_progress_current: null,
         render_progress_total: null,

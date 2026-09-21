@@ -138,6 +138,8 @@ export type MovieRecapProject = {
   // render has finished yet, so re-rendering from the script is not offered.
   renderAnalysisKey: string | null;
   renderOutputUrl: string | null;
+  renderAudioUrl: string | null;
+  renderFootageUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
   createdAt: string;
@@ -225,16 +227,8 @@ export type MovieRecapNarrationSegment = {
   audioStale?: boolean;
 };
 
-// What the shot planner needs that is NOT in the script: everything derived from
-// the source itself. Stored in R2 at the end of a full render (see
-// `renderAnalysisKey`) so an edited script can be re-rendered without paying for
-// scene detection, the vision pass and transcription again.
+// Source framing data prepared before rendering and stored in R2.
 export type MovieRecapRenderAnalysis = {
-  // Scenes the narration model passed over, which a beat can borrow from.
-  spares: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
-  // The source's own edits, in seconds — a shot is never laid across one.
-  cuts: number[];
-  motion: { stepS: number; values: number[] } | null;
   // The rectangle of the source that is actually picture, when the file carries
   // letterbox bars of its own. Null when the whole frame is picture, which is
   // the common case. See lib/movie-recap-crop.ts.

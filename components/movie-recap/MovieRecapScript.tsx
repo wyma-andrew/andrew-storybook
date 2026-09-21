@@ -80,11 +80,11 @@ export function MovieRecapScript({
     .map((beat, index) => ({ index, text: beat.originalText ?? "" }))
     .filter((entry) => entry.text && entry.text !== script[entry.index].text);
 
-  const [reportedDirty, setReportedDirty] = useState(dirtyCount);
-  if (reportedDirty !== dirtyCount) {
-    setReportedDirty(dirtyCount);
+  useEffect(() => {
     onDirtyChange(dirtyCount);
-  }
+  }, [dirtyCount, onDirtyChange]);
+
+  useEffect(() => () => onDirtyChange(0), [onDirtyChange]);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const previewUrls = useRef(new Map<string, string>());

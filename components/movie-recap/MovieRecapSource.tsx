@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Film, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Film, RefreshCw, Trash2, Upload } from "lucide-react";
 import { ConfirmDialog, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize } from "@/lib/movie-recap";
+import { clearRenderHistory } from "@/lib/movie-recap-render-history";
 import { apiClient, useWrite } from "@/lib/spoosh";
 
 const UPLOAD_LOG = "[MovieRecapUpload]";
@@ -80,6 +81,7 @@ export function MovieRecapSource({
   onProject: (project: MovieRecapProject, localPreviewUrl?: string) => void;
 }) {
   const { trigger: createProject } = useWrite((api) => api("movie-recaps").POST());
+  const { trigger: replaceSource } = useWrite((api) => api("movie-recaps/:id/source/replace").POST());
   const { trigger: startMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart").POST());
   const { trigger: signPart } = useWrite((api) => api("movie-recaps/:id/source/multipart/part").POST());
   const { trigger: completeMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart/complete").POST());
@@ -89,7 +91,7 @@ export function MovieRecapSource({
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  async function begin(file: File) {
+  async function begin(file: File, replacing = false) {
     uploadLog("file-selected", {
       fileName: file.name,
       contentType: file.type,
@@ -97,6 +99,7 @@ export function MovieRecapSource({
       lastModified: file.lastModified,
       existingProjectId: project?.id ?? null,
       existingStatus: project?.sourceUploadStatus ?? null,
+      replacing,
     });
     if (!file.type.startsWith("video/")) {
       uploadError("file-rejected", "The selected file is not a video.", { contentType: file.type });
@@ -106,11 +109,32 @@ export function MovieRecapSource({
     setUploading(true);
     setPercent(0);
     let active = project;
+    let selectedPreviewUrl: string | null = null;
+    let previewAdopted = false;
     try {
       const metadata = await readVideo(file);
+      selectedPreviewUrl = metadata.url;
       uploadLog("metadata-ready", { durationSeconds: metadata.duration, width: metadata.width, height: metadata.height });
-      setPreviewUrl(metadata.url);
-      if (active) {
+      if (active && replacing) {
+        const { data, error } = await replaceSource({
+          params: { id: active.id },
+          body: {
+            fileName: file.name,
+            contentType: file.type,
+            sizeBytes: file.size,
+            durationSeconds: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+            lastModified: file.lastModified,
+          },
+          invalidate: ["movie-recaps", `movie-recaps/${active.id}`],
+        });
+        if (error || !data) throw new Error(error?.error ?? "Could not replace the source video.");
+        active = data;
+        clearRenderHistory(data.id);
+        uploadLog("source-replaced", { projectId: data.id, uploadStatus: data.sourceUploadStatus });
+        onProject(data, metadata.url);
+      } else if (active) {
         const matches =
           active.sourceFileName === file.name &&
           active.sourceSizeBytes === file.size &&
@@ -143,6 +167,8 @@ export function MovieRecapSource({
         onProject(data, metadata.url);
         window.history.replaceState(null, "", `/movie-recap/${data.id}`);
       }
+      setPreviewUrl(metadata.url);
+      previewAdopted = true;
 
       if (active.sourceUploadStatus === "ready") {
         uploadLog("already-ready", { projectId: active.id });
@@ -234,6 +260,7 @@ export function MovieRecapSource({
       uploadLog("upload-complete", { projectId: active.id, completedParts: parts.length });
       toast.success("Video upload complete.");
     } catch (error) {
+      if (selectedPreviewUrl && !previewAdopted) URL.revokeObjectURL(selectedPreviewUrl);
       uploadError("upload-stopped", error, { projectId: active?.id ?? null });
       toast.error(error instanceof Error ? error.message : "Could not upload the video.");
     } finally {
@@ -265,11 +292,32 @@ export function MovieRecapSource({
     });
   }
 
+  function confirmReplace() {
+    if (!project) return;
+    ConfirmDialog.show({
+      title: "Replace source video?",
+      content: "Your transcript and all Customize Video settings will stay. The narrative script, source analysis, render outputs, and render history made from the current video will be permanently cleared.",
+      confirmButtonLabel: "Choose replacement",
+      cancelButtonLabel: "Cancel",
+      onConfirm: ({ dismiss }) => {
+        dismiss();
+        void openReplacementPicker({ multiple: false });
+      },
+    });
+  }
+
   const { dropzoneRef, dragging, openFilePicker } = useFilePicker<HTMLDivElement>({
     accept: "video/*",
     onChange: (_files, newFiles) => {
       const file = newFiles[0];
       if (file) void begin(file);
+    },
+  });
+  const { openFilePicker: openReplacementPicker } = useFilePicker<HTMLDivElement>({
+    accept: "video/*",
+    onChange: (_files, newFiles) => {
+      const file = newFiles[0];
+      if (file) void begin(file, true);
     },
   });
   const ready = project?.sourceUploadStatus === "ready";
@@ -315,8 +363,11 @@ export function MovieRecapSource({
             {details.map(([label, value]) => <div key={label}><div className="text-[11px] uppercase tracking-wide text-fg-3">{label}</div><div className="mt-1 truncate text-sm text-fg">{value}</div></div>)}
           </div>
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
-            <p className="text-xs text-fg-3">Removing the video deletes this project and everything generated from it.</p>
-            <LoadingButton variant="danger" loading={deleting} disabled={uploading} onClick={confirmDelete}><Trash2 size={15} /> Delete video</LoadingButton>
+            <p className="text-xs text-fg-3">Replace the source and keep your settings, or delete the entire project.</p>
+            <div className="flex items-center gap-2">
+              <Button disabled={uploading || deleting} onClick={confirmReplace}><RefreshCw size={15} /> Replace video</Button>
+              <LoadingButton variant="danger" loading={deleting} disabled={uploading} onClick={confirmDelete}><Trash2 size={15} /> Delete video</LoadingButton>
+            </div>
           </div>
         </div>
       )}

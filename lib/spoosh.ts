@@ -77,6 +77,20 @@ export type ApiSchema = {
     POST: { data: MovieRecapProject };
     DELETE: { data: null };
   };
+  "movie-recaps/:id/source/replace": {
+    POST: {
+      data: MovieRecapProject;
+      body: {
+        fileName: string;
+        contentType: string;
+        sizeBytes: number;
+        durationSeconds: number;
+        width?: number;
+        height?: number;
+        lastModified: number;
+      };
+    };
+  };
   "movie-recaps/:id/source/multipart/part": {
     POST: { data: { uploadUrl: string }; body: { partNumber: number } };
   };

@@ -78,6 +78,8 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     renderScript: (r.render_script as MovieRecapProject["renderScript"]) ?? null,
     renderAnalysisKey: (r.render_analysis_key as string | null) ?? null,
     renderOutputUrl: (r.render_output_url as string) ?? null,
+    renderAudioUrl: (r.render_audio_url as string) ?? null,
+    renderFootageUrl: (r.render_footage_url as string) ?? null,
     renderStartedAt: (r.render_started_at as string) ?? null,
     renderCompletedAt: (r.render_completed_at as string) ?? null,
     createdAt: r.created_at as string,

@@ -4,12 +4,7 @@ import { MOVIE_RECAP_RENDER_STEPS, MOVIE_RECAP_TRANSCRIPT_STEPS } from "./consta
 
 const states = (over: Parameters<typeof movieRecapRenderStepStates>[0]) => movieRecapRenderStepStates(over);
 
-// Only the dialogue pass is parked now: the story is typed by hand, so nothing
-// transcribes the source. Scenes and Script came back on 2026-09-19, when the
-// render started cutting on the film's own scenes and dividing each block's
-// passage across them (history/movie-recap.md). A parked step stays on the bar,
-// struck through, rather than vanishing from it.
-const PARKED = ["dialogue"];
+const PARKED: string[] = [];
 
 describe("movieRecapRenderStepStates", () => {
   it("shows nothing started before a render runs", () => {
@@ -38,15 +33,6 @@ describe("movieRecapRenderStepStates", () => {
     expect(s.video).toBe("pending");
   });
 
-  it("never claims a parked pass ran, whatever the render did", () => {
-    // A bar showing "Scenes: done" for work no render does any more is the same
-    // lie the mock rules exist to prevent.
-    for (const status of ["idle", "running", "done", "failed"] as const) {
-      const s = states({ status, stage: "rendering_segments", isMock: false });
-      for (const id of PARKED) expect(s[id]).toBe("skipped");
-    }
-  });
-
   it("never claims a mock did the work it skipped", () => {
     // A mock uses canned narration and touches no model. Showing those steps as
     // done would be a lie told by a progress bar.
@@ -73,12 +59,10 @@ describe("movieRecapRenderStepStates", () => {
   it("covers every stage the render can report", () => {
     // The guard against the real maintenance hazard: a stage added to the
     // pipeline but not to a step group would silently read as "not started".
-    // The parked stages stay grouped so the bar is right again when they return.
     const grouped = new Set(MOVIE_RECAP_RENDER_STEPS.flatMap((step) => [...step.stages]));
     const all = [
-      "downloading_source", "detecting_scenes", "describing_scenes", "reading_captions",
-      "extracting_audio", "transcribing", "writing_script", "synthesizing_narration",
-      "rendering_segments", "concatenating", "applying_overlays", "uploading",
+      "downloading_source", "synthesizing_narration", "rendering_segments",
+      "concatenating", "applying_overlays", "uploading",
     ];
     expect(all.filter((stage) => !grouped.has(stage as never))).toEqual([]);
   });

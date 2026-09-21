@@ -99,21 +99,26 @@ export function movieRecapProjectPrefix(projectId: string) {
   return `movie-recaps/${projectId}/`;
 }
 
+export function movieRecapAssetPrefix(projectId: string, kind: "source" | "narration" | "render" | "subtitle" | "analysis") {
+  return `${movieRecapProjectPrefix(projectId)}${kind}/`;
+}
+
 // Narration audio, keyed by WHAT WAS SAID rather than by beat number: the same
 // words in the same voice synthesize to the same clip, so a re-render pays
 // nothing for lines that did not change, and editing one line re-synthesizes
 // only that one. Under the project prefix, so deleting the project takes the
 // cache with it (see history/movie-recap.md on prefix deletion).
 export function movieRecapNarrationKey(projectId: string, hash: string) {
-  return `${movieRecapProjectPrefix(projectId)}narration/${hash}.wav`;
+  return `${movieRecapAssetPrefix(projectId, "narration")}${hash}.wav`;
 }
 
 export function movieRecapNarrationTimingKey(projectId: string, hash: string) {
-  return `${movieRecapProjectPrefix(projectId)}narration/${hash}.beats.json`;
+  return `${movieRecapAssetPrefix(projectId, "narration")}${hash}.beats.json`;
 }
 
 export function movieRecapObjectKey(projectId: string, kind: "source" | "logo" | "render" | "subtitle" | "analysis", fileName: string) {
-  return `${movieRecapProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+  const prefix = kind === "logo" ? `${movieRecapProjectPrefix(projectId)}logo/` : movieRecapAssetPrefix(projectId, kind);
+  return `${prefix}${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
 function splitName(basename: string) {
@@ -160,6 +165,18 @@ export function presignPut(objectKey: string, contentType: string) {
     r2(),
     new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, ContentType: contentType }),
     { expiresIn: 900 }
+  );
+}
+
+export function presignDownload(objectKey: string, filename: string) {
+  return getSignedUrl(
+    r2(),
+    new GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: objectKey,
+      ResponseContentDisposition: `attachment; filename="${filename.replace(/["\\]/g, "-")}"`,
+    }),
+    { expiresIn: 300 }
   );
 }
 

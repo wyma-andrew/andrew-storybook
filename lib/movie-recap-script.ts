@@ -1,23 +1,16 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { splitMovieRecapBeat } from "./openai";
-import { describeScenes, detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import { detectContentCrop } from "./movie-recap-crop";
-import { groupBlocks, parseTimestampedBlocks } from "./movie-recap-manual-script";
-import { dominantRun, layoutBlockRibbon, scenesInBlock, splitSceneIntoShots } from "./movie-recap-scene-plan";
-import { type SourceWindow } from "./movie-recap-shots";
-import { resolveSceneTexts, splitIntoSentences } from "./movie-recap-scene-text";
+import { parseTimestampedBlocks } from "./movie-recap-manual-script";
 import { ensureNarrationMaster, narrationClip, narrationPlaybackRateForDuration } from "./movie-recap-narration";
-import { beatFootageS, trimFailureMessage } from "./movie-recap";
+import { trimFailureMessage } from "./movie-recap";
 import { movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
-  MOVIE_RECAP_EDIT,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_PLAYBACK_SPEED,
-  movieRecapPacing,
 } from "./constants/movie-recap";
 import type {
   MovieRecapNarrationSegment,
@@ -32,13 +25,9 @@ type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 // THE SCRIPT RUN: everything a recap needs decided and MEASURED, with nothing
 // cut yet.
 //
-// It exists because the answer to "is this line too long for its shot" is a
-// synthesized clip and a stopwatch, and there is no reason to spend an hour of
-// ffmpeg before showing it. Reading the source, dividing the story across its
-// scenes and speaking every beat takes a couple of minutes; the user then reads
-// the overruns, shortens a line and re-checks that one beat. The
-// render that follows is ffmpeg alone — every clip it needs is already in the
-// cache. See history/movie-recap.md, 2026-09-19.
+// It parses the user's timestamped narration, measures every beat, and prepares
+// the cached narration master. Picture editing is now an independent full-source
+// cadence, so scene selection and vision analysis do not belong in this run.
 
 const round2 = (value: number) => Number(value.toFixed(2));
 
@@ -89,8 +78,7 @@ async function cancelledElsewhere(db: Db, projectId: string) {
 }
 
 /**
- * Read the source, divide the typed story across its scenes, speak every beat
- * and write the measured script onto the project row.
+ * Parse the typed story, speak every beat and write the measured script.
  *
  * Writes its own status rather than throwing, so the caller just re-reads the
  * row — same contract as the render.
@@ -102,19 +90,6 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
   const workDir = await mkdtemp(path.join(tmpdir(), "movie-recap-script-"));
 
   try {
-    const pacing = movieRecapPacing(project.aspectRatio);
-    // The narration is the Burmese the user typed at the Transcript step, and
-    // each block's footage is the source between its own two timestamps — the
-    // uploaded video IS the one those stamps were read off, so nothing has to be
-    // matched to anything.
-    //
-    // What the block does NOT decide is where the picture cuts. That is the
-    // film's own business, so detection runs, one keyframe per scene is
-    // described, and the block's passage is divided across its scenes: a beat is
-    // a SCENE, not a whole block.
-    //
-    // Still parked, still not deleted: generateMovieRecapNarration,
-    // readSourceTranscript and dialogueForScene.
     const blocks = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds);
     if (!blocks.length) {
       throw new Error("Add the Burmese story, with its timestamps, at the Transcript step first.");
@@ -124,12 +99,6 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
     const sourcePath = path.join(workDir, "source.mp4");
     await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", sourcePath], signal);
 
-    await setStage(db, project.id, "detecting_scenes");
-    const detected = await detectScenes(sourcePath, workDir, signal);
-    // Films are routinely delivered as 2.39:1 inside a 16:9 file, and those bars
-    // are pixels the framing step cannot tell from picture — see
-    // lib/movie-recap-crop.ts. Fails soft: a source with no bars, and a
-    // detection that goes wrong, both come back null and change nothing.
     const crop = await detectContentCrop(sourcePath, project.sourceDurationSeconds, signal).catch(() => null);
     if (crop) {
       console.log(
@@ -137,122 +106,18 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
       );
     }
 
-    // Which ribbon group each block falls in. The group is what the ribbon lays
-    // narration over; the block is still what the words were written against.
-    const groupOf = new Map<number, { index: number; startS: number; endS: number }>();
-    for (const [index, group] of groupBlocks(blocks).entries()) {
-      for (const block of group.blocks) groupOf.set(block, { index, startS: group.startS, endS: group.endS });
-    }
-
-    const blockScenes = blocks.map((block) => ({
-      block,
-      scenes: scenesInBlock(block.startS, block.endS, detected.cuts),
-    }));
-    const flatScenes = blockScenes.flatMap(({ scenes }) => scenes);
-
-    // ONLY the scenes under a block that will actually be split. The vision pass
-    // exists to answer "which sentence belongs on which picture", so a block
-    // with one sentence has no question to ask — and a transcript pulled off a
-    // video's narration track is one sentence per stamp, which made this a
-    // keyframe and a vision call for every scene in the film for nothing.
-    let sceneBase = 0;
-    const splitScenes: { globalIndex: number; scene: SourceWindow }[] = [];
-    for (const { block, scenes } of blockScenes) {
-      if (scenes.length > 1 && splitIntoSentences(block.text).length > 1) {
-        for (const [offset, scene] of scenes.entries()) splitScenes.push({ globalIndex: sceneBase + offset, scene });
-      }
-      sceneBase += scenes.length;
-    }
-
-    // ONE frame per beat, taken from the longest unbroken stretch inside it. The
-    // question this pass answers is "what is this beat about", so the passage can
-    // be divided onto the right pictures — not "what happens inside it", which is
-    // what several frames were for when a model was writing the narration. A beat
-    // that merged short cuts together spans more than one picture, and
-    // `dominantRun` is what stops the frame landing on a two-second cutaway.
-    await setStage(db, project.id, "extracting_keyframes", 0, splitScenes.length);
-    const keyframes = await extractKeyframes(
-      FFMPEG,
-      sourcePath,
-      splitScenes.map(({ scene }) => {
-        const run = dominantRun(scene, detected.cuts);
-        return { start: run.sourceStartS, end: run.sourceEndS };
-      }),
-      workDir,
-      1,
-      signal,
-      (done, total) => setStage(db, project.id, "extracting_keyframes", done, total)
-    );
-    await setStage(db, project.id, "describing_scenes", 0, splitScenes.length);
-    // Keyed by position in `splitScenes`, put back on the film's own scene
-    // numbering so the split pass below can look a scene up by its index.
-    const describedSubset = await describeScenes(keyframes, signal, (done, total) =>
-      setStage(db, project.id, "describing_scenes", done, total)
-    );
-    const described = new Map<number, { visual: string; keyframeFraction: number }>();
-    for (const [position, { globalIndex }] of splitScenes.entries()) {
-      const entry = describedSubset.get(position);
-      if (entry) described.set(globalIndex, entry);
-    }
-
     await setStage(db, project.id, "writing_script", 0, blocks.length);
     const narration: MovieRecapNarrationSegment[] = [];
-    let sceneCursor = 0;
-    let modelSplits = 0;
-    for (const [blockIndex, { block, scenes }] of blockScenes.entries()) {
+    for (const [blockIndex, block] of blocks.entries()) {
       if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
-      const indexes = scenes.map((_, offset) => sceneCursor + offset);
-      sceneCursor += scenes.length;
-      const secondsList = scenes.map((scene) => scene.sourceEndS - scene.sourceStartS);
-
-      // The split pass is a convenience, not a dependency: a model that is down,
-      // slow or wrong costs a better break point, never the run. The mechanical
-      // split inside resolveSceneTexts is the floor.
-      //
-      // A one-sentence block is not asked at all. resolveSceneTexts cannot break
-      // inside a sentence, so whatever the model answers it gets the same
-      // result — and a transcript pulled off a video's narration track is one
-      // sentence per stamp, which made this a call per line for nothing.
-      let parts: { sceneIndex: number; text: string }[] | null = null;
-      if (scenes.length > 1 && splitIntoSentences(block.text).length > 1) {
-        try {
-          parts = await splitMovieRecapBeat(
-            scenes.map((scene, offset) => ({
-              index: offset,
-              seconds: round2(secondsList[offset]),
-              visual: described.get(indexes[offset])?.visual ?? "",
-            })),
-            block.text,
-            signal
-          );
-        } catch (error) {
-          if (signal.aborted) throw error;
-          console.warn(`[MovieRecapScript] project=${project.id} block=${blockIndex + 1} split pass failed, using the mechanical split.`);
-        }
-      }
-      const { texts, usedModel } = resolveSceneTexts(block.text, secondsList, parts);
-      if (usedModel) modelSplits++;
-
-      for (const [offset, scene] of scenes.entries()) {
-        const text = texts[offset]?.trim() ?? "";
-        // A scene the passage had nothing to say about carries no beat of its
-        // own. Its seconds are not lost: the ribbon below spreads the block's
-        // footage across the beats it does have, so they are played by whichever
-        // beat needs them.
-        if (!text) continue;
-        const group = groupOf.get(blockIndex);
-        narration.push({
-          shots: splitSceneIntoShots(scene, pacing, detected.cuts),
-          text,
-          originalText: text,
-          blockIndex,
-          blockStartS: block.startS,
-          blockEndS: block.endS,
-          groupIndex: group?.index,
-          groupStartS: group?.startS,
-          groupEndS: group?.endS,
-        });
-      }
+      narration.push({
+        shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
+        text: block.text,
+        originalText: block.text,
+        blockIndex,
+        blockStartS: block.startS,
+        blockEndS: block.endS,
+      });
       await setStage(db, project.id, "writing_script", blockIndex + 1, blocks.length);
     }
 
@@ -288,18 +153,11 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
     });
 
     console.log(
-      `[MovieRecapScript] project=${project.id} ${blocks.length} block(s) -> ${flatScenes.length} scene(s) ` +
-        `(${splitScenes.length} described) -> ` +
-        `${narration.length} beat(s); ${modelSplits} split by the model; ${cacheHits} clip(s) from cache.`
+      `[MovieRecapScript] project=${project.id} ${blocks.length} timestamp block(s) -> ` +
+        `${narration.length} beat(s); ${cacheHits} clip(s) from cache.`
     );
 
-    const selected = narration.flatMap((beat) => beat.shots);
-    const spares = flatScenes.filter((scene) =>
-      !selected.some((shot) =>
-        Math.min(scene.sourceEndS, shot.sourceEndS) - Math.max(scene.sourceStartS, shot.sourceStartS) > MOVIE_RECAP_EDIT.minSourceS
-      )
-    );
-    const analysis: MovieRecapRenderAnalysis = { spares, cuts: detected.cuts.map(round2), motion: null, crop };
+    const analysis: MovieRecapRenderAnalysis = { crop };
     const analysisKey = movieRecapObjectKey(project.id, "analysis", "analysis.json");
     await putObject(analysisKey, Buffer.from(JSON.stringify(analysis)), "application/json");
 
@@ -334,54 +192,6 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
   } finally {
     activeScriptRuns.delete(project.id);
     await rm(workDir, { recursive: true, force: true });
-  }
-}
-
-/**
- * Give every beat the footage its line actually needs, group by group.
- *
- * Run after the beats have been measured, and again whenever a measurement
- * changes — the windows depend on the lengths, so a re-spoken line moves the
- * pictures around it. Mutates in place; beats with no span recorded (an older
- * script) are left exactly as they are.
- */
-export function layoutNarrationRibbon(
-  narration: MovieRecapNarrationSegment[],
-  pacing: ReturnType<typeof movieRecapPacing>,
-  cuts: number[]
-) {
-  // Grouped by RIBBON GROUP, falling back to the block for a script built before
-  // groups existed — that is what those scripts were laid out with, and relaying
-  // them on a wider span would move footage the user already approved.
-  const spanOf = (beat: MovieRecapNarrationSegment) =>
-    beat.groupIndex !== undefined && beat.groupStartS !== undefined && beat.groupEndS !== undefined
-      ? { index: beat.groupIndex, startS: beat.groupStartS, endS: beat.groupEndS }
-      : beat.blockIndex !== undefined && beat.blockStartS !== undefined && beat.blockEndS !== undefined
-        ? { index: beat.blockIndex, startS: beat.blockStartS, endS: beat.blockEndS }
-        : null;
-
-  const byGroup = new Map<number, { startS: number; endS: number; beats: MovieRecapNarrationSegment[] }>();
-  for (const beat of narration) {
-    const span = spanOf(beat);
-    if (!span) continue;
-    const open = byGroup.get(span.index);
-    if (open) open.beats.push(beat);
-    else byGroup.set(span.index, { startS: span.startS, endS: span.endS, beats: [beat] });
-  }
-
-  for (const { startS, endS, beats } of byGroup.values()) {
-    const { windows } = layoutBlockRibbon({
-      blockStartS: startS,
-      blockEndS: endS,
-      // An unmeasured beat falls back to the footage it already has, so one
-      // un-re-checked line cannot collapse the whole block's layout.
-      audioS: beats.map((beat) => beat.audioS ?? beatFootageS(beat)),
-      anchorS: beats.map((beat) => beat.blockStartS ?? startS),
-      cuts,
-    });
-    for (const [i, beat] of beats.entries()) {
-      beat.shots = splitSceneIntoShots(windows[i], pacing, cuts);
-    }
   }
 }
 

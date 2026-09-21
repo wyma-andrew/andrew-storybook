@@ -287,9 +287,6 @@ export function effectiveMovieRecapZoom(project: {
 // to the right group here, or it will read as "not started" while it runs.
 export const MOVIE_RECAP_RENDER_STEPS = [
   { id: "download", label: "Source", stages: ["downloading_source"] },
-  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "extracting_keyframes", "describing_scenes"] },
-  { id: "dialogue", label: "Dialogue", stages: ["reading_captions", "extracting_audio", "transcribing"] },
-  { id: "script", label: "Script", stages: ["writing_script"] },
   { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
   { id: "video", label: "Video", stages: ["rendering_segments", "concatenating", "applying_overlays"] },
   { id: "publish", label: "Publish", stages: ["uploading"] },
@@ -299,7 +296,6 @@ export const MOVIE_RECAP_RENDER_STEPS = [
 // the steps up to and including the narration it speaks in order to measure it.
 export const MOVIE_RECAP_SCRIPT_STEPS = [
   { id: "download", label: "Source", stages: ["downloading_source"] },
-  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "extracting_keyframes", "describing_scenes"] },
   { id: "script", label: "Script", stages: ["writing_script"] },
   { id: "narration", label: "Narration", stages: ["synthesizing_narration"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapRenderStage[] }[];
@@ -317,21 +313,15 @@ export const MOVIE_RECAP_TRANSCRIPT_STEPS = [
 // run — shown as skipped for the same reason a mock render's are.
 export const MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS = ["download", "dialogue"] as const;
 
-// Steps whose passes are parked. Only "Dialogue" now: the story is typed by
-// hand, so nothing transcribes the source or reads its captions.
-//
-// "Scenes" and "Script" came back on 2026-09-19. The story is still the user's,
-// but the render detects the film's own cuts and divides each block's passage
-// across them — see history/movie-recap.md. Shown struck through rather than
-// dropped from the bar: the stages still exist, and a bar that silently lost a
-// step hides that it is gone.
-export const MOVIE_RECAP_PARKED_STEPS = ["dialogue"] as const;
+// No parked work is displayed: the bars list only the independent audio and
+// full-source footage stages that still run.
+export const MOVIE_RECAP_PARKED_STEPS = [] as const;
 
 // A mock render produces its narration from canned text and never touches the
 // source's pictures, audio or any model, so these steps genuinely do not run.
 // They are shown as skipped rather than done — claiming a mock "transcribed the
 // dialogue" would be a lie told by a progress bar.
-export const MOVIE_RECAP_MOCK_SKIPPED_STEPS = ["download", "scenes", "dialogue", "script", "narration"] as const;
+export const MOVIE_RECAP_MOCK_SKIPPED_STEPS = ["download", "narration"] as const;
 
 // A held frame moves instead of sitting dead: the picture pushes in slowly, the
 // way a documentary treats a still. Applied ONLY to a shot whose slot outlasts
@@ -409,14 +399,34 @@ export function movieRecapBlurRadius(baseRadius: number, aspectRatio: MovieRecap
 // `movieRecapBlurRadius`.
 export const MOVIE_RECAP_BLUR = { radius: 12, passes: 2 } as const;
 
-export function movieRecapBlurCssPx(frameWidthPx: number, aspectRatio: MovieRecapAspectRatio) {
-  const { passes } = MOVIE_RECAP_BLUR;
+function movieRecapBoxBlurCssPx(
+  frameWidthPx: number,
+  aspectRatio: MovieRecapAspectRatio,
+  baseRadius: number,
+  passes: number
+) {
   const outputWidthPx = MOVIE_RECAP_TARGET_DIMENSIONS[aspectRatio][0];
-  // The preview converts from the radius the RENDER will actually use, not the
-  // reference one, or the two drift apart the moment a resolution changes.
-  const radius = movieRecapBlurRadius(MOVIE_RECAP_BLUR.radius, aspectRatio);
+  const radius = movieRecapBlurRadius(baseRadius, aspectRatio);
   const sigma = Math.sqrt((passes * ((2 * radius + 1) ** 2 - 1)) / 12);
   return outputWidthPx > 0 ? (sigma * frameWidthPx) / outputWidthPx : sigma;
+}
+
+export function movieRecapBlurCssPx(frameWidthPx: number, aspectRatio: MovieRecapAspectRatio) {
+  return movieRecapBoxBlurCssPx(
+    frameWidthPx,
+    aspectRatio,
+    MOVIE_RECAP_BLUR.radius,
+    MOVIE_RECAP_BLUR.passes
+  );
+}
+
+export function movieRecapBackfillBlurCssPx(frameWidthPx: number, aspectRatio: MovieRecapAspectRatio) {
+  return movieRecapBoxBlurCssPx(
+    frameWidthPx,
+    aspectRatio,
+    MOVIE_RECAP_LOOK.backfillBlurRadius,
+    MOVIE_RECAP_LOOK.backfillBlurPasses
+  );
 }
 
 // Logo geometry is shared by the CSS preview and the ffmpeg overlay so the two

@@ -5131,3 +5131,99 @@ The former 1.10x ceiling does not apply to this fit; the user explicitly allowed
 the calculated rate to exceed it. Frame-grid rounding for every beat is included
 when finding the minimum sufficient rate. A rate change rebuilds only the cached
 master WAV and timing manifest, never unchanged Azure speech clips.
+
+## 2026-09-21 (later) — narration and footage are separate render artifacts
+
+**Decision, by the user:** Review keeps the combined render player and adds a
+full-width narration audio player directly below it. Narration WAV and processed
+footage MP4 each have their own download action. Footage-only is rendered with
+the same transforms, captions, blur and logo as the combined video but without
+an audio stream; the combined output stream-copies those exact frames and muxes
+the narration, preventing visual drift between the two files.
+
+Artifact URLs and object keys are stored on the project so they survive reloads.
+Downloads use an authenticated project route and a short-lived R2 signed redirect
+with `Content-Disposition: attachment`; the app server does not proxy large
+media bodies. Existing renders gain these controls only after being rendered
+again. A silent timing diagnostic exposes its output as footage and has no audio
+artifact.
+
+## 2026-09-21 (later) — source replacement keeps the project and resets derived work
+
+**Decision, superseding the rejected source-swap part of 2026-09-19:** Add Source
+offers an explicit, confirmed replacement flow. The project id and user-owned
+configuration stay: output voice, aspect ratio, fit and zoom, caption styling,
+logo, and blur regions. The new file gets a fresh random R2 source key and a new
+multipart upload.
+
+Everything whose meaning came from the old movie is cleared before the new upload
+can be used: transcript and retelling, narrative beats and approval, narration WAV
+and beat-timing cache, analysis, combined/footage/audio render references, render
+progress, and the browser-local render history. Old source and derived R2 objects
+are deleted; logo objects are deliberately outside that cleanup. An active
+transcript, script, or render job blocks replacement until it is cancelled, so an
+old job cannot write its result into the newly reset project.
+
+**Why preserve settings:** replacing the source is correction inside the same
+project, not a request to recreate the user's presentation choices. Re-seeding
+framing from the replacement dimensions would silently discard deliberate edits.
+The confirmation names both sides of the boundary before the file picker opens.
+
+## 2026-09-21 (later) — contain preview uses the moving blurred backfill
+
+**Decision:** `contain` always draws a second synchronized copy of the source
+behind the fitted foreground video in the Customize preview, for both 9:16 and
+16:9. The background copy covers the frame, mirrors and receives the same colour
+adjustment as the foreground, and uses a CSS blur converted from the render's
+configured FFmpeg box-blur radius and pass count. Captions, logos, and editable
+blur regions remain separate DOM overlays and are therefore never mirrored or
+folded into the backfill.
+
+**Why:** the render already used moving blurred backfill whenever fit mode was
+`contain`, but the preview still showed black bars. That made the configuration
+preview disagree with the exported result and made a working render feature look
+missing. Ratio changes only the resolution-scaled blur radius; it never gates the
+feature.
+
+## 2026-09-21 (later) — render history tolerates older nullable timing fields
+
+**Decision:** every numeric cell in the browser-local render-history table uses
+one finite-number formatter and displays an em dash for `null`, missing, or
+non-finite values. Older records were written while some timing fields were
+nullable, despite the current TypeScript shape treating them as numbers; calling
+`toFixed()` directly on those persisted values crashed the whole Review panel.
+History is diagnostic data, so an unavailable measurement must degrade to an
+empty cell rather than prevent the current render from being viewed.
+
+## 2026-09-21 (later) — source reset follows the current transcript schema
+
+The first source-replacement reset still wrote `transcript_mm`, a legacy column
+that the `transcript_story` migration had already dropped. PostgREST rejected the
+entire update at schema validation, so the old project remained intact and the
+new multipart upload was aborted. The reset now clears only the current
+transcript fields; no compatibility write to a removed column is attempted.
+
+## 2026-09-21 (later) — Build Script prepares audio, not picture selection
+
+**Decision, superseding the scene-analysis script flow:** audio and full-source
+footage are independent, so Build Script no longer detects cuts, extracts
+keyframes, describes scenes, divides text across scenes, or plans selected and
+spare footage. One timestamped Transcript story block becomes one narration beat.
+The run synthesizes or reuses each beat, resolves one global narration rate,
+writes `narration.wav` and its beat timings, and inspects the source only for an
+embedded-letterbox crop needed by framing. The saved analysis now contains only
+that crop.
+
+**Source replacement is revised with the same boundary:** Transcript fields,
+raw narration beat caches, and all Customize Video settings remain. The narrative
+script, crop analysis, render artifacts, and browser render history are cleared.
+This accepts that retained timestamps may not describe a substantially different
+replacement file; the user can edit the retained Transcript before rebuilding.
+
+## 2026-09-21 (later) — beat draft state reports after render
+
+`MovieRecapScript` no longer calls its parent `onDirtyChange` callback while the
+child is rendering. Draft-count reporting now runs in an effect and resets on
+unmount. The former render-time callback updated `MovieRecapEditor` during a
+`MovieRecapScript` render, which React rejects and which surfaced when rebuilding
+a beat changed the saved script beneath the editor.

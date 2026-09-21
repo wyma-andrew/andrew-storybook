@@ -11,6 +11,10 @@ import {
   type MovieRecapRenderHistoryEntry,
 } from "@/lib/movie-recap-render-history";
 
+function fixed(value: unknown, suffix = "") {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : "—";
+}
+
 /**
  * What every generation actually cut, newest first, kept in this browser only.
  *
@@ -93,7 +97,8 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
           <tbody>
             {entries.map((entry) => {
               const open = openId === entry.id;
-              const avgS = entry.shots.length ? entry.durationS / entry.shots.length : 0;
+              const shotCount = Array.isArray(entry.shots) ? entry.shots.length : 0;
+              const avgS = shotCount && Number.isFinite(entry.durationS) ? entry.durationS / shotCount : null;
               return (
                 <ExpandableRow
                   key={entry.id}
@@ -122,10 +127,12 @@ function ExpandableRow({
 }: {
   entry: MovieRecapRenderHistoryEntry;
   open: boolean;
-  avgS: number;
+  avgS: number | null;
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const shots = Array.isArray(entry.shots) ? entry.shots : [];
+  const padS = typeof entry.padS === "number" && Number.isFinite(entry.padS) ? entry.padS : null;
   return (
     <>
       <tr className="border-b border-line last:border-0">
@@ -141,17 +148,17 @@ function ExpandableRow({
             <span className="ml-2 rounded bg-chip px-1.5 py-0.5 text-xs text-fg-3">silent timing test</span>
           )}
         </td>
-        <td className="px-3 py-2 text-right tabular-nums text-fg">{entry.durationS.toFixed(2)}s</td>
+        <td className="px-3 py-2 text-right tabular-nums text-fg">{fixed(entry.durationS, "s")}</td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">
-          {entry.shots.length}
-          <span className="text-fg-3"> / {entry.beats} beats</span>
+          {shots.length}
+          <span className="text-fg-3"> / {typeof entry.beats === "number" && Number.isFinite(entry.beats) ? entry.beats : "—"} beats</span>
         </td>
-        <td className="px-3 py-2 text-right tabular-nums text-fg">{avgS.toFixed(2)}s</td>
+        <td className="px-3 py-2 text-right tabular-nums text-fg">{fixed(avgS, "s")}</td>
         <td className="px-3 py-2 text-right tabular-nums text-fg-3">
-          {entry.shots[0] ? `${entry.shots[0].speed.toFixed(2)}x` : "—"} / {entry.narrationRate ? `${entry.narrationRate.toFixed(2)}x` : "—"}
+          {fixed(shots[0]?.speed, "x")} / {fixed(entry.narrationRate, "x")}
         </td>
-        <td className={`px-3 py-2 text-right tabular-nums ${entry.padS > 0.1 ? "text-danger" : "text-ok"}`}>
-          {entry.padS.toFixed(2)}s
+        <td className={`px-3 py-2 text-right tabular-nums ${padS === null ? "text-fg-3" : padS > 0.1 ? "text-danger" : "text-ok"}`}>
+          {fixed(padS, "s")}
         </td>
         <td className="px-2 py-2">
           <Button aria-label="Delete record" onClick={onDelete}>
@@ -175,24 +182,24 @@ function ExpandableRow({
                 </tr>
               </thead>
               <tbody>
-                {entry.shots.map((shot) => (
+                {shots.map((shot) => (
                   <tr key={`${shot.beat}-${shot.shot}`} className="border-t border-line-2">
                     <td className="px-2 py-1 text-fg-2">
                       {shot.beat}.{shot.shot}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-fg">{shot.slotS.toFixed(2)}s</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-fg">{fixed(shot.slotS, "s")}</td>
                     <td className="px-2 py-1 text-right tabular-nums text-fg-2">
-                      {shot.sourceStartS.toFixed(2)}–{shot.sourceEndS.toFixed(2)}s
+                      {fixed(shot.sourceStartS)}–{fixed(shot.sourceEndS, "s")}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-fg-2">{shot.sourceS.toFixed(2)}s</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-fg-2">{fixed(shot.sourceS, "s")}</td>
                     <td className={`px-2 py-1 text-right tabular-nums ${shot.padS > 0.05 ? "text-danger" : "text-fg-3"}`}>
-                      {shot.padS.toFixed(2)}s
+                      {fixed(shot.padS, "s")}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-fg-3">
-                      {shot.speed === null ? "—" : `${shot.speed.toFixed(2)}x`}
+                      {fixed(shot.speed, "x")}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-fg-3">
-                      {shot.skipS === null ? "—" : `${shot.skipS.toFixed(2)}s`}
+                      {fixed(shot.skipS, "s")}
                     </td>
                   </tr>
                 ))}

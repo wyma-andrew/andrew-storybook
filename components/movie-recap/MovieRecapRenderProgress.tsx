@@ -38,8 +38,6 @@ function StepIcon({ state, index }: { state: MovieRecapStepState; index: number 
 // What the counted stages are counting. A stage missing from here reports no
 // bar rather than an unlabelled one — a number with no noun is worse than none.
 const COUNTED: Partial<Record<NonNullable<MovieRecapProject["renderStage"]>, string>> = {
-  extracting_keyframes: "Keyframes taken",
-  describing_scenes: "Scenes described",
   writing_script: "Blocks divided",
   synthesizing_narration: "Narration beats spoken",
   rendering_segments: "Beats cut",

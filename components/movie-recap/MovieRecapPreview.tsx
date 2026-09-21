@@ -8,6 +8,7 @@ import {
   MOVIE_RECAP_LOOK,
   MOVIE_RECAP_LOGO_BOX,
   MOVIE_RECAP_SUBTITLE_SAMPLE,
+  movieRecapBackfillBlurCssPx,
   movieRecapBlurCssPx,
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect, formatDuration } from "@/lib/movie-recap";
@@ -62,6 +63,7 @@ export function MovieRecapPreview({
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentS, setCurrentS] = useState(0);
   const [durationS, setDurationS] = useState(0);
@@ -70,6 +72,9 @@ export function MovieRecapPreview({
   // The export blurs in output pixels; the preview frame is drawn a few hundred
   // pixels wide, so the same radius here would blur far harder than the render.
   const blurPx = movieRecapBlurCssPx(frameWidth, project.aspectRatio);
+  const backfillBlurPx = movieRecapBackfillBlurCssPx(frameWidth, project.aspectRatio);
+  const mirrored = MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio);
+  const colorFilter = `contrast(${MOVIE_RECAP_LOOK.contrast}) saturate(${MOVIE_RECAP_LOOK.saturation})`;
   const dragRef = useRef<
     { pointerId: number; clientX: number; clientY: number; x: number; y: number; index: number } | null
   >(null);
@@ -123,34 +128,69 @@ export function MovieRecapPreview({
               // framing — and stopped matching the moment the render's order
               // changed. Both are in history/movie-recap.md; the render is the
               // output, so the preview follows it.
-              <video
-                src={videoUrl}
-                className={`h-full w-full ${project.fitMode === "contain" ? "object-contain bg-black" : "object-cover"}`}
-                style={{
-                  transform: [
-                    previewZoom && previewZoom !== 1 ? `scale(${previewZoom})` : "",
-                    // Read from the same constant the render reads. This was a
-                    // hardcoded `=== "16:9"` and would have gone on showing an
-                    // unmirrored portrait preview against a mirrored export.
-                    MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio) ? "scaleX(-1)" : "",
-                  ].filter(Boolean).join(" ") || undefined,
-                  // Same numbers the ffmpeg `eq` gets, read from the constant so
-                  // the two cannot drift. Gamma is deliberately absent: CSS has no
-                  // gamma filter, so the preview is slightly lighter than the
-                  // export at gamma 0.98.
-                  filter: `contrast(${MOVIE_RECAP_LOOK.contrast}) saturate(${MOVIE_RECAP_LOOK.saturation})`,
-                }}
-                preload="metadata"
-                ref={videoRef}
-                playsInline
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
-                onEnded={() => setPlaying(false)}
-                onLoadedMetadata={(event) => setDurationS(event.currentTarget.duration)}
-                onTimeUpdate={(event) => {
-                  if (!scrubbingRef.current) setCurrentS(event.currentTarget.currentTime);
-                }}
-              />
+              <>
+                {project.fitMode === "contain" && (
+                  <video
+                    ref={backgroundVideoRef}
+                    src={videoUrl}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover"
+                    style={{
+                      transform: `scale(1.1)${mirrored ? " scaleX(-1)" : ""}`,
+                      filter: `blur(${backfillBlurPx.toFixed(2)}px) ${colorFilter}`,
+                    }}
+                    preload="metadata"
+                    playsInline
+                    muted
+                  />
+                )}
+                <video
+                  src={videoUrl}
+                  className={`relative z-10 h-full w-full ${project.fitMode === "contain" ? "object-contain" : "object-cover"}`}
+                  style={{
+                    transform: [
+                      previewZoom && previewZoom !== 1 ? `scale(${previewZoom})` : "",
+                      // Read from the same constant the render reads. This was a
+                      // hardcoded `=== "16:9"` and would have gone on showing an
+                      // unmirrored portrait preview against a mirrored export.
+                      mirrored ? "scaleX(-1)" : "",
+                    ].filter(Boolean).join(" ") || undefined,
+                    // Same numbers the ffmpeg `eq` gets, read from the constant so
+                    // the two cannot drift. Gamma is deliberately absent: CSS has no
+                    // gamma filter, so the preview is slightly lighter than the
+                    // export at gamma 0.98.
+                    filter: colorFilter,
+                  }}
+                  preload="metadata"
+                  ref={videoRef}
+                  playsInline
+                  onPlay={(event) => {
+                    setPlaying(true);
+                    const background = backgroundVideoRef.current;
+                    if (!background) return;
+                    background.currentTime = event.currentTarget.currentTime;
+                    void background.play().catch(() => undefined);
+                  }}
+                  onPause={() => {
+                    setPlaying(false);
+                    backgroundVideoRef.current?.pause();
+                  }}
+                  onEnded={() => {
+                    setPlaying(false);
+                    backgroundVideoRef.current?.pause();
+                  }}
+                  onLoadedMetadata={(event) => setDurationS(event.currentTarget.duration)}
+                  onSeeking={(event) => {
+                    if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = event.currentTarget.currentTime;
+                  }}
+                  onTimeUpdate={(event) => {
+                    const time = event.currentTarget.currentTime;
+                    if (!scrubbingRef.current) setCurrentS(time);
+                    const background = backgroundVideoRef.current;
+                    if (background && Math.abs(background.currentTime - time) > 0.08) background.currentTime = time;
+                  }}
+                />
+              </>
             ) : (
               <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
             )}
@@ -249,6 +289,7 @@ export function MovieRecapPreview({
                   const next = Number(event.target.value);
                   setCurrentS(next);
                   if (videoRef.current) videoRef.current.currentTime = next;
+                  if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = next;
                 }}
                 className="w-full accent-accent"
               />
