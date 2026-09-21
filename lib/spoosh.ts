@@ -169,7 +169,7 @@ export type ApiSchema = {
     // localStorage. Null when the render failed.
     POST: {
       data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null };
-      body: { mock?: boolean; silentTiming?: boolean };
+      body: { mock?: boolean };
     };
   };
   "movie-recaps/:id/render/cancel": {

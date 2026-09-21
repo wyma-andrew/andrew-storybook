@@ -1,7 +1,5 @@
 "use client";
 
-import { Download } from "lucide-react";
-import { LinkButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
 
 // Subtitles are burned into the rendered file by libass, so the player draws
@@ -28,36 +26,6 @@ export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject
         />
       </div>
 
-      {(project.renderAudioUrl || project.renderFootageUrl) && (
-        <div className="space-y-3 rounded-lg border border-line-2 bg-panel p-4">
-          {project.renderAudioUrl && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-medium text-fg">Narration audio</span>
-                <LinkButton
-                  href={`/api/movie-recaps/${project.id}/render/download?asset=audio`}
-                  className="inline-flex items-center gap-2"
-                >
-                  <Download className="size-4" /> Download audio
-                </LinkButton>
-              </div>
-              <audio controls preload="metadata" src={project.renderAudioUrl} className="w-full" />
-            </div>
-          )}
-
-          {project.renderFootageUrl && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-              <span className="text-sm text-fg-2">Processed footage without narration</span>
-              <LinkButton
-                href={`/api/movie-recaps/${project.id}/render/download?asset=footage`}
-                className="inline-flex items-center gap-2"
-              >
-                <Download className="size-4" /> Download footage
-              </LinkButton>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

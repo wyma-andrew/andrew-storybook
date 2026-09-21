@@ -119,9 +119,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
-  const { trigger: renderSilentTiming, loading: renderingSilentTiming } = useWrite((api) =>
-    api("movie-recaps/:id/render").POST()
-  );
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
   const { trigger: rebuildBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
@@ -330,24 +327,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
   }
 
-  async function renderSilentTimingTest() {
-    if (!project) return;
-    merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
-    const result = await renderSilentTiming({ params: { id: project.id }, body: { silentTiming: true } });
-    if (result.error || !result.data) {
-      toast.error(result.error?.error ?? "Could not render the silent timing test.");
-      return;
-    }
-    setProject(result.data);
-    if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
-    if (result.data.renderStatus === "done") {
-      const durationS = result.data.renderLog?.durationS ?? project.sourceDurationSeconds;
-      toast.success(`Silent timing test rendered at ${durationS.toFixed(2)}s with no audio.`);
-    } else if (result.data.renderStatus === "failed") {
-      toast.error(result.data.renderError ?? "Silent timing test failed.");
-    }
-  }
-
   async function cancelRecapRender() {
     if (!project) return;
     const result = await cancelRender({ params: { id: project.id } });
@@ -526,7 +505,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           {step === 4 && project && (
             <div>
               <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project, choose its narration, and preview how framing and overlays will be applied.</p>
-<div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Project</div>
               <Field label="Project name"><Input value={project.name} onChange={(event) => merge({ name: event.target.value })} maxLength={200} /></Field>
               <Field label="Output language"><Select value={project.outputLanguage} onChange={(value) => merge({ outputLanguage: value })}>{MOVIE_RECAP_LANGUAGES.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></Field>
               <div className="mb-6"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Voice profile</div>
@@ -723,8 +701,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               project={project}
               onRenderPreview={renderRecapPreview}
               rendering={rendering}
-              onRenderSilentTiming={renderSilentTimingTest}
-              renderingSilentTiming={renderingSilentTiming}
               onCancelRender={cancelRecapRender}
               cancelling={cancelling}
             />
@@ -768,32 +744,16 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
   });
 }
 
-function confirmSilentTimingTest(project: MovieRecapProject, run: () => void) {
-  ConfirmDialog.show({
-    title: "Render Silent Timing Test",
-    content: project.renderStatus === "done"
-      ? "This replaces the current preview with a no-audio timing test of the complete original source. It does not use the narration script."
-      : "This renders the complete original source with 3 seconds kept, 1 second skipped, and fixed 0.75x video speed. The result has no audio.",
-    confirmButtonLabel: "Render test",
-    cancelButtonLabel: "Cancel",
-    onConfirm: () => { run(); },
-  });
-}
-
 function Review({
   project,
   onRenderPreview,
   rendering,
-  onRenderSilentTiming,
-  renderingSilentTiming,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
-  onRenderSilentTiming: () => void;
-  renderingSilentTiming: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
 }) {
@@ -836,9 +796,6 @@ function Review({
       <p className="mb-4 text-xs text-fg-2">
         <span className="font-medium text-fg">Mock</span> uses canned text and the shared timing planner over the source — no TTS or API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">Preview</span> uses the saved narration.wav and the same planner used by the final render. Mock stays silent. Styled subtitles are burned after mirroring, so captions and logos remain readable.
       </p>
-      <p className="mb-4 text-xs text-fg-2">
-        <span className="font-medium text-fg">Silent timing test</span> processes the complete original source with 3 seconds kept, 1 second skipped, and fixed 0.75x video speed. It has no audio and is trimmed to the original source duration.
-      </p>
       {/* The stepper replaces watching one line of text change for minutes.
           It is hidden while idle, where seven grey dots would say nothing the
           "Not rendered yet" label does not already say. */}
@@ -851,13 +808,6 @@ function Review({
       <div className="flex flex-wrap items-center gap-3">
         <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
         <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !project.renderScript?.length} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Preview</LoadingButton>
-        <LoadingButton
-          loading={renderingSilentTiming}
-          disabled={project.renderStatus === "running"}
-          onClick={() => confirmSilentTimingTest(project, onRenderSilentTiming)}
-        >
-          Render Silent Timing Test
-        </LoadingButton>
         {!project.renderScript?.length && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
         {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
       </div>

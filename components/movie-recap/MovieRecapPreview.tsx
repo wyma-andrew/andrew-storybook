@@ -106,8 +106,7 @@ export function MovieRecapPreview({
 
   return (
     <div>
-      <div className="mb-2 text-sm font-medium">Uploaded Video</div>
-      <div className="flex min-h-[520px] flex-col items-center justify-center gap-3 rounded-xl border border-line bg-sunken p-5">
+      <div className="flex min-h-[520px] flex-col items-center justify-start gap-3 rounded-xl border border-line bg-sunken p-5">
         <div className={project.aspectRatio === "9:16" ? "w-auto" : "w-full max-w-[620px]"}>
           <div
             ref={frameRef}

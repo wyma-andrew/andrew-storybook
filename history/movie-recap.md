@@ -7,6 +7,30 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 migrations.
 
+## 2026-09-22 — Preview omits the redundant uploaded-video label
+
+**Decision:** the Movie Recap customization preview starts directly with the
+video frame; it does not render an `Uploaded Video` heading.
+
+**Why:** the preview's surrounding step UI already identifies the content, so
+the extra label added vertical spacing without adding useful information.
+
+## 2026-09-22 — Preview content is top-aligned
+
+**Decision:** the Movie Recap customization preview content is aligned to the
+top of its minimum-height container.
+
+**Why:** the preview should begin near the step controls instead of vertically
+centering the video and leaving an unnecessary empty area above it.
+
+## 2026-09-22 — Customize form omits the redundant project heading
+
+**Decision:** remove the standalone `Project` heading above the project-name
+field in the Customize Video form.
+
+**Why:** the form field label already identifies the project setting, so the
+extra heading adds visual noise without clarifying the control group.
+
 ## 2026-09-14 — Phase one is a resumable configuration project, not a render job (SUPERSEDED 2026-09-18 — the Generate button is removed; phase two shipped)
 
 **Decision:** Movie Recap starts with a project dashboard and a persisted
@@ -5352,3 +5376,53 @@ An encode boundary may still return one frame fewer than requested (measured:
 allows the overlay pass to clone exactly that many final frames before emitting
 the target frame count; the same-size excess is trimmed by the frame cap. A
 larger difference still fails, so this repair cannot conceal a missing beat.
+
+## 2026-09-22 — Transcript step links to an external transcript helper
+
+**Decision:** show `youtube-transcript.io` as a prominent, standalone primary
+button in the Transcript step. It opens in a new tab and does not send project
+data or change the saved transcript flow; users still paste the result into the
+existing fields themselves.
+
+The same row also has an `Import` button. Its modal accepts a downloaded plain
+text transcript, removes standalone timestamp-only lines and blank lines, then
+puts the remaining timestamp-plus-text lines into the editable Source transcript
+field. Import is local browser parsing; it does not upload the file or change
+the saved project until the Transcript step is saved. The modal's file area also
+accepts drag-and-drop and shows a highlighted drop state while a file is dragged
+over it; the entire area is also clickable, so no separate file-picker button is
+needed.
+
+The Source transcript editor stays open rather than being collapsible and has a
+copy button for the Burmese movie-recap translation prompt. It copies the fixed
+style/timestamp instructions with the current source transcript inserted under
+`SOURCE TEXT`, so the prompt can be pasted directly into an external translation
+tool without changing the stored transcript.
+
+When text is pasted into the Burmese story textarea, inline timestamps such as
+`00:00 ... 00:03 ...` are automatically split onto separate lines. Existing
+line breaks and the rest of the pasted text are preserved, and the formatted
+text is inserted at the current cursor selection.
+
+The copied prompt also instructs the translator to use Burmese phonetic spelling
+for spoken English acronyms/names when useful (`CIA` → `စီအိုင်အေ`, `Blackbird` →
+`ဘလက်ဘဒ်`) and natural spoken forms for quantities (`80,000 feet` → `ပေ
+၈သောင်း`). These rules explicitly exclude timestamps and identifiers whose exact
+numeric form carries meaning.
+
+## 2026-09-22 — Review keeps only the combined render
+
+**Decision:** remove the Review step's `Render Silent Timing Test` and the
+separate narration-audio and processed-footage download controls. Review now
+offers the normal mock/real render actions and plays the combined rendered MP4;
+the individual artifacts remain internal render implementation details and are
+not exposed as user downloads.
+
+**Why:** the silent diagnostic and split asset downloads are no longer part of
+the chosen workflow. Keeping them visible suggested alternate outputs that the
+user no longer wants to manage.
+
+The earlier prompt rule that removed an adjacent duplicate standalone timestamp
+is superseded. The prompt now requires strict one-to-one timestamp preservation,
+line-by-line alignment, a line break before every timestamp, and narration text
+immediately after every timestamp.

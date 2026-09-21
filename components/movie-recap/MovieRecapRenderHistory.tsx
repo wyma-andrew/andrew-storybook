@@ -144,9 +144,6 @@ function ExpandableRow({
         <td className="px-3 py-2 text-fg">
           {new Date(entry.createdAt).toLocaleString()}
           {entry.mock && <span className="ml-2 rounded bg-chip px-1.5 py-0.5 text-xs text-fg-3">mock</span>}
-          {entry.timingTest && (
-            <span className="ml-2 rounded bg-chip px-1.5 py-0.5 text-xs text-fg-3">silent timing test</span>
-          )}
         </td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">{fixed(entry.durationS, "s")}</td>
         <td className="px-3 py-2 text-right tabular-nums text-fg">

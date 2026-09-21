@@ -9,8 +9,7 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json().catch(() => null);
-  const silentTiming = body?.silentTiming === true;
-  const mock = body?.mock === true && !silentTiming;
+  const mock = body?.mock === true;
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -21,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   // A real render needs the measured narration and the source crop prepared by
   // the script run. Audio and full-source footage are rendered independently.
-  if (!mock && !silentTiming) {
+  if (!mock) {
     if (!(project.renderScript?.length && project.renderAnalysisKey)) {
       return NextResponse.json({ error: "Build the script first — there is nothing to render." }, { status: 400 });
     }
@@ -48,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
   // its own status/result onto the row rather than throwing.
-  const renderLog = await runMovieRecapRender(db, project, { mock, silentTiming });
+  const renderLog = await runMovieRecapRender(db, project, { mock });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });
