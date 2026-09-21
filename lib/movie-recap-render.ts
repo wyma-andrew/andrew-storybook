@@ -8,6 +8,7 @@ import {
   narrationClip,
   narrationPlaybackRateForDuration,
   probeDurationS,
+  probeVideoFrameCount,
 } from "./movie-recap-narration";
 import { estimateSpokenSeconds, MIN_SEGMENT_S } from "./movie-recap-speech";
 import { getObjectText, movieRecapObjectKey, publicUrlFor, putObject } from "./r2";
@@ -15,11 +16,11 @@ import { trimFailureMessage } from "./movie-recap";
 import { buildShotFilter, holdMotionFilter, shotFilterContext } from "./movie-recap-transform";
 import {
   planMovieRecapBeatTimeline,
-  retainedMovieRecapTimeline,
   resolveMovieRecapTimelineRates,
   type MovieRecapTimelineClip,
   type SourceWindow,
 } from "./movie-recap-shots";
+import { buildMovieRecapSceneTimingPlan } from "./movie-recap-scene-plan";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
@@ -34,6 +35,7 @@ import {
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_TARGET_FPS,
+  MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
@@ -183,20 +185,14 @@ function timeCaptionChunks(chunks: string[], segmentS: number, maxSegment: numbe
 // both are fixed positions/regions for the entire recap, so a single final
 // pass is equivalent to per-segment and far simpler.
 //
-// `tailPadS` holds the last frame for that many seconds. It exists because the
-// concatenated picture comes out slightly SHORTER than the beats it was built
-// from (see probeDurationS), while the narration track is padded to those beats
-// exactly — so without it `-shortest` below cuts the audio, and the loss lands
-// on the final words of the last beat. Padding goes on first so the held frame
-// gets the same blur and logo as the rest.
-function buildOverlayFilter(project: MovieRecapProject, assPath: string | null, tailPadS = 0) {
+function buildOverlayFilter(project: MovieRecapProject, assPath: string | null, repairFrames = 0) {
   const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
-  const parts: string[] = [];
-  let label = "0:v";
+  const parts: string[] = [`[0:v]settb=1/${MOVIE_RECAP_TARGET_FPS},setpts=N[timeline]`];
+  let label = "timeline";
 
-  if (tailPadS > 0) {
-    parts.push(`[${label}]tpad=stop_mode=clone:stop_duration=${tailPadS.toFixed(3)}[padded]`);
-    label = "padded";
+  if (repairFrames > 0) {
+    parts.push(`[${label}]tpad=stop_mode=clone:stop=${repairFrames}[repaired]`);
+    label = "repaired";
   }
 
   // One split/crop/overlay per region, chained. Each is independent — they may
@@ -687,10 +683,9 @@ export async function runMovieRecapRender(
       );
     }
 
-    // Audio and picture keep independent durations. A real render processes the
-    // complete source with the configured cadence and trims only the cadence's
-    // partial final cycle back to the source's own duration. A mock still needs
-    // an estimated duration because it has no narration track of its own.
+    // Narration remains the master timeline. Real footage is planned per beat:
+    // excess picture trims at that beat's end and a short beat holds its own
+    // final frame, never borrowing from another beat.
     const sourceForClips = mock ? project.sourceUrl! : path.join(workDir, "source.mp4");
     // Framing and the copyright-free transform both live in
     // lib/movie-recap-transform.ts; the same chain is used for every shot.
@@ -711,24 +706,49 @@ export async function runMovieRecapRender(
     const shotLog: MovieRecapRenderShot[] = [];
     let lastSourceEndS: number | null = null;
     let cursor = 0;
+    let videoFrameCursor = 0;
+    let plannedVideoDurationS: number | null = null;
 
-    const clipsByBeat: MovieRecapTimelineClip[][] | null = mock
-      ? null
-      : narration.map((_, index) => index === 0
-          ? retainedMovieRecapTimeline(
-              [{ sourceStartS: 0, sourceEndS: sourceDurationS }],
-              videoSpeed,
-              sourceDurationS
-            )
-          : []);
+    const sceneForBeat = new Map<number, {
+      firstIndex: number;
+      startS: number;
+      endS: number;
+      targetS: number;
+      videoSpeed: number;
+      clips: MovieRecapTimelineClip[];
+    }>();
+    if (!mock) {
+      const scenePlan = buildMovieRecapSceneTimingPlan({
+        narration: narration.map((segment, index) => ({
+          ...segment,
+          audioS: narrationTimings[index]?.durationS ?? segment.audioS,
+        })),
+        videoSpeed,
+        targetFps: MOVIE_RECAP_TARGET_FPS,
+      });
+      plannedVideoDurationS = scenePlan.finalS;
+      for (const group of scenePlan.groups) {
+        const renderGroup = {
+          firstIndex: group.firstBeatIndex,
+          startS: group.sourceStartS,
+          endS: group.sourceEndS,
+          targetS: group.targetS,
+          videoSpeed: group.videoSpeed,
+          clips: group.clips,
+        };
+        for (const beatIndex of group.beatIndices) sceneForBeat.set(beatIndex, renderGroup);
+      }
+    }
 
     for (const [i, segment] of narration.entries()) {
       if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
       const chunks = mock ? [segment.text] : splitIntoCaptionChunks(segment.text);
       const estimatedS = estimateSpokenSeconds(segment.text);
+      const scene = sceneForBeat.get(i);
+      const firstSceneBeat = !scene || scene.firstIndex === i;
       const targetS = mock
         ? timeCaptionChunks(chunks, estimatedS, pacing.maxSegmentS).segmentS
-        : narrationTimings[i]?.durationS ?? estimatedS;
+        : scene?.targetS ?? narrationTimings[i]?.durationS ?? estimatedS;
       const adjustedTargetS = mock
         ? targetS * (MOVIE_RECAP_NARRATION_PLAYBACK_RATE / narrationRate)
         : targetS;
@@ -739,7 +759,7 @@ export async function runMovieRecapRender(
             targetS: adjustedTargetS,
             playbackSpeed: videoSpeed,
           }).clips
-        : clipsByBeat?.[i] ?? [];
+        : firstSceneBeat ? scene?.clips ?? [] : [];
       if (mock && !shots.length) throw new Error(`Narration beat ${i + 1} has no footage to render.`);
       let slots = shots.map((shot) => shot.slotS);
 
@@ -754,12 +774,34 @@ export async function runMovieRecapRender(
           return slot;
         });
       }
+      if (!mock && scene && shots.length) {
+        const naturalS = slots.reduce((total, value) => total + value, 0);
+        if (scene.targetS > naturalS) slots[slots.length - 1] += scene.targetS - naturalS;
+        else {
+          let remaining = scene.targetS;
+          slots = slots.map((value) => {
+            const slot = Math.max(0, Math.min(value, remaining));
+            remaining -= slot;
+            return slot;
+          });
+        }
+        // Allocate one global frame grid across all scene slots. Rounding each
+        // encoded segment independently lets half-frame errors accumulate at
+        // concat time, which is the visible long-run drift this plan avoids.
+        slots = slots.map((value) => {
+          const endFrame = Math.round((videoFrameCursor + value) * MOVIE_RECAP_TARGET_FPS);
+          const slot = Math.max(0, endFrame / MOVIE_RECAP_TARGET_FPS - videoFrameCursor);
+          videoFrameCursor += slot;
+          return slot;
+        });
+      }
       const shotCount = shots.length;
-      const beatS = slots.reduce((total, value) => total + value, 0);
-      const heldS = mock ? shots.reduce(
-        (total, shot, index) => total + Math.max(0, slots[index] - sourceLengthOf(shot) / videoSpeed),
+      const beatVideoSpeed = mock ? videoSpeed : scene?.videoSpeed ?? videoSpeed;
+      const beatS = mock ? slots.reduce((total, value) => total + value, 0) : (firstSceneBeat ? targetS : narrationTimings[i]?.durationS ?? estimatedS);
+      const heldS = shots.reduce(
+        (total, shot, index) => total + Math.max(0, slots[index] - sourceLengthOf(shot) / beatVideoSpeed),
         0
-      ) : 0;
+      );
       if (heldS > 0.1) {
         console.warn(
           `[MovieRecapRender] project=${project.id} beat=${i + 1} ${heldS.toFixed(2)}s has no footage behind it — ` +
@@ -773,6 +815,7 @@ export async function runMovieRecapRender(
 
       for (const [shotIndex, shot] of shots.entries()) {
         const slotS = slots[shotIndex];
+        if (!(slotS > 1 / MOVIE_RECAP_TARGET_FPS)) break;
         const sourceDurationS = sourceLengthOf(shot);
         const ratio = slotS / sourceDurationS;
 
@@ -784,12 +827,12 @@ export async function runMovieRecapRender(
 
         const segPath = path.join(workDir, `seg-${i}-${shotIndex}.mp4`);
 
-        // TWO branches, and `setpts` is in both: the playback speed is global,
+        // Both branches use the resolved speed for this beat so its clips stay consistent,
         // so the only question is whether the scene is long enough to fill the
         // slot at that speed.
-        const usedS = mock ? Math.min(sourceDurationS, slotS * videoSpeed) : sourceDurationS;
-        const padS = mock ? Math.max(0, slotS - usedS / videoSpeed) : 0;
-        const slow = `setpts=PTS/${videoSpeed}`;
+        const usedS = Math.min(sourceDurationS, slotS * beatVideoSpeed);
+        const padS = Math.max(0, slotS - usedS / beatVideoSpeed);
+        const slow = `setpts=PTS/${beatVideoSpeed}`;
         const filters =
           padS > 0
             ? // Freeze-pad: the scene runs out before its slot does, so hold the
@@ -799,6 +842,7 @@ export async function runMovieRecapRender(
                 vf,
                 slow,
                 `tpad=stop_mode=clone:stop_duration=${padS.toFixed(3)}`,
+                `fps=${MOVIE_RECAP_TARGET_FPS}`,
                 holdMotionFilter({ aspectRatio: project.aspectRatio, slotS, fps: MOVIE_RECAP_TARGET_FPS })
               )
             : // Trim: the scene has footage to spare, so only `slot * speed` of
@@ -820,7 +864,8 @@ export async function runMovieRecapRender(
         await run(
           FFMPEG,
           ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", usedS.toFixed(3), "-i", sourceForClips, "-an",
-           "-vf", filters, "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
+           "-vf", filters, "-frames:v", String(Math.max(1, Math.round(slotS * MOVIE_RECAP_TARGET_FPS))),
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
           signal
         );
         segmentPaths.push(segPath);
@@ -832,12 +877,12 @@ export async function runMovieRecapRender(
           sourceEndS: round2(shot.sourceStartS + usedS),
           sourceS: round2(usedS),
           padS: round2(padS),
-          speed: videoSpeed,
+          speed: beatVideoSpeed,
           skipS: lastSourceEndS === null ? null : round2(shot.sourceStartS - lastSourceEndS),
         });
         lastSourceEndS = shot.sourceStartS + usedS;
       }
-      beatDurations.push(beatS);
+      beatDurations.push(mock || firstSceneBeat ? beatS : 0);
 
       await setProgress(db, project.id, "rendering_segments", i + 1, narration.length);
 
@@ -870,6 +915,27 @@ export async function runMovieRecapRender(
     await writeFile(listPath, segmentPaths.map((p) => `file '${p}'`).join("\n"));
     const concatPath = path.join(workDir, "concat.mp4");
     await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatPath], signal);
+    let timelineRepairFrames = 0;
+    if (plannedVideoDurationS !== null) {
+      const expectedFrames = Math.round(plannedVideoDurationS * MOVIE_RECAP_TARGET_FPS);
+      const concatFrames = await probeVideoFrameCount(concatPath, signal);
+      const frameDifference = concatFrames === null ? null : expectedFrames - concatFrames;
+      if (frameDifference === null || Math.abs(frameDifference) > MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT) {
+        const concatDurationS = await probeDurationS(concatPath, signal);
+        const segmentDurations = await Promise.all(segmentPaths.map((segmentPath) => probeDurationS(segmentPath, signal)));
+        const encodedSegmentsS = segmentDurations.reduce<number>((total, durationS) => total + (durationS ?? 0), 0);
+        const segmentSummary = shotLog
+          .map((shot, index) => `b${shot.beat}.${shot.shot} ${shot.slotS.toFixed(3)}>${segmentDurations[index]?.toFixed(3) ?? "?"}`)
+          .join(", ");
+        throw new Error(
+          `Video timeline ended at ${concatDurationS?.toFixed(3) ?? "unknown"}s; ` +
+            `narration requires ${plannedVideoDurationS.toFixed(3)}s ` +
+            `(${concatFrames ?? "unknown"}/${expectedFrames} frames; ` +
+            `${segmentPaths.length} encoded segments total ${encodedSegmentsS.toFixed(3)}s). ${segmentSummary}`
+        );
+      }
+      timelineRepairFrames = Math.max(0, frameDifference);
+    }
 
     // Burn captions/logo into the footage-only artifact first. The combined
     // output then stream-copies these exact video frames and adds narration, so
@@ -884,8 +950,11 @@ export async function runMovieRecapRender(
       await run(
         FFMPEG,
         [
-          "-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath),
+          "-y", ...inputs, "-filter_complex", buildOverlayFilter(project, assPath, timelineRepairFrames),
           "-map", "[vout]", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+          ...(plannedVideoDurationS === null
+            ? []
+            : ["-frames:v", String(Math.round(plannedVideoDurationS * MOVIE_RECAP_TARGET_FPS))]),
           "-movflags", "+faststart", footagePath,
         ],
         signal

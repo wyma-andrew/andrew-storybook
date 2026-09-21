@@ -5220,6 +5220,23 @@ script, crop analysis, render artifacts, and browser render history are cleared.
 This accepts that retained timestamps may not describe a substantially different
 replacement file; the user can edit the retained Transcript before rebuilding.
 
+## 2026-09-21 (later) — scene-group timing resets drift without borrowing footage
+
+**Decision, superseding the independent-duration/no-freeze render rule:** the
+narration master remains authoritative, but picture is now fitted per timestamp
+scene group. A group is the source interval represented by one Transcript block;
+legacy scripts with several beats carrying the same block metadata are grouped
+together. The planner applies the configured 3-second keep / 1-second skip cadence
+and fixed 0.75x inside that interval only.
+
+The group's target is the sum of its narration beat timings. Picture beyond that
+target is trimmed at the group boundary. If it is short, only the last frame from
+that same group is frozen for the remaining duration. No footage is borrowed from
+another group, and no scene-specific speed is introduced. Cumulative narration
+boundaries remain the source of frame quantization, so drift cannot accumulate
+across groups. Audio cache, global narration rate, captions, blur, mirror, and
+logo behavior remain unchanged.
+
 ## 2026-09-21 (later) — beat draft state reports after render
 
 `MovieRecapScript` no longer calls its parent `onDirtyChange` callback while the
@@ -5227,3 +5244,111 @@ child is rendering. Draft-count reporting now runs in an effect and resets on
 unmount. The former render-time callback updated `MovieRecapEditor` during a
 `MovieRecapScript` render, which React rejects and which surfaced when rebuilding
 a beat changed the saved script beneath the editor.
+
+## 2026-09-21 — Narrative Script can rebuild the scene timing plan independently
+
+**Decision:** add `Rebuild Scene Timing Plan` beside `Resync with Main Script` in
+the Narrative Script overflow menu. It reads the current saved beats and their
+cached narration durations, returns a scene-group summary, and uses the same
+pure planner as the renderer. It does not overwrite narrative text, rerun the
+Transcript sync, call Azure, or invalidate narration caches.
+
+**Why:** users need to inspect the new scene-group trim/freeze result after
+editing beats without the destructive side effect of resyncing every beat from
+the main script. Keeping the calculation shared prevents a plan shown in the
+editor from disagreeing with Preview or Final Render.
+
+**Consequence:** a beat whose audio is missing or marked stale can still appear
+using the speech-duration estimate, but the UI labels the plan as needing
+`Re Build` before a measured render is trusted.
+
+## 2026-09-21 — Scene timing plan is collapsed by default
+
+**Decision:** keep the timing-plan result collapsed after rebuilding it; the
+header still shows the group count and measured/needs-rebuild status, while the
+full scene rows open on demand. This keeps a long Narrative Script from being
+dominated by a diagnostic list.
+
+The saved plan is also loaded when the Narrative Script step opens, so the
+collapsed header survives a page refresh; expanding it remains an on-demand UI
+operation and does not trigger narration or TTS work.
+
+## 2026-09-21 — ribbon groups, not individual beats, are the render walls
+
+**Decision:** narration beats are grouped by the existing configurable
+`MOVIE_RECAP_RIBBON_GROUP_S` (currently 25 source seconds), using the saved
+`groupIndex/groupStartS/groupEndS` metadata. Older scripts without that metadata
+fall back to the same consecutive-block grouping. The 3-second keep / 1-second
+skip cadence and fixed 0.75x playback remain unchanged, but trim/freeze happens
+only at a group's final boundary.
+
+**Why:** treating every timestamp block as its own scene made a long Burmese
+beat freeze at each 3–4 second wall. Those freezes accumulated as apparent
+picture drift, then later trims sometimes hid it. Sharing footage inside a
+25-second ribbon lets short and long lines balance before one group-level
+trim/freeze decision resets the alignment.
+
+**Frame rule:** real render slots now share one cumulative target-FPS frame grid,
+and each encoded segment is limited to its exact frame count before concat.
+This prevents per-segment `fps` rounding from adding a second, smaller source of
+long-run drift.
+
+## 2026-09-21 (later) — one beat is one scene; audio duration is the wall
+
+**Decision, superseding the 25-second ribbon-group decision above:** each saved
+narration beat gets its own scene target. The cached, configured-speed audio
+duration is the target; its video uses the 3-second keep / 1-second skip cadence
+at fixed 0.75x, then trims excess or freezes only that beat's final frame. The
+next beat's audio and video both start at the previous beat's cumulative audio
+end.
+
+**Why:** a freeze does not create audio/video drift when both streams advance to
+the same next-beat boundary. The observed long-run drift is therefore handled at
+the actual render boundary: one shared cumulative 30fps frame grid and an exact
+frame count per encoded segment. The previous 25-second grouping changed the
+picture allocation policy and is no longer the chosen behavior.
+
+## 2026-09-21 (later) — shortage beats may slow to a bounded minimum
+
+**Decision:** keep `0.75x` as the baseline, but when a beat's retained footage
+would leave more than the configurable tiny-freeze threshold (`0.15s`), solve a
+single speed for that beat. The resolved speed may fall to `0.65x` but never
+below it; any remaining shortage at the minimum speed is frozen on that beat's
+last frame. A beat with a tiny gap keeps `0.75x` and freezes the tiny remainder.
+
+**Why:** a moderate uniform slow-down across all clips in one beat reads more
+naturally than a long held frame, while the lower bound prevents extreme slow
+motion. The speed is resolved once per beat, so every clip in that beat remains
+consistent. Narration caches and the master audio timeline are unchanged.
+
+The retained-footage planner must not cap screen time to the raw source-window
+length. Doing that cancels the extra duration created by `0.75x`/`0.65x`, turns
+the intended slow motion into freeze padding, and can leave the final video
+track shorter than narration. Only the narration beat target may trim the
+resulting screen duration.
+
+The concatenated footage is also checked against the narration-derived final
+duration before overlays or upload. A render interrupted by a development
+server restart once omitted the final beat but was still marked done; a track
+that differs by more than one target frame now fails instead of publishing a
+broken file or hiding the missing beat behind a final-frame hold.
+
+Freeze-motion segments must resample the slowed/tpad timeline to the target FPS
+before `zoompan`. The hold-motion filter deliberately rebuilds timestamps after
+`zoompan`; when resampling happened only afterward, that rebuild erased the
+slow-motion timestamps. A three-second source clip planned for 4.1 seconds then
+encoded as only 3.1 seconds (raw footage plus freeze). The pre-zoom resample
+materializes the slowed frames before the required timestamp reset.
+
+MP4 duration decimals are not used to validate the final timeline. Their tiny
+per-segment rounding error grows with segment count even when every frame is
+present. The concat is validated by packet/frame count against the
+narration-derived target instead, and the overlay pass rebuilds PTS as the frame
+sequence `0,1,2...` at 30fps. This makes long and short renders follow the same
+exact frame grid; only a genuinely missing frame or beat fails validation.
+
+An encode boundary may still return one frame fewer than requested (measured:
+5206 packets for a 5207-frame plan). A configurable repair limit of two frames
+allows the overlay pass to clone exactly that many final frames before emitting
+the target frame count; the same-size excess is trimmed by the frame cap. A
+larger difference still fails, so this repair cannot conceal a missing beat.

@@ -30,7 +30,7 @@ export type MovieRecapRenderShot = {
   sourceS: number;
   /** Seconds with no footage behind them — a held frame. Should be 0. */
   padS: number;
-  /** Playback speed this shot ran at; identical for every shot in one render. */
+  /** Playback speed this shot ran at; identical for every shot in one beat. */
   speed: number;
   /** Source seconds jumped since the previous shot ended. Null for the first. */
   skipS: number | null;

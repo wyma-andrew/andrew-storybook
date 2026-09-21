@@ -25,9 +25,9 @@ type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 // THE SCRIPT RUN: everything a recap needs decided and MEASURED, with nothing
 // cut yet.
 //
-// It parses the user's timestamped narration, measures every beat, and prepares
-// the cached narration master. Picture editing is now an independent full-source
-// cadence, so scene selection and vision analysis do not belong in this run.
+// It parses the user's timestamped narration, assigns consecutive blocks to
+// configurable ribbon groups, measures every beat, and prepares the cached
+// narration master. Rendering later lays the 3/1 cadence over each group.
 
 const round2 = (value: number) => Number(value.toFixed(2));
 

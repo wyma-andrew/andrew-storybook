@@ -1,5 +1,7 @@
 import {
+  MOVIE_RECAP_MIN_PLAYBACK_SPEED,
   MOVIE_RECAP_PLAYBACK_SPEED,
+  MOVIE_RECAP_TINY_FREEZE_S,
   MOVIE_RECAP_RIBBON_DRIFT_CAP_S,
   type MovieRecapPacing,
 } from "./constants/movie-recap";
@@ -121,7 +123,6 @@ export function scenesInBlock(
   }
   return scenes;
 }
-
 // An even division of one unbroken run. Used inside `splitSceneIntoShots` for a
 // run with no usable edit left in it.
 function divideEvenly(window: SourceWindow, pacing: MovieRecapPacing): SourceWindow[] {
@@ -145,7 +146,6 @@ function divideEvenly(window: SourceWindow, pacing: MovieRecapPacing): SourceWin
   }
   return shots;
 }
-
 /**
  * One beat's window cut into the shots that will play it, back to back.
  *
@@ -310,4 +310,99 @@ export function layoutBlockRibbon({
     cursor = Math.max(cursor, end);
   }
   return { windows, shortfallS: Number(Math.max(0, wantedS - screenS).toFixed(3)) };
+}
+
+import type { MovieRecapNarrationSegment } from "./api/types";
+import { MOVIE_RECAP_TARGET_FPS } from "./constants/movie-recap";
+import { retainedMovieRecapTimeline, type MovieRecapTimelineClip } from "./movie-recap-shots";
+import { estimateSpokenSeconds } from "./movie-recap-speech";
+
+export type MovieRecapScenePlanGroup = {
+  index: number;
+  firstBeatIndex: number;
+  beatIndices: number[];
+  sourceStartS: number;
+  sourceEndS: number;
+  narrationS: number;
+  targetS: number;
+  footageS: number;
+  trimS: number;
+  freezeS: number;
+  videoSpeed: number;
+  clips: MovieRecapTimelineClip[];
+};
+
+export type MovieRecapSceneTimingPlan = {
+  videoSpeed: number;
+  narrationS: number;
+  finalS: number;
+  groups: MovieRecapScenePlanGroup[];
+};
+
+type SceneGroup = Omit<MovieRecapScenePlanGroup, "index" | "footageS" | "trimS" | "freezeS" | "videoSpeed">;
+
+export function buildMovieRecapSceneTimingPlan({
+  narration,
+  videoSpeed = MOVIE_RECAP_PLAYBACK_SPEED,
+  targetFps = MOVIE_RECAP_TARGET_FPS,
+}: {
+  narration: MovieRecapNarrationSegment[];
+  videoSpeed?: number;
+  targetFps?: number;
+}): MovieRecapSceneTimingPlan {
+  const groups: SceneGroup[] = narration.map((segment, beatIndex) => {
+    const sourceStartS = segment.blockStartS ?? segment.shots[0]?.sourceStartS ?? 0;
+    const sourceEndS = segment.blockEndS ?? segment.shots[segment.shots.length - 1]?.sourceEndS ?? sourceStartS;
+    return {
+      firstBeatIndex: beatIndex,
+      beatIndices: [beatIndex],
+      sourceStartS,
+      sourceEndS,
+      narrationS: segment.audioS ?? estimateSpokenSeconds(segment.text),
+      targetS: 0,
+      clips: retainedMovieRecapTimeline(
+        [{ sourceStartS, sourceEndS }],
+        videoSpeed
+      ),
+    };
+  });
+
+  let cursorS = 0;
+  const planned = groups.map((group, index) => {
+    const endS = Math.round((cursorS + group.narrationS) * targetFps) / targetFps;
+    group.targetS = Math.max(1 / targetFps, endS - cursorS);
+    cursorS = endS;
+    const sourceS = group.clips.reduce((total, clip) => total + (clip.sourceEndS - clip.sourceStartS), 0);
+    const baselineVideoS = sourceS / videoSpeed;
+    const gapS = group.targetS - baselineVideoS;
+    const requiredSpeed = sourceS > 0 ? sourceS / group.targetS : 0;
+    const selectedSpeed =
+      gapS > MOVIE_RECAP_TINY_FREEZE_S && requiredSpeed >= MOVIE_RECAP_MIN_PLAYBACK_SPEED
+        ? requiredSpeed
+        : gapS > MOVIE_RECAP_TINY_FREEZE_S
+          ? MOVIE_RECAP_MIN_PLAYBACK_SPEED
+          : videoSpeed;
+    if (selectedSpeed !== videoSpeed) {
+      group.clips = retainedMovieRecapTimeline(
+        [{ sourceStartS: group.sourceStartS, sourceEndS: group.sourceEndS }],
+        selectedSpeed
+      );
+    }
+    const footageS = group.clips.reduce((total, clip) => total + clip.slotS, 0);
+    return {
+      ...group,
+      index,
+      footageS,
+      trimS: Math.max(0, footageS - group.targetS),
+      freezeS: Math.max(0, group.targetS - footageS),
+      videoSpeed: selectedSpeed,
+    } satisfies MovieRecapScenePlanGroup;
+  });
+
+  return {
+    videoSpeed,
+    narrationS: planned.reduce((total, group) => total + group.narrationS, 0),
+    finalS: planned.reduce((total, group) => total + group.targetS, 0),
+    groups: planned,
+  };
 }

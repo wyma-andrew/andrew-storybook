@@ -9,6 +9,7 @@ import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
+import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 
 export type ApiSchema = {
   "labs/voice/health": {
@@ -156,6 +157,9 @@ export type ApiSchema = {
       data: MovieRecapProject & { changed: number };
       body: { edits: { index: number; text: string }[] };
     };
+  };
+  "movie-recaps/:id/script/scene-plan": {
+    POST: { data: { plan: MovieRecapSceneTimingPlan; measured: boolean } };
   };
   "movie-recaps/:id/render": {
     // mock: skip the paid AI steps and render canned narration instead — for

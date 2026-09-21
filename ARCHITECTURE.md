@@ -196,7 +196,8 @@ Building that script is its own run (`lib/movie-recap-script.ts`,
 every beat through `lib/tts/` (Azure Speech), caches each content-addressed beat,
 then stores a combined `narration.wav` and JSON beat boundaries in R2. Narration
 is the master audio timeline. Picture and audio durations are independent:
-the complete source uses a fixed 0.75x picture rate while narration starts at
+each beat uses a 0.75x picture baseline, slowing only shortage beats to the
+configured minimum when needed, while narration starts at
 the configured 1.05x rate. If narration would outlast the full-source picture,
 one uncapped global narration rate is calculated from the cached raw beat
 durations so it ends on or just inside the final video frame; shorter narration
@@ -211,12 +212,12 @@ the following saved beats; while one plays, the next three configured-speed WAVs
 are prepared concurrently and kept as browser object URLs for smooth handoff.
 
 The render (`lib/movie-recap-render.ts`) is then ffmpeg. The shared timeline
-planner in `lib/movie-recap-shots.ts` samples the complete source in a configurable
-3 source seconds retained / 1 source second skipped cadence and plays every
-retained clip at 0.75x, trimming only the last partial cadence cycle so picture
-duration equals the original source duration. It does not trim, borrow or freeze footage to match
-narration. Captions follow the cached narration beat timings independently. The
-final MP4 keeps whichever stream is longer: narration may continue after the
+planner samples each narration beat in a configurable 3 source seconds retained
+/ 1 source second skipped cadence. It uses 0.75x as the picture baseline, may
+slow a shortage beat to the configured minimum, then trims or freezes only that
+beat to its narration duration. Footage is never borrowed across beats.
+Captions follow the cached narration beat timings, and the final MP4 is built
+from the same beat-fitted footage-only frames plus the narration track.
 video stream ends, or selected footage may continue silently after narration
 ends. Source audio is muted;
 mirroring and held-frame motion happen per clip, while captions, blur regions
@@ -240,6 +241,11 @@ the script and processes the complete original source as one continuous cadence:
 original audio removed, and the final partial cycle trimmed to the probed source
 duration. It uses the normal render status, cancellation, R2 output and player,
 and replaces the current preview output without changing narration caches.
+
+The Narrative Script step also has **Rebuild Scene Timing Plan**. It reads the
+saved beats and cached beat timings, plans one video scene per narration beat,
+and returns the same shared beat-level trim/freeze plan used by preview and
+final render. It never resyncs the script, calls TTS, or changes saved beat text.
 
 The wizard is Add Source -> Transcript -> Narrative Script -> Customize Video ->
 Review. The Narrative Script step owns everything about the beats: building them,

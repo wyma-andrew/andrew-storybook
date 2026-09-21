@@ -55,6 +55,21 @@ export async function probeDurationS(file: string, signal?: AbortSignal) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+// MP4 duration decimals accumulate rounding at every concat boundary. Encoded
+// H.264 has one packet per frame here, so packet count is the exact timeline.
+export async function probeVideoFrameCount(file: string, signal?: AbortSignal) {
+  const { stdout } = await execFileAsync(
+    ffprobeFor(FFMPEG),
+    [
+      "-v", "error", "-select_streams", "v:0", "-count_packets",
+      "-show_entries", "stream=nb_read_packets", "-of", "default=nw=1:nk=1", file,
+    ],
+    { maxBuffer: 1024 * 1024, signal }
+  );
+  const value = Number(stdout.trim());
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 // What decides whether two beats can share one synthesized clip: the words, the
 // voice, and the rate it was read at. Beat NUMBER is deliberately absent —
 // reordering the script, or editing one line, must not invalidate the rest.

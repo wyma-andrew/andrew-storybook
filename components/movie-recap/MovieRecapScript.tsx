@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
+import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 import { MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap";
 import { formatDuration } from "@/lib/movie-recap";
 import { apiClient } from "@/lib/spoosh";
@@ -93,6 +94,20 @@ export function MovieRecapScript({
   const playingBeatRef = useRef<number | null>(null);
   const [playingBeat, setPlayingBeat] = useState<number | null>(null);
   const [previewingBeat, setPreviewingBeat] = useState<number | null>(null);
+  const [scenePlan, setScenePlan] = useState<MovieRecapSceneTimingPlan | null>(null);
+  const [scenePlanMeasured, setScenePlanMeasured] = useState(true);
+  const [scenePlanOpen, setScenePlanOpen] = useState(false);
+  const autoPlanKey = useRef<string | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const scriptSignature = script.map((beat) => `${beat.text}:${beat.audioS ?? ""}:${beat.audioStale ? "stale" : ""}`).join("\u0001");
+  const previousScriptSignature = useRef(scriptSignature);
+
+  useEffect(() => {
+    if (previousScriptSignature.current !== scriptSignature) {
+      previousScriptSignature.current = scriptSignature;
+      setScenePlan(null);
+    }
+  }, [scriptSignature]);
 
   useEffect(() => {
     const urls = previewUrls.current;
@@ -194,6 +209,36 @@ export function MovieRecapScript({
     if (!(await playBeatPreview(next))) autoPlay.current = false;
   }
 
+  async function rebuildSceneTimingPlan() {
+    setPlanning(true);
+    const result = await apiClient("movie-recaps/:id/script/scene-plan").POST({ params: { id: project.id } });
+    setPlanning(false);
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not rebuild the scene timing plan.");
+      return;
+    }
+    setScenePlan(result.data.plan);
+    setScenePlanMeasured(result.data.measured);
+    setScenePlanOpen(false);
+    toast.success("Scene timing plan rebuilt from the saved narration timeline.");
+  }
+
+  useEffect(() => {
+    if (!script.length) return;
+    const key = `${project.id}:${scriptSignature}`;
+    if (autoPlanKey.current === key) return;
+    autoPlanKey.current = key;
+    void apiClient("movie-recaps/:id/script/scene-plan")
+      .POST({ params: { id: project.id } })
+      .then((result) => {
+        if (!result.error && result.data) {
+          setScenePlan(result.data.plan);
+          setScenePlanMeasured(result.data.measured);
+          setScenePlanOpen(false);
+        }
+      });
+  }, [project.id, script.length, scriptSignature]);
+
   return (
     <>
       <audio ref={audioRef} className="hidden" onEnded={() => void continueToNextBeat()} />
@@ -211,7 +256,7 @@ export function MovieRecapScript({
                 {restorableAll.length === 1 ? "" : "s"}
               </LoadingButton>
             )}
-            {/* Resync is intentionally the only whole-script action. */}
+            {/* Script resync and timing-plan rebuild intentionally have separate effects. */}
             {script.length > 0 && (
               <Menu menuClassName="min-w-[220px] p-0" placement="bottom-end">
                 <MenuTrigger>
@@ -231,6 +276,9 @@ export function MovieRecapScript({
                 >
                   <span className="text-danger">Resync with Main Script</span>
                 </MenuItem>
+                <MenuItem disabled={busy || planning} onClick={() => void rebuildSceneTimingPlan()}>
+                  {planning ? "Rebuilding Scene Timing Plan…" : "Rebuild Scene Timing Plan"}
+                </MenuItem>
               </Menu>
             )}
           </div>
@@ -243,6 +291,50 @@ export function MovieRecapScript({
         )}
         {project.scriptStatus === "failed" && project.scriptError && (
           <p className="mb-4 text-sm text-danger">{project.scriptError}</p>
+        )}
+
+        {scenePlan && (
+          <div className="mb-4 rounded-lg border border-line bg-panel px-3 py-3 text-xs">
+            <Button
+              variant="ghost"
+              className="!h-auto !w-full !justify-between !px-0 !py-0 text-left"
+              aria-expanded={scenePlanOpen}
+              aria-label={scenePlanOpen ? "Collapse scene timing plan" : "Expand scene timing plan"}
+              title={scenePlanOpen ? "Collapse scene timing plan" : "Expand scene timing plan"}
+              onClick={() => setScenePlanOpen((open) => !open)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {scenePlanOpen ? <ChevronDown className="shrink-0" size={14} /> : <ChevronRight className="shrink-0" size={14} />}
+                <span className="font-medium text-fg">Scene timing plan</span>
+                <span className="text-fg-3">{scenePlan.groups.length} scene groups</span>
+              </span>
+              <span className={scenePlanMeasured ? "text-ok" : "text-fg-3"}>
+                {scenePlanMeasured ? "Measured narration" : "Some beats need Re Build"}
+              </span>
+            </Button>
+            {scenePlanOpen && (
+              <>
+                <div className="mb-3 mt-3 flex flex-wrap gap-x-4 gap-y-1 text-fg-2 tabular-nums">
+                  <span>Narration {scenePlan.narrationS.toFixed(2)}s</span>
+                  <span>Final {scenePlan.finalS.toFixed(2)}s</span>
+                  <span>Video {scenePlan.videoSpeed.toFixed(2)}x</span>
+                </div>
+                <div className="space-y-1.5">
+                  {scenePlan.groups.map((group) => (
+                    <div key={group.index} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 text-fg-2">
+                      <span className="font-medium text-fg">Scene {group.index + 1}</span>
+                      <span>
+                        Beat {group.beatIndices.map((index) => index + 1).join(", ")} · source {formatDuration(group.sourceStartS)}–{formatDuration(group.sourceEndS)}
+                      </span>
+                      <span className="tabular-nums">
+                        {group.videoSpeed.toFixed(2)}x · {group.freezeS > 0.01 ? `freeze ${group.freezeS.toFixed(2)}s` : `trim ${group.trimS.toFixed(2)}s`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         {script.length > 0 && (

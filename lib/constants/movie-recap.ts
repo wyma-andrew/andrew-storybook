@@ -144,6 +144,11 @@ export const MOVIE_RECAP_EDIT = {
 } as const;
 
 export const MOVIE_RECAP_PLAYBACK_SPEED = MOVIE_RECAP_EDIT.playbackSpeed;
+// A shortage beat may slow below the baseline so it stays moving instead of
+// freezing immediately. These are policy limits, not per-render guesses.
+export const MOVIE_RECAP_MIN_PLAYBACK_SPEED = 0.65;
+export const MOVIE_RECAP_TINY_FREEZE_S = 0.15;
+export const MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT = 2;
 
 // All cached narration masters use this format. Keeping it beside the edit
 // policy makes the audio timeline just as configurable as the picture timeline.
