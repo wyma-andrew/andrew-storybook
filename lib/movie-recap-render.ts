@@ -355,7 +355,7 @@ function toAssTimestamp(seconds: number) {
 // The same subtitle design the wizard configures, expressed for libass. Sizes
 // are percentages of the frame, so they land identically at any output
 // resolution and match the CSS preview (MovieRecapSubtitleOverlay).
-function buildAss(project: MovieRecapProject, cues: { start: number; end: number; text: string }[]) {
+function buildAss(project: MovieRecapProject, cues: { start: number; end: number; text: string }[], durationS: number) {
   const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
   const style = movieRecapSubtitleStyle(project);
   // The size the CSS preview uses, in output pixels — the shared meaning of the
@@ -376,6 +376,9 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
   const face = subtitleFace(style.weight);
   const common = `${face.bold},0,0,0,100,100,0,0`;
   const geometry = `${alignment},${marginH},${marginH},${marginV},1`;
+  const hookAlignment = project.hookTitlePosition === "top" ? 8 : project.hookTitlePosition === "middle" ? 5 : 2;
+  const hookMarginV = project.hookTitlePosition === "middle" ? 0 : Math.round((project.hookTitleOffset / 100) * h);
+  const hookGeometry = `${hookAlignment},${marginH},${marginH},${hookMarginV},1`;
 
   // One style, one layer per cue. The two-layer box/glyph split this used to
   // carry existed only to draw the background pill (BorderStyle 3 with the box
@@ -383,6 +386,7 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
   // text to keep independent.
   const styles = [
     `Style: Text,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},${transparent},${common},1,${outline},0,${geometry}`,
+    `Style: HookTitle,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},${transparent},${common},1,${outline},0,${hookGeometry}`,
   ];
 
   const header = [
@@ -408,8 +412,11 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
       return `Dialogue: 0,${timing},Text,,0,0,0,,${text}`;
     })
     .join("\n");
+  const hookEvent = project.hookTitle
+    ? `Dialogue: 1,${toAssTimestamp(0)},${toAssTimestamp(durationS)},HookTitle,,0,0,0,,${project.hookTitle.replace(/\r?\n/g, "\\N")}`
+    : "";
 
-  return `${header}\n${events}\n`;
+  return `${header}\n${[events, hookEvent].filter(Boolean).join("\n")}\n`;
 }
 
 // Runs the full pipeline synchronously: read -> copyright-free transform ->
@@ -942,8 +949,10 @@ export async function runMovieRecapRender(
     // output then stream-copies these exact video frames and adds narration, so
     // downloading footage never produces a visually different render.
     const footagePath = path.join(workDir, "footage.mp4");
-    const assPath = path.join(workDir, "subtitles.ass");
-    await writeFile(assPath, buildAss(project, cues), "utf-8");
+    const assPath = project.subtitlesEnabled || project.hookTitle ? path.join(workDir, "subtitles.ass") : null;
+    if (assPath) {
+      await writeFile(assPath, buildAss(project, project.subtitlesEnabled ? cues : [], plannedVideoDurationS ?? project.sourceDurationSeconds), "utf-8");
+    }
     {
       await setProgress(db, project.id, "applying_overlays");
       const inputs = ["-i", concatPath];

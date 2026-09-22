@@ -5,6 +5,7 @@ import { MOVIE_RECAP_LOOK } from "./constants/movie-recap";
 const ctx = (over: Partial<ShotFilterContext> = {}): ShotFilterContext => ({
   aspectRatio: "16:9",
   fitMode: "cover",
+  dynamicBackgroundBlurEnabled: true,
   zoom: 1.05,
   ...over,
 });
@@ -44,6 +45,29 @@ describe("buildShotFilter", () => {
     expect(filter).toContain("boxblur=20:2");
     expect(filter).toContain("overlay=(W-w)/2:(H-h)/2");
     expect(filter).not.toContain("color=black");
+  });
+
+  it("can leave contain bars unfilled when dynamic background blur is off", () => {
+    const filter = buildShotFilter(ctx({ fitMode: "contain", dynamicBackgroundBlurEnabled: false }));
+    expect(filter).not.toContain("boxblur=");
+    expect(filter).not.toContain("overlay=(W-w)/2:(H-h)/2");
+    expect(filter).toContain("force_original_aspect_ratio=decrease");
+    expect(filter).toContain("pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black");
+  });
+
+  it("pads a square contain render to the configured 1:1 output", () => {
+    const filter = buildShotFilter(ctx({
+      aspectRatio: "1:1",
+      fitMode: "contain",
+      dynamicBackgroundBlurEnabled: false,
+      zoom: 1.1,
+    }));
+    const fit = filter.indexOf("force_original_aspect_ratio=decrease");
+    const pad = filter.indexOf("pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black");
+    const zoom = filter.indexOf("scale=trunc(iw*1.1");
+    expect(fit).toBeGreaterThan(-1);
+    expect(pad).toBeGreaterThan(fit);
+    expect(zoom).toBeGreaterThan(pad);
   });
 
   it("leaves the graph with one unlabelled output the render can append to", () => {

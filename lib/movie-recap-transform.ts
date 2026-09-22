@@ -24,6 +24,7 @@ import type { MovieRecapProject } from "./api/types";
 export type ShotFilterContext = {
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
+  dynamicBackgroundBlurEnabled?: boolean;
   // A divisor on the source crop, so 1 is no zoom. Per project, not a constant.
   zoom: number;
   // The source's own letterbox, cut away before anything else. A 2.39:1 film
@@ -40,6 +41,7 @@ export function shotFilterContext(
   return {
     aspectRatio: project.aspectRatio,
     fitMode: project.fitMode,
+    dynamicBackgroundBlurEnabled: project.dynamicBackgroundBlurEnabled,
     zoom: effectiveMovieRecapZoom(project),
     crop: crop ?? null,
   };
@@ -78,6 +80,11 @@ function framingFilter(ctx: ShotFilterContext) {
     // Already fills the frame, so zoom takes more off the edges.
     return [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, ...zoomed].join(",");
   }
+  const fitted = `scale=${w}:${h}:force_original_aspect_ratio=decrease`;
+  const fg = [fitted, ...zoomed].join(",");
+  if (ctx.dynamicBackgroundBlurEnabled === false) {
+    return [fitted, `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`, ...zoomed].join(",");
+  }
   // Blurred backfill: the same clip, scaled to cover and blurred, sits behind the
   // contained copy. The background moves with the footage rather than being a
   // still, and the bars stop reading as missing picture. The foreground is fitted
@@ -86,7 +93,6 @@ function framingFilter(ctx: ShotFilterContext) {
   // Scaled to the output width: a fixed pixel radius blurs relatively less on a
   // bigger frame, and the backfill has to stay unreadable, not merely soft.
   const radius = movieRecapBlurRadius(backfillBlurRadius, ctx.aspectRatio);
-  const fg = [`scale=${w}:${h}:force_original_aspect_ratio=decrease`, ...zoomed].join(",");
   return [
     `split[bg][fg]`,
     `[bg]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},boxblur=${radius}:${passes}[bgb]`,

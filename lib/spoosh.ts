@@ -117,7 +117,7 @@ export type ApiSchema = {
   };
   "movie-recap-logo-templates/:id": {
     POST: { data: MovieRecapProject; body: { projectId: string } };
-    PATCH: { data: MovieRecapLogoTemplate; body: { projectId: string; logoWatermarkText?: string | null; logoPlacement?: MovieRecapProject["logoPlacement"]; logoOpacity?: number } };
+    PATCH: { data: MovieRecapLogoTemplate; body: { projectId?: string; name?: string; logoWatermarkText?: string | null; replaceLogo?: boolean } };
     DELETE: { data: null };
   };
   // Reads the source's dialogue and translates it — the wizard's Transcript

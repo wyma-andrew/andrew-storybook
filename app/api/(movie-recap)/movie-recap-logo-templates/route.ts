@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   const db = await supabaseRoute();
   const { data: project, error: projectError } = await db
     .from("movie_recap_projects")
-    .select("logo_enabled, logo_file_name, logo_object_key, logo_url, logo_content_type, logo_size_bytes, logo_watermark_text, logo_placement, logo_opacity")
+    .select("logo_file_name, logo_object_key, logo_url, logo_content_type, logo_size_bytes, logo_watermark_text")
     .eq("id", projectId)
     .single();
   if (projectError) return NextResponse.json({ error: projectError.message }, { status: 404 });
@@ -69,22 +69,11 @@ export async function POST(req: NextRequest) {
         logo_url: url,
         logo_content_type: project.logo_content_type,
         logo_size_bytes: project.logo_size_bytes,
-        logo_enabled: project.logo_enabled,
         logo_watermark_text: watermarkText ?? project.logo_watermark_text,
-        logo_placement: project.logo_placement,
-        logo_opacity: project.logo_opacity,
       })
       .select("*")
       .single();
     if (error) throw error;
-    const { error: linkError } = await db
-      .from("movie_recap_projects")
-      .update({ logo_template_id: templateId, updated_at: new Date().toISOString() })
-      .eq("id", projectId);
-    if (linkError) {
-      await db.from("movie_recap_logo_templates").delete().eq("id", templateId);
-      throw linkError;
-    }
     return NextResponse.json(mapMovieRecapLogoTemplate(data));
   } catch (error) {
     await deleteObject(objectKey).catch(() => undefined);

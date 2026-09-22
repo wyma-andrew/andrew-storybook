@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronRight, Copy, ExternalLink, FileText, Languages } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play } from "lucide-react";
 import { Dialog, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { Button as AppButton, LinkButton } from "@/components/ui/Button";
+import { MOVIE_RECAP_VOICES } from "@/lib/constants/movie-recap";
 import { formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
+import { useWrite } from "@/lib/spoosh";
+import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 
 function cleanImportedTranscript(raw: string) {
   return formatMovieRecapSourceTranscript(raw.replace(/&#x20;|&#32;|&nbsp;/gi, " "));
@@ -150,10 +153,53 @@ export function MovieRecapTranscript({
 }: {
   project: MovieRecapProject;
   /** Edits land in the wizard's project draft; Continue is what writes them. */
-  onChange: (patch: { transcriptText?: string; transcriptStory?: string }) => void;
+  onChange: (patch: { transcriptText?: string; transcriptStory?: string; voiceProfileId?: MovieRecapProject["voiceProfileId"] }) => void;
 }) {
+  const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const text = project.transcriptText ?? "";
   const story = project.transcriptStory ?? "";
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const previewUrls = useRef(new Map<string, string>());
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+
+  async function togglePreview(voice: (typeof MOVIE_RECAP_VOICES)[number]) {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing === voice.id) {
+      audio.pause();
+      return;
+    }
+
+    let src = voice.previewUrl ?? previewUrls.current.get(voice.id) ?? null;
+    if (!src) {
+      setPreviewLoading(voice.id);
+      const result = await generateVoicePreview({ body: { voiceId: voice.id }, invalidate: false });
+      setPreviewLoading(null);
+      if (result.error || !result.data) {
+        toast.error(result.error?.error ?? "Could not generate the voice preview.");
+        return;
+      }
+      src = audioUrlFromBase64(result.data.audioBase64, result.data.contentType);
+      previewUrls.current.set(voice.id, src);
+    }
+
+    audio.src = src;
+    setPlaying(voice.id);
+    void audio.play().catch(() => {
+      setPlaying(null);
+      toast.error("Voice preview audio could not be played.");
+    });
+  }
+
+  useEffect(() => {
+    const urls = previewUrls.current;
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
+
   async function copyTranslationPrompt() {
     try {
       await navigator.clipboard.writeText(buildMovieRecapTranslationPrompt(text));
@@ -262,6 +308,35 @@ export function MovieRecapTranscript({
               placeholder="Paste the Burmese story here."
             />
           </div>
+        </div>
+
+        <div className="rounded-xl border border-line bg-panel-2 p-4">
+          <div className="mb-3 text-sm font-medium">Narration voice</div>
+          <div className="grid grid-cols-2 gap-2">
+            {MOVIE_RECAP_VOICES.map((voice) => {
+              const selected = project.voiceProfileId === voice.id;
+              return (
+                <div key={voice.id} className={`flex items-center gap-2 rounded-xl border p-3 ${selected ? "border-accent bg-accent-dim" : "border-line bg-panel"}`}>
+                  <AppButton
+                    aria-label={playing === voice.id ? `Pause ${voice.name} voice preview` : `Play ${voice.name} voice preview`}
+                    disabled={previewLoading !== null}
+                    onClick={() => void togglePreview(voice)}
+                    className="!h-9 !w-9 shrink-0 !rounded-full !border-0 !bg-accent !p-0 !text-on-accent"
+                  >
+                    {previewLoading === voice.id ? <Loader2 size={15} className="animate-spin" /> : playing === voice.id ? <Pause size={15} /> : <Play size={15} />}
+                  </AppButton>
+                  <AppButton
+                    onClick={() => onChange({ voiceProfileId: voice.id })}
+                    className="!h-9 min-w-0 flex-1 !justify-between !border-0 !bg-transparent !px-2 !text-fg"
+                  >
+                    <span className="font-semibold">{voice.name}</span>
+                    {selected && <Check size={16} className="text-accent" aria-label="Selected" />}
+                  </AppButton>
+                </div>
+              );
+            })}
+          </div>
+          <audio ref={audioRef} onPause={() => setPlaying(null)} onEnded={() => setPlaying(null)} />
         </div>
       </div>
     </div>

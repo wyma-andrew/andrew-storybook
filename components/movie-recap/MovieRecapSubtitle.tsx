@@ -18,6 +18,12 @@ function positionStyle(project: MovieRecapProject): React.CSSProperties {
   return { bottom: `${project.subtitleOffset}%` };
 }
 
+function hookTitlePositionStyle(project: MovieRecapProject): React.CSSProperties {
+  if (project.hookTitlePosition === "top") return { top: `${project.hookTitleOffset}%` };
+  if (project.hookTitlePosition === "middle") return { top: "50%", transform: "translateY(-50%)" };
+  return { bottom: `${project.hookTitleOffset}%` };
+}
+
 // Subtitle size is a percentage of the FRAME height (same number libass gets as
 // `Fontsize` against `PlayResY`), so it has to be resolved against the frame,
 // not the page. It is measured here rather than expressed in `cqh`: container
@@ -75,6 +81,22 @@ export function MovieRecapSubtitleOverlay({ project, text }: { project: MovieRec
         }}
       >
         {text}
+      </span>
+    </div>
+  );
+}
+
+export function MovieRecapHookTitleOverlay({ project }: { project: MovieRecapProject }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const frameHeight = useFrameHeight(ref);
+  if (!project.hookTitle) return null;
+  const style = movieRecapSubtitleStyle(project);
+  const fontPx = (style.fontSizePct / 100) * frameHeight;
+  const outlinePx = fontPx * style.outlineEm;
+  return (
+    <div ref={ref} className="pointer-events-none absolute inset-x-[6%] z-30 text-center" style={hookTitlePositionStyle(project)}>
+      <span className={`inline-block max-w-full whitespace-pre-wrap ${subtitleFont.className}`} style={{ fontSize: `${fontPx.toFixed(2)}px`, lineHeight: MOVIE_RECAP_SUBTITLE_LINE_EM, color: style.color, fontWeight: style.weight, WebkitTextStrokeWidth: `${outlinePx.toFixed(2)}px`, WebkitTextStrokeColor: style.outlineColor, paintOrder: "stroke fill" }}>
+        {project.hookTitle}
       </span>
     </div>
   );

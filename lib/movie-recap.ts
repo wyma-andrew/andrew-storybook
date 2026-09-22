@@ -65,21 +65,24 @@ export function clampBlurRect(rect: { x: number; y: number; width: number; heigh
 // and never again: seeding on anything other than an explicit action fights the
 // user, which is the mistake the zoom default made (history/movie-recap.md).
 //
-// `cover` fills the frame by cropping, so it is right only when the output
-// orientation matches the source's. When they differ, cropping a portrait source
-// into a landscape frame throws away most of the picture, and `contain` — with
-// the blurred backfill behind the bars — is the only setting that keeps it.
+// `contain` is the stable default for every source shape so a fresh project
+// preserves the full picture. The user can still choose `cover` explicitly.
 //
 // CAVEAT: `videoWidth`/`videoHeight` in the browser ignore rotation metadata. A
 // phone video shot in portrait often reports 1920x1080 with a 90-degree flag, and
 // the browser does not expose the flag, so this can call it landscape. That is
 // why the result is a DEFAULT the user can change, not a decision.
 export function suggestMovieRecapFraming(width: number, height: number) {
+  if (width === height) {
+    return {
+      aspectRatio: "1:1" as const,
+      fitMode: "contain" as const,
+    };
+  }
   const portrait = height > width;
   return {
     aspectRatio: portrait ? ("9:16" as const) : ("16:9" as const),
-    // Matching orientation by construction, so cover never crops across it.
-    fitMode: "cover" as const,
+    fitMode: "contain" as const,
   };
 }
 

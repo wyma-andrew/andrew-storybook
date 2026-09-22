@@ -69,13 +69,18 @@ export type MovieRecapProject = {
   sourceUploadStatus: "pending" | "uploading" | "ready" | "failed";
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
+  dynamicBackgroundBlurEnabled: boolean;
   // Divisor on the source crop; 1 is no zoom. NULL means the user has not chosen
   // one and the recommendation for the fit mode applies — see
   // effectiveMovieRecapZoom().
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapSubtitlePreset;
+  subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
+  hookTitle: string | null;
+  hookTitlePosition: MovieRecapSubtitlePosition;
+  hookTitleOffset: number;
   logoEnabled: boolean;
   logoFileName: string | null;
   logoObjectKey: string | null;
@@ -151,15 +156,12 @@ export type MovieRecapProject = {
 export type MovieRecapLogoTemplate = {
   id: string;
   name: string;
-  logoEnabled: boolean;
   logoFileName: string;
   logoObjectKey: string;
   logoUrl: string;
   logoContentType: string;
   logoSizeBytes: number;
   logoWatermarkText: string | null;
-  logoPlacement: MovieRecapProject["logoPlacement"];
-  logoOpacity: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -259,10 +261,15 @@ export type MovieRecapProjectPatch = Partial<{
   voiceProfileId: MovieRecapProject["voiceProfileId"];
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
+  dynamicBackgroundBlurEnabled: boolean;
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
+  subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;
+  hookTitle: string | null;
+  hookTitlePosition: MovieRecapProject["hookTitlePosition"];
+  hookTitleOffset: number;
   logoEnabled: boolean;
   logoPlacement: MovieRecapProject["logoPlacement"];
   logoOpacity: number;

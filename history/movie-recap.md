@@ -122,6 +122,75 @@ when saving or applying a logo template.
 It uses a subtle watermark treatment by default: small text, increased letter
 spacing, and reduced opacity.
 
+## 2026-09-22 — Customize design templates are local form presets
+
+**Decision:** the Aspect panel offers an admin-defined `Facebook Reel` design
+template. Applying it fills the current form with `1:1`, `contain`, and `1.10x`
+zoom; it does not create or update an API resource.
+
+**Why:** this is a convenience preset for completing the Customize form, not a
+user-owned configuration entity. Keeping the preset code-defined makes its
+values stable and prevents users from editing the template itself while still
+allowing them to adjust the form after applying it.
+
+**Consequence:** once a user changes any of the preset fields, the Select no
+longer shows the template as active; the form values remain editable and are
+saved through the existing Customize flow.
+
+The Facebook Reel preset also turns dynamic background blur off, because its
+square contain layout should keep the surrounding frame stable rather than
+animate a blurred copy of the source behind it.
+
+## 2026-09-22 — Hook title is an optional full-video overlay
+
+**Decision:** Customize includes an optional Hook title text field with the same
+top/middle/bottom positioning and edge-distance control as subtitles. A non-empty
+title is rendered continuously from the first to the last video frame; an empty
+title produces no overlay. It is not frame-timed or tied to narration cues.
+
+**Why:** the hook is a persistent attention label for the whole video, so a
+separate on/off switch and per-frame timing controls would add complexity
+without matching the intended behavior. Reusing the subtitle style keeps the
+overlay visually consistent.
+
+**Consequence:** changing the hook title is part of the existing Customize save
+payload and render configuration; older projects get an empty title by default.
+
+## 2026-09-22 — Captions can be turned off
+
+**Decision:** the Subtitle tab has a `Captions` switch, defaulting to on for
+existing and new projects. Turning it off removes narration caption cues from
+both the preview and the burned-in render; it does not affect the optional hook
+title overlay.
+
+**Why:** captions are a presentation choice separate from the narration and
+hook title. The earlier always-styled decision kept the UI simple, but the user
+now needs a clean video option without deleting the configured caption style.
+
+**Supersedes:** the 2026-09-16 decision that styled burned-in subtitles were
+the only mode and could not be disabled.
+
+The Hook title controls stay outside the Aspect, Subtitle, and Blur tabs so the
+persistent overlay remains independently discoverable and configurable.
+
+The Hook title controls are currently hidden from the Customize UI temporarily;
+the saved fields and render support remain intact for a later UI return.
+
+## 2026-09-22 — Design presets use a card modal, not a select
+
+**Decision:** the top-level Design template control opens a modal with cards.
+Choosing a card applies the code-defined preset to the current Customize form;
+Clear only removes the active-preset indicator and leaves the current form
+values unchanged.
+
+**Why:** these are one-click default configurations, not saved resources that
+need a select field. A card can show the full preset summary and makes it clear
+that applying it is an action, while clearing the indicator must not silently
+undo values the user may already have edited.
+
+**Supersedes:** the earlier decision that the preset should be offered through
+a Select whose active state was inferred from matching form values.
+
 ## 2026-09-14 — Phase one is a resumable configuration project, not a render job (SUPERSEDED 2026-09-18 — the Generate button is removed; phase two shipped)
 
 **Decision:** Movie Recap starts with a project dashboard and a persisted
@@ -5517,3 +5586,237 @@ The earlier prompt rule that removed an adjacent duplicate standalone timestamp
 is superseded. The prompt now requires strict one-to-one timestamp preservation,
 line-by-line alignment, a line break before every timestamp, and narration text
 immediately after every timestamp.
+
+## 2026-09-22 — Review omits the configuration summary for now
+
+**Decision:** remove the Review step's `Review Configuration` heading, helper
+text, and repeated settings summary table. Keep the render controls and result
+player as the Review step's content.
+
+**Why:** the same settings are already edited and visible in the earlier steps;
+repeating the full project summary adds vertical weight without helping the
+current render decision.
+
+**Consequence:** Review no longer provides a final read-only configuration
+checklist before rendering. Restore a smaller, change-aware summary if the
+render flow later needs to explain whether an update is incremental or full.
+
+## 2026-09-22 — Add square (1:1) Movie Recap output
+
+**Decision:** Movie Recap supports `1:1` alongside `9:16` and `16:9`, rendered
+at 1080×1080. Square uploads seed to the square output with `cover` framing;
+square pacing follows the short-form profile, with its own subtitle size and
+edge offset.
+
+**Why:** square is a common social output and should be a first-class format,
+not a crop workaround that silently chooses landscape.
+
+**Consequence:** the aspect-ratio database check and every ratio-keyed render,
+preview, blur-scaling, subtitle, and pacing table must include `1:1` when
+changed. Existing projects keep their current ratio because the new option is
+opt-in.
+
+`Contain` with dynamic background blur disabled must pad the fitted source to
+the configured output dimensions before zooming. Without that pad, a landscape
+source in a 1:1 project encoded as a landscape frame (for example 1080×608), so
+the rendered player disagreed with the square preview and overlay sizing.
+
+Square subtitles use 2% of frame height rather than 3.2%. The original square
+size read too large against the shorter social frame; preview and render share
+this value so both shrink together.
+
+## 2026-09-22 — Place aspect-ratio choices in one row without selection badges
+
+**Decision:** show the three aspect-ratio choices in one row and omit the
+selected check badge from those cards. Other choice groups keep their selected
+badges.
+
+**Why:** the ratio options are a short, mutually exclusive list; a single row
+makes the three formats easy to compare without duplicating the selected state
+with both card styling and an icon.
+
+## 2026-09-22 — Dynamic background blur is an explicit option
+
+**Decision:** add `Dynamic background blur` as a separate project setting. It
+only affects the moving blurred backfill used behind `contain` framing; the
+editable blur regions remain independent. When enabled, preview and render
+both use the synchronized moving backfill. When disabled, contain leaves the
+letterbox area unfilled.
+
+**Why:** a moving blurred background can make busy or flashing footage tiring
+to watch, so users need a clear way to turn that treatment off without
+disabling logo/watermark blur regions.
+
+**Consequence:** the setting defaults to enabled to preserve existing project
+output. Its value must be included whenever Customize settings are saved, and
+preview/render must read the same flag.
+
+## 2026-09-22 — Logo selection is template-only and lives above Customize
+
+**Decision:** move logo controls out of the Customize tab row into a separate
+Logo section above the preview and Customize panel. The section uses a
+clearable template Select. Selecting a template applies it; clearing removes
+the project's logo. Direct logos are not a usable end state: a new logo is
+uploaded only as the first step of creating a saved template. Existing
+templates can be updated or deleted from the same section.
+
+**Why:** logo identity is a reusable project-level choice, not another set of
+per-video controls hidden among framing and subtitle tabs. Requiring a saved
+template keeps the selected logo stable and makes reuse explicit.
+
+**Consequence:** legacy projects with a direct logo can temporarily show it so
+the user can save it as a template, but saving/continuing now expects the
+project to be either template-backed or logo-off.
+
+## 2026-09-22 — Logo template selection is optimistic
+
+**Decision:** selecting or clearing the Logo template updates the Select,
+preview metadata, and cached project read immediately. A failed apply/clear
+request restores the previous project and selection.
+
+**Why:** template application copies a logo asset and can take long enough for
+a Select to feel unresponsive; the user should see the intended choice while
+the server finishes the copy.
+
+## 2026-09-22 — Logo returns to Customize and project changes save on Continue
+
+**Decision:** remove the standalone Logo section and restore Logo as a fourth
+Customize tab. A project may use a saved template or a one-off logo. Templates
+store only their independent logo asset and optional watermark; placement and
+opacity belong to the project. The template Select is clearable and shows the
+current selection.
+
+Selecting, clearing, uploading a one-off logo, and changing its project settings
+only update the browser draft. Save & Continue applies or removes the logo and
+saves the complete Customize payload. Template creation and template updates
+remain immediate resource mutations, but their responses merge only logo fields
+into the draft instead of replacing the complete project.
+
+**Why:** logo choice is part of video customization, and saving it separately
+caused API responses to replace unrelated unsaved Customize values. Templates
+still need immediate persistence because they are reusable resources of their
+own; project configuration does not.
+
+**Supersedes:** `Logo selection is template-only and lives above Customize` and
+`Logo template selection is optimistic`. The UI still updates immediately, but
+the project mutation is deliberately deferred until Save & Continue.
+
+When a template is selected, its summary card is the single source of logo and
+watermark identity. The one-off logo file and watermark inputs are hidden to
+avoid duplicate controls; the card shows a labelled watermark value and omits
+the asset filename, while placement and opacity remain editable project fields.
+
+## 2026-09-22 — Subtitle tab omits caption visibility controls
+
+**Decision:** remove the Captions switch and burned-in subtitle helper copy from
+the Customize UI. Keep the caption style, position, and edge-distance controls.
+
+**Why:** the visibility row and explanatory copy add unnecessary visual weight
+to the Subtitle tab. The persisted subtitle setting and render behavior remain
+unchanged; this is a UI-only removal.
+
+## 2026-09-22 — Preview logo image follows horizontal placement
+
+**Decision:** align the contained logo image to the selected horizontal corner:
+left placements use left object positioning and right placements use right
+object positioning.
+
+**Why:** moving the outer logo box to a right corner did not move a narrow
+contained image within that box because the image itself remained left-aligned.
+
+**Consequence:** the browser preview now matches the selected corner for logos
+that do not fill the entire percentage-based logo box; render geometry is
+unchanged.
+
+## 2026-09-22 — Contain is the default and ratio changes preserve zoom
+
+**Decision:** new Movie Recap projects default to `contain` for every source
+shape. Source dimensions still seed the matching aspect ratio, but no longer
+select `cover`. Existing projects keep their saved fit mode. Changing aspect
+ratio preserves the current zoom, including a value explicitly chosen with the
+slider; changing fit mode still returns zoom to that mode's recommendation.
+
+**Why:** fresh projects should show the whole source by default, and changing
+output shape must not discard a framing choice the user already made.
+
+**Supersedes:** the 2026-09-15 source-framing decision that matching source
+orientation defaults to `cover`, the 2026-09-22 square-output decision that a
+square upload starts with `cover`, and the 2026-09-16 zoom-seeding rule that an
+aspect-ratio change returns zoom to unset. The earlier reasoning remains above
+for context.
+
+**Consequence:** the database default and dimension-aware upload seeding both
+use `contain`. The `cover` option remains available as an explicit user choice.
+
+## 2026-09-22 — Dynamic blur defaults off and zoom survives framing changes
+
+**Decision:** new Movie Recap projects default dynamic background blur to off.
+Existing projects keep their saved value. Once a user chooses a zoom, changing
+either aspect ratio or fit mode preserves it. The Aspect panel also omits the
+redundant `FIT MODE` label while retaining both fit choices.
+
+**Why:** moving between output shapes and fitting modes must respect the user's
+explicit zoom choice, and moving blurred backfill should be opt-in rather than
+part of the initial presentation.
+
+**Supersedes:** the earlier 2026-09-22 dynamic-background-blur decision that the
+setting defaults enabled, and the later 2026-09-22 framing decision that a fit
+mode change returns zoom to its recommendation.
+
+**Consequence:** an untouched nullable zoom may still resolve through the
+recommendation mechanism, but neither framing control clears a chosen value.
+
+## 2026-09-22 — Narration voice is chosen with the Burmese story
+
+**Decision:** move the Movie Recap voice picker from Customize Video to directly
+below the Burmese story in Transcript. Present the two available choices as
+`Male` and `Female`, with a preview action for each; the underlying Azure voice
+IDs remain unchanged. Transcript Save and Continue persist `voiceProfileId`
+alongside the two transcript fields before Narrative Script is entered.
+
+**Why:** the voice determines the narration audio built in the next step, so it
+belongs beside the Burmese narration source and before Build Script. Provider
+names and descriptions do not help with the choice when the product offers one
+male and one female voice.
+
+**Supersedes:** the 2026-09-16 placement decision that offered the two Azure
+voices in Settings. The per-beat synthesis, static preview files, internal voice
+IDs, and default voice remain unchanged.
+
+## 2026-09-22 — Voice profile names remain visible
+
+**Decision:** the Transcript voice selector displays the intentional profile
+names `Thiha` and `Nilar`, not the generic labels `Male` and `Female`. The picker
+remains below the Burmese story and continues to save before Narrative Script.
+
+**Why:** the names identify the exact configured voices and are part of the
+product's voice-profile identity; gender-only labels discard that distinction.
+
+**Supersedes:** only the `Male`/`Female` presentation choice in the preceding
+entry. Placement, persistence, previews, and synthesis behavior are unchanged.
+
+## 2026-09-22 — Remove Customize design templates
+
+**Decision:** remove the Design Template control, its card dialog, its transient
+selection state, and the code-defined Facebook Reel preset from Customize Video.
+The individual aspect ratio, fit, zoom, and dynamic-blur controls remain.
+
+**Why:** the preset adds another abstraction over settings that are already
+direct and editable, without providing enough value to justify the extra UI.
+
+**Supersedes:** both 2026-09-22 design-template decisions: the original local
+form preset and its later card-modal presentation.
+
+**Consequence:** removing the control does not alter any project's saved
+configuration. Users configure each remaining option directly.
+
+## 2026-09-22 — Hide the single-option output language control
+
+**Decision:** hide Output Language from Customize Video while retaining the
+saved `output_language` field, client/server types, and Burmese-only validation.
+
+**Why:** Burmese is currently the only supported output language, so displaying
+a selector with no meaningful choice adds unnecessary visual weight.
+
+**Consequence:** existing and new projects continue to save and use Burmese.
+The control can return when the product supports another output language.

@@ -12,7 +12,7 @@ import {
   movieRecapBlurCssPx,
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect, formatDuration } from "@/lib/movie-recap";
-import { MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
+import { MovieRecapHookTitleOverlay, MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
 
 type BlurRect = { x: number; y: number; width: number; height: number };
 
@@ -113,7 +113,7 @@ export function MovieRecapPreview({
             className={`relative overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl ${
               project.aspectRatio === "9:16" ? "h-[480px] w-auto" : "w-full max-w-[620px] h-auto"
             }`}
-            style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+            style={{ aspectRatio: project.aspectRatio === "9:16" ? "9 / 16" : project.aspectRatio === "1:1" ? "1 / 1" : "16 / 9" }}
           >
             {videoUrl ? (
               // Zoom magnifies the FITTED picture and the frame clips it, which is
@@ -128,7 +128,7 @@ export function MovieRecapPreview({
               // changed. Both are in history/movie-recap.md; the render is the
               // output, so the preview follows it.
               <>
-                {project.fitMode === "contain" && (
+                {project.fitMode === "contain" && project.dynamicBackgroundBlurEnabled && (
                   <video
                     ref={backgroundVideoRef}
                     src={videoUrl}
@@ -193,7 +193,8 @@ export function MovieRecapPreview({
             ) : (
               <div className="grid h-full place-items-center text-sm text-fg-3">Video preview unavailable</div>
             )}
-            <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />
+            {project.subtitlesEnabled && <MovieRecapSubtitleOverlay project={project} text={MOVIE_RECAP_SUBTITLE_SAMPLE} />}
+            <MovieRecapHookTitleOverlay project={project} />
 
             {project.logoEnabled && (
               <div
@@ -205,7 +206,7 @@ export function MovieRecapPreview({
                   opacity: project.logoOpacity / 100,
                 }}
               >
-                {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className="max-h-full max-w-full object-contain object-left" /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
+                {project.logoUrl ? <Image src={project.logoUrl} alt="Brand logo preview" width={320} height={160} unoptimized className={`max-h-full max-w-full object-contain ${project.logoPlacement.endsWith("right") ? "object-right" : "object-left"}`} /> : <div className="grid h-full w-full place-items-center rounded border border-dashed border-line-2 bg-panel/80 text-[10px] font-semibold text-fg-2">LOGO</div>}
               </div>
             )}
 

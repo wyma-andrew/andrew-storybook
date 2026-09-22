@@ -4,13 +4,14 @@ import { listVoices } from "../tts/voices";
 import type { MovieRecapRenderStage, MovieRecapTranscriptStage } from "../api/types";
 
 export const MOVIE_RECAP_LANGUAGES = [{ id: "my", name: "Burmese" }] as const;
-// The voices the Settings tab offers, taken from the TTS catalog so the picker
+// The voices the Transcript step offers, taken from the TTS catalog so the picker
 // and the synthesizer can never disagree about which voices exist.
 export const MOVIE_RECAP_VOICES = listVoices("movie-recap");
 
 export const MOVIE_RECAP_ASPECT_RATIOS = [
   { id: "9:16", name: "9:16" },
   { id: "16:9", name: "16:9" },
+  { id: "1:1", name: "1:1" },
 ] as const;
 
 export const MOVIE_RECAP_FIT_MODES = [
@@ -93,6 +94,9 @@ export const MOVIE_RECAP_SUBTITLE_SIZE_PCT = {
   // than 2.0, i.e. 4.4% of width against 3.6%): a phone-sized frame is watched
   // at phone size, and the strict match read undersized on it.
   "9:16": 2.5,
+  // Square leaves less room around persistent social overlays than landscape.
+  // Keep its captions compact so one Burmese line does not dominate the frame.
+  "1:1": 2,
 } as const satisfies Record<string, number>;
 
 // What keeps a caption legible over moving footage is the OUTLINE around each
@@ -213,7 +217,7 @@ export const MOVIE_RECAP_LOOK = {
   // signs, screens, subtitles already burned into the source — reads backwards.
   // The recap's OWN subtitles are safe, because they are burned on the
   // concatenated video long after this.
-  mirrorAspectRatios: ["16:9", "9:16"] as readonly string[],
+  mirrorAspectRatios: ["16:9", "9:16", "1:1"] as readonly string[],
   backfillBlurRadius: 20,
   backfillBlurPasses: 2,
 } as const;
@@ -246,10 +250,12 @@ export const MOVIE_RECAP_ZOOM = {
     contain: {
       "16:9": 1,
       "9:16": 1,
+      "1:1": 1,
     },
     cover: {
       "16:9": 1,
       "9:16": 1,
+      "1:1": 1,
     },
   },
 } as const satisfies {
@@ -370,6 +376,8 @@ export const MOVIE_RECAP_TARGET_DIMENSIONS = {
   // from an already-soft picture — worst on the burned Burmese captions, whose
   // stacked marks are the first thing to go.
   "9:16": [1080, 1920],
+  // Square social exports keep the same 1080px working width as portrait.
+  "1:1": [1080, 1080],
 } as const satisfies Record<string, readonly [number, number]>;
 
 // The widths the pixel-valued blur radii below were chosen against — PER RATIO,
@@ -386,6 +394,7 @@ export const MOVIE_RECAP_TARGET_DIMENSIONS = {
 const BLUR_REFERENCE_WIDTH = {
   "16:9": 1280,
   "9:16": 720,
+  "1:1": 1080,
 } as const satisfies Record<MovieRecapAspectRatio, number>;
 
 export function movieRecapBlurRadius(baseRadius: number, aspectRatio: MovieRecapAspectRatio) {
@@ -620,6 +629,16 @@ export const MOVIE_RECAP_PACING = {
     maxContinuousSourceS: 4,
     maxSegmentS: 6,
     subtitleOffsetPct: 8,
+  },
+  // SQUARE SOCIAL. Keep short-form cutting, with a middle subtitle offset
+  // because square posts have less reserved UI space than vertical posts.
+  "1:1": {
+    minShotS: 1.5,
+    shotTargetS: 2,
+    maxShotS: 2.4,
+    maxContinuousSourceS: 3,
+    maxSegmentS: 3.5,
+    subtitleOffsetPct: 12,
   },
 } as const satisfies Record<MovieRecapAspectRatio, MovieRecapPacing>;
 

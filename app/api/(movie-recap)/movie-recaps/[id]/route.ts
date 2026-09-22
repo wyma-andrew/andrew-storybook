@@ -62,6 +62,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.fit_mode = body.fitMode;
     changesConfiguration = true;
   }
+  if (body?.dynamicBackgroundBlurEnabled !== undefined) {
+    if (typeof body.dynamicBackgroundBlurEnabled !== "boolean") return NextResponse.json({ error: "dynamicBackgroundBlurEnabled must be boolean." }, { status: 400 });
+    patch.dynamic_background_blur_enabled = body.dynamicBackgroundBlurEnabled;
+    changesConfiguration = true;
+  }
   if (body?.subtitlePosition !== undefined) {
     if (!isMovieRecapSubtitlePosition(body.subtitlePosition)) return NextResponse.json({ error: "Invalid subtitle position." }, { status: 400 });
     patch.subtitle_position = body.subtitlePosition;
@@ -72,8 +77,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.subtitle_preset = body.subtitlePreset;
     changesConfiguration = true;
   }
+  if (body?.subtitlesEnabled !== undefined) {
+    if (typeof body.subtitlesEnabled !== "boolean") return NextResponse.json({ error: "subtitlesEnabled must be boolean." }, { status: 400 });
+    patch.subtitles_enabled = body.subtitlesEnabled;
+    changesConfiguration = true;
+  }
+  if (body?.hookTitle !== undefined) {
+    if (body.hookTitle !== null && typeof body.hookTitle !== "string") return NextResponse.json({ error: "hookTitle must be a string or null." }, { status: 400 });
+    patch.hook_title = typeof body.hookTitle === "string" ? body.hookTitle.trim().slice(0, 200) || null : null;
+    changesConfiguration = true;
+  }
+  if (body?.hookTitlePosition !== undefined) {
+    if (!isMovieRecapSubtitlePosition(body.hookTitlePosition)) return NextResponse.json({ error: "Invalid hook title position." }, { status: 400 });
+    patch.hook_title_position = body.hookTitlePosition;
+    changesConfiguration = true;
+  }
   for (const [client, column, min, max] of [
     ["subtitleOffset", "subtitle_offset", 0, 45],
+    ["hookTitleOffset", "hook_title_offset", 0, 45],
     // null is a legal value here: it means the zoom has not been chosen and the
     // recommendation for the fit mode applies.
     ["copyrightZoom", "copyright_zoom", 1, 2],

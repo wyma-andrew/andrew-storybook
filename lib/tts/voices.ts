@@ -53,7 +53,7 @@ export const VOICES: readonly Voice[] = [
   },
   // Self-hosted, lab-only: kept out of Movie Recap while CPU inference takes
   // tens of seconds per clip (see history/voice-lab.md). Flip `surfaces` to add
-  // either one back to the Settings tab.
+  // either one back to the Transcript step.
   {
     id: "narrator",
     name: "Wai Yan",

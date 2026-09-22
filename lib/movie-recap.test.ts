@@ -29,15 +29,12 @@ describe("movie recap display helpers", () => {
 });
 
 describe("suggestMovieRecapFraming", () => {
-  it("matches the output orientation to the source and fills it", () => {
-    expect(suggestMovieRecapFraming(1920, 1080)).toEqual({ aspectRatio: "16:9", fitMode: "cover" });
-    expect(suggestMovieRecapFraming(1080, 1920)).toEqual({ aspectRatio: "9:16", fitMode: "cover" });
+  it("matches the output orientation to the source and defaults to contain", () => {
+    expect(suggestMovieRecapFraming(1920, 1080)).toEqual({ aspectRatio: "16:9", fitMode: "contain" });
+    expect(suggestMovieRecapFraming(1080, 1920)).toEqual({ aspectRatio: "9:16", fitMode: "contain" });
   });
 
-  it("treats a square source as landscape", () => {
-    // Arbitrary but fixed: something has to win, and 16:9 is the commoner recap
-    // output.
-    expect(suggestMovieRecapFraming(1000, 1000).aspectRatio).toBe("16:9");
+  it("matches a square source to the square output", () => {
+    expect(suggestMovieRecapFraming(1000, 1000)).toEqual({ aspectRatio: "1:1", fitMode: "contain" });
   });
 });
-

@@ -183,10 +183,11 @@ and browser render history are cleared. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
-Logo settings can be saved as per-user logo templates; applying one copies its
-independent R2 logo asset and fills the current project's logo settings while
-leaving the saved template unchanged. Logo configuration also supports optional
-watermark text centered over the logo in the customization preview.
+The Customize Logo tab accepts either a reusable per-user template or a one-off
+project logo. Templates retain only the independent R2 logo asset and optional
+watermark text; placement and opacity remain project settings. Template
+create/update persists immediately, while selection, clearing, and project logo
+settings stay in the browser draft until Save & Continue.
 
 The recap is built in two runs: a SCRIPT run creates the narration timeline, and
 a RENDER processes the full source independently. Each timestamped Burmese-story

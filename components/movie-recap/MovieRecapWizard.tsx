@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
 import Image from "next/image";
-import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Loader2, Pause, Play, Plus, RectangleHorizontal, RectangleVertical, Stamp, Trash2, Upload, X } from "lucide-react";
+import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Pencil, Plus, RectangleHorizontal, RectangleVertical, Square, Stamp, Trash2, Upload, X } from "lucide-react";
 import { ConfirmDialog, Dialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -14,16 +14,13 @@ import {
   MOVIE_RECAP_ASPECT_RATIOS,
   MOVIE_RECAP_ZOOM,
   MOVIE_RECAP_FIT_MODES,
-  MOVIE_RECAP_LANGUAGES,
   MOVIE_RECAP_LOGO_PLACEMENTS,
   MOVIE_RECAP_SUBTITLE_PRESETS,
   MOVIE_RECAP_SUBTITLE_SIZE_PCT,
   effectiveMovieRecapZoom,
   MOVIE_RECAP_SUBTITLE_POSITIONS,
-  MOVIE_RECAP_VOICES,
 } from "@/lib/constants/movie-recap";
-import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
-import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
+import { clampBlurRect, formatBytes } from "@/lib/movie-recap";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
@@ -43,17 +40,22 @@ const STEP_NAMES = ["Add Source", "Transcript", "Narrative Script", "Customize V
 // adding one word here.
 type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
 
-const SETTINGS_FIELDS = ["name", "outputLanguage", "voiceProfileId"] as const satisfies readonly PatchableField[];
+const SETTINGS_FIELDS = ["name", "outputLanguage"] as const satisfies readonly PatchableField[];
 
-const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptStory"] as const satisfies readonly PatchableField[];
+const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptStory", "voiceProfileId"] as const satisfies readonly PatchableField[];
 
 const CUSTOMIZE_FIELDS = [
   "aspectRatio",
   "fitMode",
+  "dynamicBackgroundBlurEnabled",
   "copyrightZoom",
   "subtitlePreset",
+  "subtitlesEnabled",
   "subtitlePosition",
   "subtitleOffset",
+  "hookTitle",
+  "hookTitlePosition",
+  "hookTitleOffset",
   "logoEnabled",
   "logoPlacement",
   "logoOpacity",
@@ -85,15 +87,82 @@ const CUSTOMIZE_TABS = [
   { id: "blur", label: "Blur", Icon: Droplet },
 ] as const satisfies readonly { id: CustomizeTab; label: string; Icon: typeof Crop }[];
 
-function ChoiceButton({ selected, children, onClick }: { selected: boolean; children: React.ReactNode; onClick: () => void }) {
+function ChoiceButton({ selected, children, onClick, showSelectedIndicator = true }: { selected: boolean; children: React.ReactNode; onClick: () => void; showSelectedIndicator?: boolean }) {
   return (
     <Button
       onClick={onClick}
       className={`relative !h-auto min-h-20 !justify-start !rounded-xl !px-4 !py-3 !text-left ${selected ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !bg-panel-2 !text-fg"}`}
     >
       {children}
-      {selected && <span className="absolute top-2 right-2 grid h-5 w-5 place-items-center rounded-full bg-accent text-on-accent"><Check size={12} /></span>}
+      {selected && showSelectedIndicator && <span className="absolute top-2 right-2 grid h-5 w-5 place-items-center rounded-full bg-accent text-on-accent"><Check size={12} /></span>}
     </Button>
+  );
+}
+
+type LogoTemplateDialogValues = {
+  name: string;
+  file: File | null;
+  watermarkText: string;
+};
+
+function LogoTemplateDialogContent({
+  title,
+  description,
+  initialName = "",
+  initialFile = null,
+  currentFileName = "",
+  initialWatermarkText = "",
+  submitLabel,
+  submittingLabel,
+  dismiss,
+  onSubmit,
+}: {
+  title: string;
+  description: string;
+  initialName?: string;
+  initialFile?: File | null;
+  currentFileName?: string;
+  initialWatermarkText?: string;
+  submitLabel: string;
+  submittingLabel: string;
+  dismiss: () => void;
+  onSubmit: (values: LogoTemplateDialogValues) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(initialName);
+  const [file, setFile] = useState<File | null>(initialFile);
+  const [watermarkText, setWatermarkText] = useState(initialWatermarkText);
+  const [submitting, setSubmitting] = useState(false);
+  const { openFilePicker } = useFilePicker<HTMLDivElement>({
+    accept: "image/png,image/jpeg,image/webp",
+    onChange: (_files, newFiles) => {
+      if (newFiles[0]) setFile(newFiles[0]);
+    },
+  });
+
+  async function submit() {
+    setSubmitting(true);
+    try {
+      if (await onSubmit({ name, file, watermarkText })) dismiss();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div><h3 className="text-base font-semibold">{title}</h3><p className="mt-1 text-sm text-fg-2">{description}</p></div>
+      <Input autoFocus value={name} placeholder="Template name" onChange={(event) => setName(event.target.value)} />
+      <div>
+        <div className="mb-2 text-xs font-medium text-fg-2">Logo file</div>
+        <Button disabled={submitting} onClick={() => openFilePicker({ multiple: false })}><Upload size={14} /> {file || currentFileName ? "Replace image" : "Choose image"}</Button>
+        <p className="mt-2 truncate text-xs text-fg-3">{file?.name || currentFileName || "PNG, JPEG, or WebP"}</p>
+      </div>
+      <div><div className="mb-2 text-xs font-medium text-fg-2">Watermark text <span className="font-normal text-fg-3">(optional)</span></div><Input value={watermarkText} placeholder="Text over the logo" onChange={(event) => setWatermarkText(event.target.value)} /></div>
+      <div className="flex justify-end gap-2">
+        <Button disabled={submitting} variant="secondary" onClick={dismiss}>Cancel</Button>
+        <LoadingButton loading={submitting} loadingText={submittingLabel} onClick={() => void submit()}>{submitLabel}</LoadingButton>
+      </div>
+    </div>
   );
 }
 
@@ -121,9 +190,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: commitLogo } = useWrite((api) => api("movie-recaps/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("movie-recaps/:id/logo").DELETE());
   const { data: logoTemplates = [], trigger: refreshLogoTemplates } = useRead((api) => api("movie-recap-logo-templates").GET(), { staleTime: 30000 });
-  const { trigger: createLogoTemplate, loading: savingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates").POST());
-  const { trigger: applyLogoTemplate, loading: applyingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").POST());
-  const { trigger: updateLogoTemplate, loading: updatingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").PATCH());
+  const { trigger: createLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates").POST());
+  const { trigger: applyLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").POST());
+  const { trigger: updateLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").PATCH());
   const { trigger: deleteLogoTemplate, loading: deletingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
@@ -131,7 +200,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
-  const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
   const [project, setProject] = useState<MovieRecapProject | null>(initialProject);
   const [maxStep, setMaxStep] = useState<StepNumber>(initialProject?.currentStep ?? 1);
@@ -175,15 +243,15 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }, [localVideoUrl]);
   const [logoBusy, setLogoBusy] = useState(false);
   const [selectedLogoTemplateId, setSelectedLogoTemplateId] = useState<string | null>(initialProject?.logoTemplateId ?? null);
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+  const [logoAction, setLogoAction] = useState<"unchanged" | "template" | "custom" | "clear">("unchanged");
+  const pendingLogoPreviewUrl = useRef<string | null>(null);
   // Which beat is being re-spoken, so only that row shows a spinner.
   const [checkingBeat, setCheckingBeat] = useState<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  // The voice id whose preview is currently playing, or is being synthesized.
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
-  // Object URLs for previews synthesized this session, so a second press
-  // replays instead of asking the server again.
-  const previewUrls = useRef(new Map<string, string>());
+
+  useEffect(() => () => {
+    if (pendingLogoPreviewUrl.current) URL.revokeObjectURL(pendingLogoPreviewUrl.current);
+  }, []);
 
   // The row as it actually is, for when a request failed and local state is a
   // guess. `force` skips the cache: the point is to stop trusting what we had.
@@ -197,23 +265,21 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     setProject((current) => current ? { ...current, ...patch } : current);
   }
 
-  // Changing the fit mode or the aspect ratio UNSETS the zoom rather than
-  // writing a number. Unset means "use the recommendation for this pair", so the
-  // value tracks them until someone moves the slider — and once they do, it
-  // stays where they put it until one of the two changes again.
+  // Ratio and fit-mode changes deliberately leave zoom alone so they respect
+  // the user's framing.
   function setFitMode(fitMode: MovieRecapProject["fitMode"]) {
-    merge({ fitMode, copyrightZoom: null });
+    merge({ fitMode });
   }
 
   function setAspectRatio(aspectRatio: MovieRecapProject["aspectRatio"]) {
-    merge({ aspectRatio, copyrightZoom: null });
+    merge({ aspectRatio });
   }
 
   async function saveAndGo(target: 2 | 3 | 4 | 5) {
     if (!project) return;
     const body: MovieRecapProjectPatch = { currentStep: target };
-    // The Transcript step has no save button of its own: its two textareas edit
-    // the project draft and this is what writes them.
+    // Transcript fields edit the project draft and this writes them together,
+    // including the voice Build Script will read in the next step.
     if (step === 2) {
       for (const field of TRANSCRIPT_FIELDS) body[field] = project[field] ?? "";
     }
@@ -223,9 +289,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
         return;
       }
       if (project.logoEnabled && !project.logoUrl) {
-        toast.error("Upload a brand logo or turn Add Logo off.");
+        toast.error("Choose or upload a logo, or leave the logo off.");
         return;
       }
+      if (!await persistLogoDraft()) return;
       Object.assign(body, pick(project, SETTINGS_FIELDS), pick(project, CUSTOMIZE_FIELDS));
     }
     const result = await updateProject({ params: { id: project.id }, body });
@@ -234,12 +301,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       return;
     }
     setProject(result.data);
+    if (step === 4) setLogoAction("unchanged");
     setMaxStep((current) => Math.max(current, target) as StepNumber);
     void setStep(target);
   }
 
-  // Same write as Continue's, without leaving the step. The two textareas edit
-  // the project draft, so a long transcript can be parked before it is finished.
+  // Same write as Continue's, without leaving the step, so a long transcript
+  // and its narration voice can be parked before the story is finished.
   async function saveTranscript() {
     if (!project) return;
     const body: MovieRecapProjectPatch = {};
@@ -342,8 +410,48 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     else if (!result.data?.cancelled) toast.error("No render is running for this project.");
   }
 
-  async function uploadLogo(file: File) {
-    if (!project) return;
+  function clearPendingLogoFile() {
+    if (pendingLogoPreviewUrl.current) URL.revokeObjectURL(pendingLogoPreviewUrl.current);
+    pendingLogoPreviewUrl.current = null;
+    setPendingLogoFile(null);
+  }
+
+  function stageLogoFile(file: File) {
+    clearPendingLogoFile();
+    const previewUrl = URL.createObjectURL(file);
+    pendingLogoPreviewUrl.current = previewUrl;
+    setPendingLogoFile(file);
+    setSelectedLogoTemplateId(null);
+    setLogoAction("custom");
+    merge({
+      logoEnabled: true,
+      logoFileName: file.name,
+      logoObjectKey: null,
+      logoUrl: previewUrl,
+      logoContentType: file.type,
+      logoSizeBytes: file.size,
+      logoTemplateId: null,
+    });
+  }
+
+  function clearLogoDraft() {
+    clearPendingLogoFile();
+    setSelectedLogoTemplateId(null);
+    setLogoAction("clear");
+    merge({
+      logoEnabled: false,
+      logoFileName: null,
+      logoObjectKey: null,
+      logoUrl: null,
+      logoContentType: null,
+      logoSizeBytes: null,
+      logoWatermarkText: null,
+      logoTemplateId: null,
+    });
+  }
+
+  async function uploadLogo(file: File): Promise<MovieRecapProject | null> {
+    if (!project) return null;
     setLogoBusy(true);
     try {
       const signed = await presignLogo({
@@ -366,16 +474,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       if (committed.error || !committed.data) throw new Error(committed.error?.error ?? "Could not save the logo.");
       setProject((current) => current ? {
         ...current,
+        logoEnabled: true,
         logoFileName: committed.data!.logoFileName,
         logoObjectKey: committed.data!.logoObjectKey,
         logoUrl: committed.data!.logoUrl,
         logoContentType: committed.data!.logoContentType,
         logoSizeBytes: committed.data!.logoSizeBytes,
       } : committed.data!);
-      setSelectedLogoTemplateId(null);
-      toast.success("Logo uploaded.");
+      clearPendingLogoFile();
+      return committed.data;
     } catch (uploadError) {
       toast.error(uploadError instanceof Error ? uploadError.message : "Could not upload the logo.");
+      return null;
     } finally {
       setLogoBusy(false);
     }
@@ -384,229 +494,176 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { openFilePicker: openLogoPicker } = useFilePicker<HTMLDivElement>({
     accept: "image/png,image/jpeg,image/webp",
     onChange: (_files, newFiles) => {
-      if (newFiles[0]) void uploadLogo(newFiles[0]);
+      if (newFiles[0]) stageLogoFile(newFiles[0]);
     },
   });
 
-  async function deleteLogo() {
+  async function persistLogoDraft() {
     if (!project) return false;
+    if (logoAction === "unchanged") return true;
+    if (logoAction === "custom") {
+      if (!pendingLogoFile) {
+        toast.error("Choose a logo image first.");
+        return false;
+      }
+      const uploaded = await uploadLogo(pendingLogoFile);
+      if (uploaded) setLogoAction("unchanged");
+      return Boolean(uploaded);
+    }
+    if (logoAction === "template") {
+      if (!selectedLogoTemplateId) return false;
+      const result = await applyLogoTemplate({ params: { id: selectedLogoTemplateId }, body: { projectId: project.id } });
+      if (result.error || !result.data) {
+        toast.error(result.error?.error ?? "Could not apply the logo template.");
+        return false;
+      }
+      setLogoAction("unchanged");
+      return true;
+    }
     const result = await removeLogo({ params: { id: project.id } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not remove the logo.");
       return false;
     }
-    setProject((current) => current ? {
-      ...current,
-      logoFileName: null,
-      logoObjectKey: null,
-      logoUrl: null,
-      logoContentType: null,
-      logoSizeBytes: null,
-    } : result.data!);
-    setSelectedLogoTemplateId(null);
+    setLogoAction("unchanged");
     return true;
   }
 
-  function saveLogoTemplate() {
-    if (!project?.logoUrl) {
-      toast.error("Upload a logo before saving a template.");
+  function selectLogoTemplate(templateId: string | null) {
+    if (!project) return;
+    if (!templateId) {
+      clearLogoDraft();
       return;
     }
-    const activeTemplateId = selectedLogoTemplateId ?? project.logoTemplateId;
-    if (activeTemplateId) {
-      void (async () => {
-        const result = await updateLogoTemplate({
-          params: { id: activeTemplateId },
-          body: {
-            projectId: project.id,
-            logoWatermarkText: project.logoWatermarkText,
-            logoPlacement: project.logoPlacement,
-            logoOpacity: project.logoOpacity,
-          },
-        });
-        if (result.error || !result.data) {
-          toast.error(result.error?.error ?? "Could not update the template.");
-          return;
-        }
-        await refreshLogoTemplates({ force: true });
-        setSelectedLogoTemplateId(activeTemplateId);
-        toast.success("Template updated.");
-      })();
-      return;
-    }
-    Dialog.show({
-      className: "max-w-md",
-      content: ({ dismiss }) => {
-        let name = "";
-        return (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-base font-semibold">Save logo template</h3>
-              <p className="mt-1 text-sm text-fg-2">Save the current logo file, placement, and opacity for reuse.</p>
-            </div>
-            <Input autoFocus placeholder="Template name" onChange={(event) => { name = event.target.value; }} />
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={dismiss}>Cancel</Button>
-              <LoadingButton
-                loading={savingLogoTemplate}
-                loadingText="Saving..."
-                onClick={async () => {
-                  const result = await createLogoTemplate({ body: { projectId: project.id, name: name.trim(), logoWatermarkText: project.logoWatermarkText } });
-                  if (result.error || !result.data) {
-                    toast.error(result.error?.error ?? "Could not save the template.");
-                    return;
-                  }
-                  setSelectedLogoTemplateId(result.data.id);
-                  setProject((current) => current ? { ...current, logoTemplateId: result.data!.id } : current);
-                  await refreshLogoTemplates({ force: true });
-                  dismiss();
-                  toast.success("Logo template saved.");
-                }}
-              >Save template</LoadingButton>
-            </div>
-          </div>
-        );
-      },
+    const template = logoTemplates.find((item) => item.id === templateId);
+    if (!template) return;
+    clearPendingLogoFile();
+    setSelectedLogoTemplateId(templateId);
+    setLogoAction("template");
+    merge({
+      logoEnabled: true,
+      logoFileName: template.logoFileName,
+      logoObjectKey: template.logoObjectKey,
+      logoUrl: template.logoUrl,
+      logoContentType: template.logoContentType,
+      logoSizeBytes: template.logoSizeBytes,
+      logoWatermarkText: template.logoWatermarkText,
+      logoTemplateId: template.id,
     });
   }
 
-  function chooseLogoTemplate() {
-    if (!project) return;
-    if (!logoTemplates.length) {
-      toast.error("Save a logo template first.");
+  async function deleteSelectedLogoTemplate() {
+    if (!project || !activeLogoTemplateId) return;
+    const templateId = activeLogoTemplateId;
+    const result = await deleteLogoTemplate({ params: { id: templateId } });
+    if (result.error) {
+      toast.error(result.error.error ?? "Could not delete the template.");
       return;
     }
+    clearLogoDraft();
+    await refreshLogoTemplates({ force: true });
+    toast.success("Logo template deleted.");
+  }
+
+  function openCreateLogoTemplate() {
+    if (!project) return;
     Dialog.show({
       className: "max-w-lg",
-      content: ({ dismiss }) => (
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-base font-semibold">Choose logo template</h3>
-            <p className="mt-1 text-sm text-fg-2">Choose a saved template. You can still change its settings afterward.</p>
-          </div>
-          <div className="grid gap-2">
-            {logoTemplates.map((template) => (
-              <div key={template.id} className="flex items-stretch gap-2 rounded-xl border border-line bg-panel-2 p-2 transition-colors hover:border-accent hover:bg-accent-dim">
-                <Button
-                  disabled={applyingLogoTemplate || deletingLogoTemplate}
-                  className="group !h-auto !min-w-0 !flex-1 !justify-start !border-0 !bg-transparent !px-3 !py-2 !text-left"
-                  onClick={async () => {
-                    const result = await applyLogoTemplate({ params: { id: template.id }, body: { projectId: project.id } });
-                    if (result.error || !result.data) {
-                      toast.error(result.error?.error ?? "Could not apply the template.");
-                      return;
-                    }
-                    setProject((current) => current ? {
-                      ...current,
-                      logoEnabled: true,
-                      logoFileName: result.data!.logoFileName,
-                      logoObjectKey: result.data!.logoObjectKey,
-                      logoUrl: result.data!.logoUrl,
-                      logoContentType: result.data!.logoContentType,
-                    logoSizeBytes: result.data!.logoSizeBytes,
-                    logoWatermarkText: result.data!.logoWatermarkText,
-                    logoTemplateId: template.id,
-                    logoPlacement: result.data!.logoPlacement,
-                      logoOpacity: result.data!.logoOpacity,
-                    } : result.data!);
-                    setSelectedLogoTemplateId(template.id);
-                    dismiss();
-                    toast.success(`Chosen ${template.name}.`);
-                  }}
-                >
-                <span className="flex min-w-0 flex-1 items-center gap-3">
-                  <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-line bg-sunken p-1.5">
-                    <Image src={template.logoUrl} alt="" width={80} height={80} unoptimized className="max-h-full max-w-full object-contain" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-fg">{template.name}</span>
-                    <span className="mt-0.5 block truncate text-xs text-fg-3">{template.logoFileName}</span>
-                    <span className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium text-fg-2">
-                      <span className="rounded-full bg-chip px-2 py-1">{MOVIE_RECAP_LOGO_PLACEMENTS.find((item) => item.id === template.logoPlacement)?.name}</span>
-                      <span className="rounded-full bg-chip px-2 py-1">{template.logoOpacity}% opacity</span>
-                    </span>
-                  </span>
-                </span>
-                </Button>
-                <Button
-                  variant="danger"
-                  aria-label={`Delete ${template.name}`}
-                  title="Delete template"
-                  disabled={applyingLogoTemplate || deletingLogoTemplate}
-                  className="!h-9 !w-9 shrink-0 self-center !p-0"
-                  onClick={async () => {
-                    const result = await deleteLogoTemplate({ params: { id: template.id } });
-                    if (result.error) {
-                      toast.error(result.error.error ?? "Could not delete the template.");
-                      return;
-                    }
-                    if (selectedLogoTemplateId === template.id || project.logoTemplateId === template.id) {
-                      setSelectedLogoTemplateId(null);
-                      merge({ logoTemplateId: null });
-                    }
-                    await refreshLogoTemplates({ force: true });
-                    dismiss();
-                    toast.success("Template deleted.");
-                  }}
-                >
-                  <Trash2 size={15} />
-                </Button>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-end"><Button variant="secondary" onClick={dismiss}>Cancel</Button></div>
-        </div>
-      ),
+      content: ({ dismiss }) => <LogoTemplateDialogContent
+        title="Create logo template"
+        description="Save a logo and optional watermark for reuse across recap videos."
+        initialFile={pendingLogoFile}
+        initialWatermarkText={project.logoWatermarkText ?? ""}
+        submitLabel="Create template"
+        submittingLabel="Creating..."
+        dismiss={dismiss}
+        onSubmit={async ({ name, file, watermarkText }) => {
+          if (!name.trim()) {
+            toast.error("Template name is required.");
+            return false;
+          }
+          if (!file && (!project.logoUrl || activeLogoTemplateId)) {
+            toast.error("Choose a logo image first.");
+            return false;
+          }
+          if (file && !await uploadLogo(file)) return false;
+          const result = await createLogoTemplate({ body: { projectId: project.id, name: name.trim(), logoWatermarkText: watermarkText.trim() || null } });
+          if (result.error || !result.data) {
+            toast.error(result.error?.error ?? "Could not save the template.");
+            return false;
+          }
+          setSelectedLogoTemplateId(result.data.id);
+          setLogoAction("template");
+          merge({
+            logoEnabled: true,
+            logoFileName: result.data.logoFileName,
+            logoObjectKey: result.data.logoObjectKey,
+            logoUrl: result.data.logoUrl,
+            logoContentType: result.data.logoContentType,
+            logoSizeBytes: result.data.logoSizeBytes,
+            logoWatermarkText: result.data.logoWatermarkText,
+            logoTemplateId: result.data.id,
+          });
+          await refreshLogoTemplates({ force: true });
+          toast.success("Logo template created.");
+          return true;
+        }}
+      />,
     });
   }
 
-  // One <audio> for the whole list: playing a different voice re-points it.
-
-  // A voice with no previewUrl has no button at all, so this is never called
-  // without a clip to play.
-  // A voice with a recorded clip plays that; the Azure voices have none, so the
-  // first press synthesizes their own sample line and the object URL is kept for
-  // the rest of the session. Pressing play twice must not mean paying twice —
-  // the server caches the bytes for the same reason.
-  async function togglePreview(voice: (typeof MOVIE_RECAP_VOICES)[number]) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (playing === voice.id) {
-      audio.pause();
-      return;
-    }
-
-    let src = voice.previewUrl ?? previewUrls.current.get(voice.id) ?? null;
-    if (!src) {
-      setPreviewLoading(voice.id);
-      const result = await generateVoicePreview({ body: { voiceId: voice.id }, invalidate: false });
-      setPreviewLoading(null);
-      if (result.error || !result.data) {
-        toast.error(result.error?.error ?? "Could not generate the voice preview.");
-        return;
-      }
-      src = audioUrlFromBase64(result.data.audioBase64, result.data.contentType);
-      previewUrls.current.set(voice.id, src);
-    }
-
-    audio.src = src;
-    setPlaying(voice.id);
-    void audio.play().catch(() => {
-      setPlaying(null);
-      toast.error("Voice preview audio could not be played.");
+  function openEditLogoTemplate() {
+    if (!project || !activeLogoTemplateId) return;
+    const template = logoTemplates.find((item) => item.id === activeLogoTemplateId);
+    if (!template) return;
+    Dialog.show({
+      className: "max-w-lg",
+      content: ({ dismiss }) => <LogoTemplateDialogContent
+        title="Edit logo template"
+        description="Update the saved logo details used by this project."
+        initialName={template.name}
+        currentFileName={template.logoFileName}
+        initialWatermarkText={template.logoWatermarkText ?? ""}
+        submitLabel="Update template"
+        submittingLabel="Updating..."
+        dismiss={dismiss}
+        onSubmit={async ({ name, file, watermarkText }) => {
+          if (!name.trim()) {
+            toast.error("Template name is required.");
+            return false;
+          }
+          if (file && !await uploadLogo(file)) return false;
+          const result = await updateLogoTemplate({
+            params: { id: activeLogoTemplateId },
+            body: {
+              ...(file ? { projectId: project.id, replaceLogo: true } : {}),
+              name: name.trim(),
+              logoWatermarkText: watermarkText.trim() || null,
+            },
+          });
+          if (result.error || !result.data) {
+            toast.error(result.error?.error ?? "Could not update the template.");
+            return false;
+          }
+          setSelectedLogoTemplateId(result.data.id);
+          setLogoAction("template");
+          merge({
+            logoEnabled: true,
+            logoFileName: result.data.logoFileName,
+            logoObjectKey: result.data.logoObjectKey,
+            logoUrl: result.data.logoUrl,
+            logoContentType: result.data.logoContentType,
+            logoSizeBytes: result.data.logoSizeBytes,
+            logoWatermarkText: result.data.logoWatermarkText,
+            logoTemplateId: result.data.id,
+          });
+          await refreshLogoTemplates({ force: true });
+          toast.success("Logo template updated.");
+          return true;
+        }}
+      />,
     });
   }
-
-  // Object URLs outlive the component unless they're revoked, and the map holds
-  // one per voice previewed this session.
-  const previewUrlsRef = previewUrls;
-  useEffect(() => {
-    const urls = previewUrlsRef.current;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
-    };
-  }, [previewUrlsRef]);
 
   // Real render progress: the render request stays open for the whole
   // pipeline, so poll the row it's writing stage/segment progress onto — see
@@ -635,7 +692,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     });
   }
   const videoUrl = localVideoUrl ?? project?.sourceUrl ?? null;
-  const activeLogoTemplateId = selectedLogoTemplateId ?? project?.logoTemplateId ?? null;
+  const activeLogoTemplateId = selectedLogoTemplateId;
 
   return (
     <>
@@ -686,35 +743,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
           {step === 4 && project && (
             <div>
-              <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project, choose its narration, and preview how framing and overlays will be applied.</p>
+              <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project and preview how framing and overlays will be applied.</p>
               <Field label="Project name"><Input value={project.name} onChange={(event) => merge({ name: event.target.value })} maxLength={200} /></Field>
-              <Field label="Output language"><Select value={project.outputLanguage} onChange={(value) => merge({ outputLanguage: value })}>{MOVIE_RECAP_LANGUAGES.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></Field>
-              <div className="mb-6"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Voice profile</div>
-                {/* Four across on a wide screen, two on a tablet, one on a
-                    phone. The card stacks its play control above the label so a
-                    quarter-width column still fits the Burmese sample line. */}
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                  {MOVIE_RECAP_VOICES.map((voice) => (
-                    <div key={voice.id} className={`flex flex-col gap-2 rounded-xl border p-3 ${project.voiceProfileId === voice.id ? "border-accent bg-accent-dim" : "border-line bg-panel-2"}`}>
-                      <div className="flex items-center">
-                        <Button
-                          aria-label={playing === voice.id ? `Pause ${voice.name} preview` : `Play ${voice.name} preview`}
-                          disabled={previewLoading !== null}
-                          onClick={() => void togglePreview(voice)}
-                          className="!h-9 !w-9 shrink-0 !rounded-full !border-0 !bg-accent !p-0 !text-on-accent"
-                        >
-                          {previewLoading === voice.id ? <Loader2 size={15} className="animate-spin" /> : playing === voice.id ? <Pause size={15} /> : <Play size={15} />}
-                        </Button>
-                      </div>
-                      <Button onClick={() => merge({ voiceProfileId: voice.id })} className="!h-auto min-w-0 flex-1 !items-start !justify-start !border-0 !bg-transparent !p-0 !text-left !text-fg">
-                        <span className="block w-full"><span className="flex w-full items-center gap-2"><span className="text-sm font-semibold">{voice.name}</span>{project.voiceProfileId === voice.id && <span className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-accent px-2 py-1 text-[10px] text-on-accent"><Check size={11} /> Selected</span>}</span><span className="mt-0.5 block whitespace-normal text-xs text-fg-3">{voice.description}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{voice.sampleText}</span></span>
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                <audio ref={audioRef} onPause={() => setPlaying(null)} onEnded={() => setPlaying(null)} />
-              </div>
-
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
                 <MovieRecapPreview project={project} videoUrl={videoUrl} previewZoom={effectiveMovieRecapZoom(project)} selectedBlur={selectedBlur} onBlurSelect={setSelectedBlur} onBlurChange={(index, rect) => updateBlur(index, rect)} />
                 <div className="rounded-xl border border-line bg-panel-2 p-4">
@@ -722,13 +752,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                     {CUSTOMIZE_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => void setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
                   </div>
                   {tab === "aspect" && <div>
-                    <div className="grid grid-cols-2 gap-3">{MOVIE_RECAP_ASPECT_RATIOS.map((item) => {
-                      const Icon = item.id === "9:16" ? RectangleVertical : RectangleHorizontal;
-                      return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} onClick={() => setAspectRatio(item.id)}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
+                    <div className="grid grid-cols-3 gap-3">{MOVIE_RECAP_ASPECT_RATIOS.map((item) => {
+                      const Icon = item.id === "9:16" ? RectangleVertical : item.id === "1:1" ? Square : RectangleHorizontal;
+                      return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} showSelectedIndicator={false} onClick={() => setAspectRatio(item.id)}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
                     })}</div>
-                    <div className="mt-5"><div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-fg-3">Fit mode</div>
-                      <div className="grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
-                    </div>
+                    <div className="mt-5 grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
                     <label className="mt-5 block">
                       <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
                         <span>Zoom</span>
@@ -748,12 +776,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                         className="w-full accent-accent"
                       />
                       <span className="mt-2 block text-[11px] text-fg-3">
-                        1.00x keeps the original framing. Changing the aspect ratio or fit mode returns this to the recommended value.
+                        1.00x keeps the original framing. Ratio and fit-mode changes preserve your zoom.
                       </span>
                     </label>
                   </div>}
                   {tab === "subtitle" && <div>
-                    <p className="mb-5 text-xs text-fg-2">Subtitles are burned into the exported video. Pick a look; its size is set by the aspect ratio.</p>
                     <div className="space-y-5">
                       {/* Colour, size, weight and shadow are one choice, not four
                           knobs — see history/movie-recap.md. The swatch shows the
@@ -776,24 +803,56 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                     </div>
                   </div>}
                   {tab === "logo" && <div>
-                    <label className="mb-5 flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Add Logo</span><span className="text-xs text-fg-3">Overlay a brand mark on the video.</span></span><Switch checked={project.logoEnabled} onChange={(checked) => merge({ logoEnabled: checked })} /></label>
+                    <div className="mb-5">
+                      <div className="mb-2 text-xs font-medium text-fg-2">Logo template</div>
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            value={activeLogoTemplateId}
+                            clearable
+                            placeholder="No template selected"
+                            onChange={(value) => selectLogoTemplate(value || null)}
+                          >
+                            {logoTemplates.map((template) => <SelectOption key={template.id} value={template.id} label={template.name} />)}
+                          </Select>
+                        </div>
+                        <Button disabled={logoBusy} className="shrink-0" onClick={openCreateLogoTemplate}><Plus size={14} /> Create</Button>
+                      </div>
+                    </div>
+
+                    {activeLogoTemplateId && <div className="mb-5 flex items-center gap-3 rounded-lg border border-line bg-panel p-2.5 text-xs text-fg-3">
+                      <Image src={project.logoUrl ?? ""} alt="Selected logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-fg">{logoTemplates.find((template) => template.id === activeLogoTemplateId)?.name}</div>
+                        <div className="mt-1 truncate"><span className="font-medium text-fg-2">Watermark:</span> {project.logoWatermarkText || "None"}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button variant="ghost" aria-label="Edit logo template" title="Edit logo template" className="!h-8 !w-8 !p-0" onClick={openEditLogoTemplate}><Pencil size={15} /></Button>
+                        <Button disabled={deletingLogoTemplate} variant="danger" aria-label="Delete logo template" title="Delete logo template" className="!h-8 !w-8 !p-0" onClick={() => void deleteSelectedLogoTemplate()}><Trash2 size={15} /></Button>
+                      </div>
+                    </div>}
+
+                    <label className="mb-5 flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Add Logo</span><span className="text-xs text-fg-3">Overlay a saved template or one-off brand mark.</span></span><Switch checked={project.logoEnabled} onChange={(checked) => checked ? merge({ logoEnabled: true }) : clearLogoDraft()} /></label>
                     {project.logoEnabled && <div>
-                      <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Brand logo file</div><div className="flex flex-wrap items-center gap-2">{project.logoUrl ? <><Image src={project.logoUrl} alt="Uploaded logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" /><Button variant="danger" aria-label="Remove logo" title="Remove logo" className="!h-9 !w-9 !p-0" onClick={deleteLogo}><X size={16} /></Button></> : <LoadingButton loading={logoBusy} onClick={() => openLogoPicker({ multiple: false })}><Upload size={15} /> Upload logo</LoadingButton>}{project.logoFileName && <p className="w-full truncate text-xs text-fg-3">{project.logoFileName} · {formatBytes(project.logoSizeBytes ?? 0)}</p>}</div></div>
-                      <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Watermark text <span className="font-normal text-fg-3">(optional)</span></div><Input value={project.logoWatermarkText ?? ""} maxLength={120} placeholder="Text over the logo" onChange={(event) => merge({ logoWatermarkText: event.target.value })} /></div>
+                      {!activeLogoTemplateId && <div className="mb-5">
+                        <div className="mb-2 text-xs font-medium text-fg-2">Brand logo file</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {project.logoUrl && <Image src={project.logoUrl} alt="Logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />}
+                          <LoadingButton loading={logoBusy} onClick={() => openLogoPicker({ multiple: false })}><Upload size={15} /> {project.logoUrl ? "Replace" : "Upload logo"}</LoadingButton>
+                          {project.logoUrl && <Button variant="danger" aria-label="Clear logo" title="Clear logo" className="!h-9 !w-9 !p-0" onClick={clearLogoDraft}><X size={16} /></Button>}
+                          {project.logoFileName && <p className="w-full truncate text-xs text-fg-3">{project.logoFileName} · {formatBytes(project.logoSizeBytes ?? 0)}</p>}
+                        </div>
+                      </div>}
+                      {!activeLogoTemplateId && <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Watermark text <span className="font-normal text-fg-3">(optional)</span></div><Input value={project.logoWatermarkText ?? ""} maxLength={120} placeholder="Text over the logo" onChange={(event) => merge({ logoWatermarkText: event.target.value })} /></div>}
                       <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Logo placement</div><Select value={project.logoPlacement} onChange={(value) => merge({ logoPlacement: value })}>{MOVIE_RECAP_LOGO_PLACEMENTS.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></div>
                       <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Logo opacity</span><span>{project.logoOpacity}%</span></span><input aria-label="Logo opacity" type="range" min={0} max={100} value={project.logoOpacity} onChange={(event) => merge({ logoOpacity: Number(event.target.value) })} className="w-full accent-accent" /></label>
                     </div>}
-                    <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-                      <Button disabled={applyingLogoTemplate || !logoTemplates.length} variant="primary" onClick={chooseLogoTemplate}>Choose template</Button>
-                      {project.logoEnabled && !activeLogoTemplateId && <Button disabled={!project.logoUrl || savingLogoTemplate} variant="secondary" onClick={saveLogoTemplate}>Save this template</Button>}
-                      {activeLogoTemplateId && <>
-                        <Button disabled={!project.logoUrl || updatingLogoTemplate} variant="secondary" onClick={saveLogoTemplate}>Update template</Button>
-                        <Button variant="ghost" onClick={async () => { if (await deleteLogo()) { setSelectedLogoTemplateId(null); merge({ logoTemplateId: null, logoWatermarkText: null, logoPlacement: "top_left", logoOpacity: 100 }); } }}>Clear</Button>
-                      </>}
-                    </div>
-                    {activeLogoTemplateId && <div className="mt-2 text-right text-xs text-fg-3">Editing: {logoTemplates.find((template) => template.id === activeLogoTemplateId)?.name ?? "template"}</div>}
                   </div>}
                   {tab === "blur" && <div>
+                    <label className="mb-5 flex items-center justify-between gap-3">
+                      <span><span className="block text-sm font-medium">Dynamic background blur</span><span className="text-xs text-fg-3">Use a moving blurred copy behind the video in Contain mode.</span></span>
+                      <Switch checked={project.dynamicBackgroundBlurEnabled} onChange={(checked) => merge({ dynamicBackgroundBlurEnabled: checked })} />
+                    </label>
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <span className="text-sm font-medium">Blur areas</span>
                       <Button
@@ -949,14 +1008,6 @@ function Review({
   onCancelRender: () => void;
   cancelling: boolean;
 }) {
-  const rows = [
-    ["Source", project.sourceFileName], ["File size", formatBytes(project.sourceSizeBytes)], ["Duration", formatDuration(project.sourceDurationSeconds)],
-    ["Project name", project.name], ["Output language", "Burmese"], ["Voice profile", MOVIE_RECAP_VOICES.find((voice) => voice.id === project.voiceProfileId)?.name ?? project.voiceProfileId], ["Aspect ratio", project.aspectRatio],
-    ["Subtitles", `Burned in · ${MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)?.name ?? project.subtitlePreset} · ${MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}% · ${MOVIE_RECAP_SUBTITLE_POSITIONS.find((item) => item.id === project.subtitlePosition)?.name ?? project.subtitlePosition}`],
-    ["Logo", project.logoEnabled ? `${project.logoFileName ?? "Missing"} · ${MOVIE_RECAP_LOGO_PLACEMENTS.find((item) => item.id === project.logoPlacement)?.name} · ${project.logoOpacity}%` : "Off"],
-    ["Zoom", `${effectiveMovieRecapZoom(project).toFixed(2)}x`],
-    ["Blur", project.blurRegions.length ? `${project.blurRegions.length} area${project.blurRegions.length === 1 ? "" : "s"}` : "Off"],
-  ];
   const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";
   const stageLabel = project.renderStage
     ? {
@@ -977,10 +1028,8 @@ function Review({
     : null;
   const mockTag = project.renderIsMock && project.renderStatus !== "idle" ? " (mock)" : "";
   const statusLabel = project.renderStatus === "running" ? stageLabel ?? "Starting…" : { idle: "Not rendered yet", running: "Rendering…", done: "Done", failed: "Failed" }[project.renderStatus];
-  return <div><h2 className="mb-1 text-lg font-semibold">Review Configuration</h2><p className="mb-6 text-sm text-fg-2">Confirm the settings that phase 2 will use.</p>
-    <div className="overflow-hidden rounded-xl border border-line bg-panel-2"><table className="w-full border-collapse"><tbody>{rows.map(([label, value]) => <tr key={label} className="border-b border-line last:border-0"><th className="w-1/3 px-4 py-3 text-left text-xs font-medium text-fg-3">{label}</th><td className="px-4 py-3 text-sm text-fg">{value}</td></tr>)}</tbody></table></div>
-
-    <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
+  return <div>
+    <div className="rounded-xl border border-line bg-panel-2 p-4">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-sm font-medium">Render preview</span>
         <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}{mockTag}</span>
