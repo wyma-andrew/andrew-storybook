@@ -200,19 +200,21 @@ Building that script is its own run (`lib/movie-recap-script.ts`,
 `POST movie-recaps/:id/script`), and it stops before anything is cut. It speaks
 every beat through `lib/tts/` (Azure Speech), caches each content-addressed beat,
 then stores a combined `narration.wav` and JSON beat boundaries in R2. Narration
-is the master audio timeline. Picture and audio durations are independent:
-each beat uses a 0.75x picture baseline, slowing only shortage beats to the
-configured minimum when needed, while narration starts at
-the configured 1.05x rate. If narration would outlast the full-source picture,
-one uncapped global narration rate is calculated from the cached raw beat
-durations so it ends on or just inside the final video frame; shorter narration
-stays at 1.05x. Editing and choosing **Re Build this beat**
-re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`) and rebuilds
-the combined master from cached clips; video speed is absent from both audio
-cache keys. Each saved beat has an inline playable preview from
+is the master audio timeline. Every beat uses the fixed 1.2x narration rate;
+source duration never changes it. Picture follows each resulting beat duration:
+it uses a 0.75x baseline, slows shortage beats to the configured minimum, then
+trims excess footage or freezes the final frame. Editing and choosing **Re Build
+this beat** re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`),
+replaces its section in the existing master, and shifts later timing boundaries
+by the duration delta. A missing, incompatible, or invalid master falls back to
+a bounded-parallel rebuild from raw caches. Raw provider-output duration is
+stored per beat so unchanged audio does not need measuring again; video speed is
+absent from both audio cache keys. Each saved beat has an inline playable preview from
 `POST movie-recaps/:id/script/beat/preview`; it reuses the raw beat cache and
-applies the same configured overall narration rate as the master. The UI has no
-whole-script fit/recheck action. Starting one beat preview continues through
+applies the same configured overall narration rate as the master. There is no
+manual whole-master rebuild: a beat Re Build splices or fully rebuilds the
+master, and render materializes it if missing. **Resync with Main Script** alone
+replaces beats from the Transcript story. Starting one beat preview continues through
 the following saved beats; while one plays, the next three configured-speed WAVs
 are prepared concurrently and kept as browser object URLs for smooth handoff.
 

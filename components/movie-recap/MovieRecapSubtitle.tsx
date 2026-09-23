@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Noto_Sans_Myanmar } from "next/font/google";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { MOVIE_RECAP_SUBTITLE_LINE_EM, movieRecapSubtitleStyle } from "@/lib/constants/movie-recap";
+import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_WATERMARK, movieRecapSubtitleStyle } from "@/lib/constants/movie-recap";
 
 // The SAME face libass burns into the render (MOVIE_RECAP_SUBTITLE_FONT).
 // Burmese faces differ a lot in how much of the em box the glyph body fills —
@@ -97,6 +97,30 @@ export function MovieRecapHookTitleOverlay({ project }: { project: MovieRecapPro
     <div ref={ref} className="pointer-events-none absolute inset-x-[6%] z-30 text-center" style={hookTitlePositionStyle(project)}>
       <span className={`inline-block max-w-full whitespace-pre-wrap ${subtitleFont.className}`} style={{ fontSize: `${fontPx.toFixed(2)}px`, lineHeight: MOVIE_RECAP_SUBTITLE_LINE_EM, color: style.color, fontWeight: style.weight, WebkitTextStrokeWidth: `${outlinePx.toFixed(2)}px`, WebkitTextStrokeColor: style.outlineColor, paintOrder: "stroke fill" }}>
         {project.hookTitle}
+      </span>
+    </div>
+  );
+}
+
+export function MovieRecapWatermarkOverlay({ project }: { project: MovieRecapProject }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const frameHeight = useFrameHeight(ref);
+  const text = project.logoEnabled ? project.logoWatermarkText?.trim() : "";
+  if (!text) return null;
+  const fontPx = (MOVIE_RECAP_WATERMARK.sizePct[project.aspectRatio] / 100) * frameHeight;
+  return (
+    <div ref={ref} className="pointer-events-none absolute inset-0 z-30 grid select-none place-items-center px-[6%] text-center">
+      <span
+        className={`whitespace-pre-wrap uppercase ${subtitleFont.className}`}
+        style={{
+          fontSize: `${fontPx.toFixed(2)}px`,
+          color: MOVIE_RECAP_WATERMARK.color,
+          opacity: MOVIE_RECAP_WATERMARK.opacityPct / 100,
+          fontWeight: MOVIE_RECAP_WATERMARK.weight,
+          letterSpacing: `${MOVIE_RECAP_WATERMARK.letterSpacingEm}em`,
+        }}
+      >
+        {text}
       </span>
     </div>
   );

@@ -12,7 +12,7 @@ import {
   movieRecapBlurCssPx,
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect, formatDuration } from "@/lib/movie-recap";
-import { MovieRecapHookTitleOverlay, MovieRecapSubtitleOverlay } from "./MovieRecapSubtitle";
+import { MovieRecapHookTitleOverlay, MovieRecapSubtitleOverlay, MovieRecapWatermarkOverlay } from "./MovieRecapSubtitle";
 
 type BlurRect = { x: number; y: number; width: number; height: number };
 
@@ -210,7 +210,7 @@ export function MovieRecapPreview({
               </div>
             )}
 
-            {project.logoEnabled && project.logoWatermarkText && <span className="pointer-events-none absolute inset-0 z-30 grid place-items-center select-none px-4 text-center text-xs font-bold uppercase tracking-[0.14em] text-fg opacity-30">{project.logoWatermarkText}</span>}
+            <MovieRecapWatermarkOverlay project={project} />
 
             {/* No tint and no drop shadow on the blur region: the export only
                 blurs it, so the old `bg-panel/35` wash made the preview darker

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { segmentFilters, silentTimingFilter } from "./movie-recap-render";
-import { MOVIE_RECAP_PACING, MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
+import { MOVIE_RECAP_NARRATION_PLAYBACK_RATE, MOVIE_RECAP_PACING, MOVIE_RECAP_PLAYBACK_SPEED, type MovieRecapPacing } from "./constants/movie-recap";
 import {
   focusWindow,
   holdDeficit,
@@ -51,26 +51,23 @@ describe("movie recap master timeline", () => {
     expect(plan.padS).toBe(0);
   });
 
-  it("keeps one fixed video speed before raising one narration rate", () => {
+  it("keeps fixed video and narration rates regardless of footage length", () => {
     expect(
       resolveMovieRecapTimelineRates([{ shots: [{ sourceStartS: 0, sourceEndS: 7.2 }], targetS: 10 }])
-    ).toEqual({ videoSpeed: 0.75, narrationRate: 1.094 });
+    ).toEqual({ videoSpeed: 0.75, narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE });
 
     expect(
       resolveMovieRecapTimelineRates([{ shots: [{ sourceStartS: 0, sourceEndS: 6.5 }], targetS: 10 }])
-    ).toEqual({ videoSpeed: 0.75, narrationRate: 1.1 });
+    ).toEqual({ videoSpeed: 0.75, narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE });
   });
 
-  it("fits the global narration rate to total footage rather than one short beat", () => {
+  it("does not derive the global narration rate from total footage", () => {
     const rates = resolveMovieRecapTimelineRates([
       { shots: [{ sourceStartS: 0, sourceEndS: 3 }], targetS: 6 },
       { shots: [{ sourceStartS: 10, sourceEndS: 16 }], targetS: 6 },
     ]);
 
-    // 12s narration over 12s of processed footage needs no increase. The first
-    // beat alone is short, but it must not give the whole recap an excessive
-    // narration speed; its local gap is handled by the footage fallbacks.
-    expect(rates).toEqual({ videoSpeed: 0.75, narrationRate: 1.05 });
+    expect(rates).toEqual({ videoSpeed: 0.75, narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE });
   });
 
   it("borrows the closest adjacent scene only after selected footage is exhausted", () => {

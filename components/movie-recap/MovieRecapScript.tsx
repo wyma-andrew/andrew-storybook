@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, ArrowUpToLine, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -31,6 +31,7 @@ export function MovieRecapScript({
 }: {
   project: MovieRecapProject;
   onBuild: () => void;
+  /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
   /** Rebuilds this beat's audio and the combined narration master. */
   onSave: (index: number, text: string) => void;
   onCancel: () => void;
@@ -93,12 +94,14 @@ export function MovieRecapScript({
   const autoPlay = useRef(false);
   const playingBeatRef = useRef<number | null>(null);
   const [playingBeat, setPlayingBeat] = useState<number | null>(null);
+  const [activeBeat, setActiveBeat] = useState<number | null>(null);
+  const beatRefs = useRef(new Map<number, HTMLDivElement>());
+  const rootRef = useRef<HTMLDivElement>(null);
   const [previewingBeat, setPreviewingBeat] = useState<number | null>(null);
   const [scenePlan, setScenePlan] = useState<MovieRecapSceneTimingPlan | null>(null);
   const [scenePlanMeasured, setScenePlanMeasured] = useState(true);
   const [scenePlanOpen, setScenePlanOpen] = useState(false);
   const autoPlanKey = useRef<string | null>(null);
-  const [planning, setPlanning] = useState(false);
   const scriptSignature = script.map((beat) => `${beat.text}:${beat.audioS ?? ""}:${beat.audioStale ? "stale" : ""}`).join("\u0001");
   const previousScriptSignature = useRef(scriptSignature);
 
@@ -172,11 +175,13 @@ export function MovieRecapScript({
       await audio.play();
       playingBeatRef.current = index;
       setPlayingBeat(index);
+      setActiveBeat(index);
       prefetchFollowingBeats(index);
       return true;
     } catch {
       playingBeatRef.current = null;
       setPlayingBeat(null);
+      setActiveBeat(null);
       toast.error("That beat preview could not be played.");
       return false;
     }
@@ -193,7 +198,33 @@ export function MovieRecapScript({
       return;
     }
     autoPlay.current = true;
+    if (activeBeat === index && audio.paused && audio.currentTime > 0 && !audio.ended) {
+      try {
+        await audio.play();
+        playingBeatRef.current = index;
+        setPlayingBeat(index);
+        return;
+      } catch {}
+    }
     if (!(await playBeatPreview(index))) autoPlay.current = false;
+  }
+
+  useEffect(() => {
+    if (playingBeat === null) return;
+    beatRefs.current.get(playingBeat)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [playingBeat]);
+
+  function scrollToTop() {
+    let element = rootRef.current?.parentElement ?? null;
+    while (element) {
+      const { overflowY } = getComputedStyle(element);
+      if ((overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight) {
+        element.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      element = element.parentElement;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function continueToNextBeat() {
@@ -204,23 +235,10 @@ export function MovieRecapScript({
     const next = finished + 1;
     if (next >= script.length || texts[next] !== serverTexts[next] || script[next]?.audioStale) {
       autoPlay.current = false;
+      setActiveBeat(null);
       return;
     }
     if (!(await playBeatPreview(next))) autoPlay.current = false;
-  }
-
-  async function rebuildSceneTimingPlan() {
-    setPlanning(true);
-    const result = await apiClient("movie-recaps/:id/script/scene-plan").POST({ params: { id: project.id } });
-    setPlanning(false);
-    if (result.error || !result.data) {
-      toast.error(result.error?.error ?? "Could not rebuild the scene timing plan.");
-      return;
-    }
-    setScenePlan(result.data.plan);
-    setScenePlanMeasured(result.data.measured);
-    setScenePlanOpen(false);
-    toast.success("Scene timing plan rebuilt from the saved narration timeline.");
   }
 
   useEffect(() => {
@@ -242,7 +260,7 @@ export function MovieRecapScript({
   return (
     <>
       <audio ref={audioRef} className="hidden" onEnded={() => void continueToNextBeat()} />
-      <div className="mt-4 rounded-xl border border-line bg-panel-2 p-4">
+      <div ref={rootRef} className="mt-4 rounded-xl border border-line bg-panel-2 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-fg-3" />
@@ -256,7 +274,6 @@ export function MovieRecapScript({
                 {restorableAll.length === 1 ? "" : "s"}
               </LoadingButton>
             )}
-            {/* Script resync and timing-plan rebuild intentionally have separate effects. */}
             {script.length > 0 && (
               <Menu menuClassName="min-w-[220px] p-0" placement="bottom-end">
                 <MenuTrigger>
@@ -275,9 +292,6 @@ export function MovieRecapScript({
                   onClick={() => confirmResync(onBuild, dirtyCount)}
                 >
                   <span className="text-danger">Resync with Main Script</span>
-                </MenuItem>
-                <MenuItem disabled={busy || planning} onClick={() => void rebuildSceneTimingPlan()}>
-                  {planning ? "Rebuilding Scene Timing Plan…" : "Rebuild Scene Timing Plan"}
                 </MenuItem>
               </Menu>
             )}
@@ -372,7 +386,14 @@ export function MovieRecapScript({
               // is back in it — whether that came from this button or by hand.
               const restorable = Boolean(beat.originalText) && texts[index] !== beat.originalText;
               return (
-                <div key={index} className="rounded-lg border border-line bg-panel p-3">
+                <div
+                  key={index}
+                  ref={(element) => {
+                    if (element) beatRefs.current.set(index, element);
+                    else beatRefs.current.delete(index);
+                  }}
+                  className={`rounded-lg border bg-panel p-3 ${activeBeat === index ? "border-ok" : "border-line"}`}
+                >
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-3">
                     <span className="font-medium text-fg-2">Beat {index + 1}</span>
                     <span>{formatDuration(beat.shots[0]?.sourceStartS ?? 0)}</span>
@@ -471,6 +492,34 @@ export function MovieRecapScript({
           )}
         </div>
       </div>
+      {activeBeat !== null && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-lg border border-line bg-panel p-2 shadow-lg">
+          <span className="px-1 text-xs font-medium text-fg-2 tabular-nums">Beat {activeBeat + 1}</span>
+          <Button
+            className="!h-8 !w-8 !px-0"
+            disabled={previewingBeat !== null}
+            aria-label={playingBeat === activeBeat ? "Pause" : "Play"}
+            title={playingBeat === activeBeat ? "Pause" : "Play"}
+            onClick={() => void toggleBeatPreview(activeBeat)}
+          >
+            {previewingBeat !== null ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : playingBeat === activeBeat ? (
+              <Pause size={14} />
+            ) : (
+              <Play size={14} />
+            )}
+          </Button>
+          <Button
+            className="!h-8 !w-8 !px-0"
+            aria-label="Scroll to top"
+            title="Scroll to top"
+            onClick={scrollToTop}
+          >
+            <ArrowUpToLine size={14} />
+          </Button>
+        </div>
+      )}
     </>
   );
 }

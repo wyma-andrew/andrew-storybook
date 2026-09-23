@@ -370,7 +370,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
   }
 
-
   async function cancelScriptRun() {
     if (!project) return;
     const result = await cancelScript({ params: { id: project.id } });

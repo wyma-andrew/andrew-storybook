@@ -5820,3 +5820,182 @@ a selector with no meaningful choice adds unnecessary visual weight.
 
 **Consequence:** existing and new projects continue to save and use Burmese.
 The control can return when the product supports another output language.
+
+## 2026-09-23 — Narration uses one fixed 1.234x global rate
+
+**Decision, confirmed by the user:** every real and mock Movie Recap narration
+uses a fixed post-synthesis playback rate of `1.234x`. The script and render no
+longer compare total narration duration with source duration or derive a faster
+rate to make the narration fit. Each beat's final narration duration remains the
+timeline wall; its footage trims, slows from the `0.75x` baseline to the `0.65x`
+minimum when needed, and freezes its final frame only for any remaining gap.
+
+Azure's `+20%` provider rate remains separate. Content-addressed provider-output
+audio stays cached, so changing the fixed global rate later rebuilds the master
+without another Azure synthesis. New manifests also retain each beat's raw audio
+duration. A single-beat rebuild reuses saved durations for unchanged beats and
+loads and processes cached clips with bounded concurrency instead of measuring
+and transforming every neighbour serially.
+
+**Supersedes:** the 2026-09-21 decisions that started the master at `1.05x` and
+raised one global rate when narration exceeded selected footage or the complete
+source. Source duration no longer influences narration speed.
+
+## 2026-09-23 — A beat rebuild splices the current narration master
+
+**Decision, confirmed by the user:** `Re Build this beat` downloads the current
+combined narration master and timing manifest, renders only the edited raw beat
+at the fixed `1.234x` rate, and replaces that beat's interval. Later beat
+boundaries shift by the replacement duration delta; earlier audio and timings
+remain unchanged. The result is still one complete narration WAV.
+
+The new content-addressed master and manifest are uploaded before `render_script`
+is updated. Only after that write succeeds may the superseded timing manifest
+and unreferenced master be removed. A master still referenced by the last final
+render is retained until a later render replaces that reference. Missing,
+incompatible, or duration-invalid master artifacts fall back to the bounded
+parallel full rebuild from raw beat caches.
+
+**Why:** rebuilding one edited beat must not download and reprocess hundreds of
+unchanged raw clips. Keeping the full rebuild as recovery preserves correctness
+without making it the ordinary path.
+
+## 2026-09-23 — Fixed narration playback eases from 1.234x to 1.2x
+
+**Decision, confirmed by the user:** reduce the post-synthesis global narration
+rate slightly, from `1.234x` to a fixed `1.2x`. Azure's separate `+20%` provider
+rate and all raw beat cache keys remain unchanged.
+
+**Consequence:** existing raw audio does not need Azure synthesis. The first
+master requested at the new rate is rebuilt from cached beats because a master
+encoded at `1.234x` cannot be spliced into a `1.2x` timeline; subsequent beat
+edits return to the single-beat replacement path.
+
+## 2026-09-23 — Current edits get a dedicated narration-master rebuild
+
+**Decision, confirmed by the user:** the Narrative Script overflow menu exposes
+`Rebuild Narration Master`. It calls the existing typed `POST script/recheck`
+endpoint, reads only the currently saved beats, and rebuilds their `1.2x` master
+and timing manifest from raw caches. It never reads the Transcript story, so it
+does not replace user-edited narration. Unsaved textarea drafts must be committed
+first.
+
+The separate `Rebuild Scene Timing Plan` menu action is removed. Scene planning
+already refreshes automatically when the rebuilt project changes beat durations
+or stale state, and final rendering independently runs the same planner. The
+collapsible diagnostic result remains visible.
+
+**Supersedes:** the 2026-09-21 choice to keep whole-script recheck out of the UI,
+and the later decision to expose manual scene-plan rebuilding beside Resync.
+`Resync with Main Script` remains the only action that replaces beat text from
+the Transcript story and retains its destructive confirmation.
+
+## 2026-09-23 — Fixed narration playback eases again to 1.15x
+
+**Decision, confirmed by the user:** reduce the post-synthesis global narration
+rate from `1.2x` to a fixed `1.15x`. Azure's separate `+20%` provider rate and
+raw beat caches remain unchanged. Narrative Script previews, rebuilt masters,
+beat timing, and final renders all resolve through the same fixed value.
+
+**Consequence:** an existing `1.2x` master is incompatible with the new timing,
+so `Rebuild Narration Master` creates the first `1.15x` master from cached raw
+beats without another Azure synthesis. Later edits use single-beat replacement.
+
+## 2026-09-23 — Narration playback drops to 0.8x for an audible test
+
+**Decision, confirmed by the user:** temporarily reduce the fixed
+post-synthesis narration rate sharply from `1.15x` to `0.8x` so the slower
+result is unmistakable during testing. Preview, master timing, and final render
+continue to share this one value. Azure's provider rate and raw caches remain
+unchanged.
+
+**Consequence:** existing masters must be rebuilt from cached raw beats before
+judging the test. No Azure synthesis is required, and saved narrative edits are
+preserved.
+
+## 2026-09-23 — Narration playback returns to 1.2x after the 0.8x test
+
+**Decision, confirmed by the user:** the temporary `0.8x` test rate is replaced
+by a fixed post-synthesis narration rate of `1.2x`. Azure's separate `+20%`
+provider rate and raw beat caches remain unchanged; preview, master timing, and
+final render still share this one value.
+
+**Consequence:** masters built at `0.8x` are incompatible with the new timing,
+so `Rebuild Narration Master` must run once to rebuild from cached raw beats. No
+Azure synthesis is required.
+
+**Supersedes:** the 2026-09-23 `0.8x` audible-test entry.
+
+
+## 2026-09-23 — Remove Rebuild Narration Master and `POST script/recheck`
+
+**Decision, confirmed by the user:** the `Rebuild Narration Master` menu action,
+its `POST movie-recaps/:id/script/recheck` route, and
+`rebuildMovieRecapNarrationMaster` are removed.
+
+**Why:** nothing depends on a manual rebuild. A beat Re Build already produces a
+current master — it splices when the rate matches and otherwise rebuilds the
+whole master from raw caches. Render calls `ensureNarrationMaster`, whose cache
+key includes the rate, so a missing master is built then. Saved beat durations
+are rescaled to the fixed rate on read by `normalizeMovieRecapNarrationManifest`,
+so the Script step shows correct timing without remeasuring.
+
+**Accepted consequence:** after a rate change with no beat edits, the first
+render is slower because it builds the master itself. This is not a bug.
+
+**Supersedes:** "2026-09-23 — Current edits get a dedicated narration-master
+rebuild". `Resync with Main Script` remains the only whole-script action.
+
+## 2026-09-23 — 9:16 caption size down: 2.5% -> 2.2%
+
+**Decision, confirmed by the user:** portrait captions read large at 2.5%
+(48px at 1080×1920). Now 2.2% (~42px, 3.9% of width). 2.0% was also tried the
+same day at 1080×1920 and the user returned to 2.2% — so 2.0% is rejected again
+at the current output size, not only at the old 720×1280. Landscape (3.4%) and
+square (2%) are unchanged.
+
+## 2026-09-23 — Watermark text is burned into the render
+
+**Decision, confirmed by the user:** the logo tab's watermark text, previously a
+preview-only overlay, is now burned into every export as an ASS `Watermark`
+style in the same `subtitles.ass` pass (so Burmese watermark text is shaped by
+libass, which `drawtext` would not do). Centred, uppercase, white at 30%
+opacity, bold, 0.14em letter spacing, drawn under subtitles and the logo. It
+appears only while the logo is enabled, matching the preview.
+
+Size is `MOVIE_RECAP_WATERMARK.sizePct` of frame height — 1.5% on 16:9 (~16px
+at 1080p), 1.9% on 9:16 and 1:1 — shared by `MovieRecapWatermarkOverlay` and
+`buildAss`. 16:9 started at 3.4%, copied from the old fixed 12px preview; the
+user found 3.4% and then 2.2% large; 9:16 keeps the 9px-equivalent requested
+the same day.
+
+**Supersedes:** "9:16 watermark text is smaller in the preview", which said the
+watermark was preview-only and fixed in pixels.
+
+## 2026-09-23 — Beat preview highlights the active beat and floats a player
+
+**Decision, requested by the user:** the beat being previewed gets a
+`border-ok` outline and is scrolled to the centre automatically each time
+playback reaches it. A fixed bottom-right bar shows its number with play/pause
+and scroll-to-top buttons (a manual scroll-to-beat button was replaced by the
+auto-scroll). Pause keeps the beat active so play resumes where it stopped; the
+bar disappears when sequential playback runs out of playable beats or a preview
+fails.
+
+## 2026-09-23 — 16:9 renders at 1920×1080; captions 3.4% -> 3.0%
+
+**Decision, confirmed by the user:** `MOVIE_RECAP_TARGET_DIMENSIONS["16:9"]` is
+`[1920, 1080]` (was `[1280, 720]`) and `MOVIE_RECAP_SUBTITLE_SIZE_PCT["16:9"]`
+is 3.0 (~32px, was 3.4% / 24px). This is the route the 2026-09-16 caption entry
+named for going smaller: the resolution rises first so the smaller relative size
+still has enough pixels for stacked Burmese marks.
+
+**Consequences:** ~2.25x the pixels per 16:9 frame, so encodes are slower and
+files larger. Percentage-based sizes scale by construction. The two pixel blur
+radii scale through the per-ratio `BLUR_REFERENCE_WIDTH` (16:9 stays anchored
+at 1280), so the 16:9 backfill blur moves 20 -> 30 and region blur 12 -> 18 —
+intended, not drift.
+
+**Supersedes:** "Output stays 1280×720 for now" for 16:9, and the 2026-09-18
+note that 16:9 stays at 720p. Do not lower 16:9 captions below 3.4% if the
+output ever returns to 720p.

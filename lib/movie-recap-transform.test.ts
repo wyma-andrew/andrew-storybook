@@ -42,7 +42,7 @@ describe("buildShotFilter", () => {
 
   it("fills letterbox bars with the blurred clip instead of black", () => {
     const filter = buildShotFilter(ctx({ fitMode: "contain" }));
-    expect(filter).toContain("boxblur=20:2");
+    expect(filter).toContain("boxblur=30:2");
     expect(filter).toContain("overlay=(W-w)/2:(H-h)/2");
     expect(filter).not.toContain("color=black");
   });
@@ -52,7 +52,7 @@ describe("buildShotFilter", () => {
     expect(filter).not.toContain("boxblur=");
     expect(filter).not.toContain("overlay=(W-w)/2:(H-h)/2");
     expect(filter).toContain("force_original_aspect_ratio=decrease");
-    expect(filter).toContain("pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black");
+    expect(filter).toContain("pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black");
   });
 
   it("pads a square contain render to the configured 1:1 output", () => {
@@ -107,14 +107,14 @@ describe("buildShotFilter", () => {
     // commas ESCAPED, or ffmpeg reads them as filter separators and fails with
     // "No such filter". This assertion exists because the first version of this
     // emitted bare commas: `\,` in a template literal collapses to `,`.
-    expect(filter).toContain("crop=min(iw\\,1280):min(ih\\,720)");
+    expect(filter).toContain("crop=min(iw\\,1920):min(ih\\,1080)");
   });
 });
 
 describe("blur radius scaling", () => {
-  it("leaves 16:9 exactly as it was", () => {
-    // 1280 is the width its backfill radius was tuned at, so nothing moves.
-    expect(buildShotFilter(ctx({ fitMode: "contain" }))).toContain("boxblur=20:2");
+  it("scales 16:9 with the raised resolution", () => {
+    // Tuned at 1280; 1920 is 1.5x.
+    expect(buildShotFilter(ctx({ fitMode: "contain" }))).toContain("boxblur=30:2");
   });
 
   it("scales 9:16 with the raised resolution", () => {

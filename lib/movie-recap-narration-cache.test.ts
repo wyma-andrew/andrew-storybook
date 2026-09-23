@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { narrationHash, narrationPlaybackRateForDuration } from "./movie-recap-narration";
+import { narrationHash, replaceNarrationBeatTiming } from "./movie-recap-narration";
 
 const azure = { providerId: "azure", id: "azure-thiha" };
 
@@ -38,12 +38,27 @@ describe("narrationHash", () => {
   });
 });
 
-describe("narrationPlaybackRateForDuration", () => {
-  it("keeps the base rate when narration already fits", () => {
-    expect(narrationPlaybackRateForDuration([42], 45)).toBe(1.05);
+describe("replaceNarrationBeatTiming", () => {
+  const timings = [
+    { beat: 1, startS: 0, endS: 2, durationS: 2 },
+    { beat: 2, startS: 2, endS: 5, durationS: 3 },
+    { beat: 3, startS: 5, endS: 9, durationS: 4 },
+  ];
+
+  it("replaces one duration and shifts only the following beats", () => {
+    expect(replaceNarrationBeatTiming(timings, 1, 4.5)).toEqual([
+      timings[0],
+      { beat: 2, startS: 2, endS: 6.5, durationS: 4.5 },
+      { beat: 3, startS: 6.5, endS: 10.5, durationS: 4 },
+    ]);
   });
 
-  it("allows the global rate to exceed the former ceiling to fit exactly", () => {
-    expect(narrationPlaybackRateForDuration([50.4], 45)).toBeCloseTo(1.12, 3);
+  it("also shifts following beats backward when the replacement is shorter", () => {
+    expect(replaceNarrationBeatTiming(timings, 0, 1)[2]).toEqual({
+      beat: 3,
+      startS: 4,
+      endS: 8,
+      durationS: 4,
+    });
   });
 });

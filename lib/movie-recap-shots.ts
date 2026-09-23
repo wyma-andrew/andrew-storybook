@@ -8,7 +8,6 @@
 
 import {
   MOVIE_RECAP_EDIT,
-  MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_TARGET_FPS,
@@ -458,26 +457,11 @@ export type MovieRecapTimelineRates = {
 export function resolveMovieRecapTimelineRates(
   beats: { shots: SourceWindow[]; targetS: number }[]
 ): MovieRecapTimelineRates {
-  const usable = beats
-    .map(({ shots, targetS }) => ({
-      sourceS: shots.reduce((total, shot) => total + Math.max(0, lengthOf(shot)), 0),
-      targetS: Math.max(1 / MOVIE_RECAP_TARGET_FPS, targetS),
-    }))
-    .filter(({ sourceS }) => sourceS >= MOVIE_RECAP_EDIT.minSourceS);
-  if (!usable.length) {
-    return { videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED, narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE };
-  }
-
-  const videoSpeed = MOVIE_RECAP_PLAYBACK_SPEED;
-  const totalNarrationS = usable.reduce((total, beat) => total + beat.targetS, 0);
-  const totalFootageS = usable.reduce((total, beat) => total + beat.sourceS / videoSpeed, 0);
-  const rateNeeded = MOVIE_RECAP_NARRATION_PLAYBACK_RATE * (totalNarrationS / totalFootageS);
-  const unclampedNarrationRate = Math.min(
-    MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE,
-    Math.max(MOVIE_RECAP_NARRATION_PLAYBACK_RATE, rateNeeded)
-  );
-  const narrationRate = Math.ceil(unclampedNarrationRate * 1000) / 1000;
-  return { videoSpeed, narrationRate };
+  void beats;
+  return {
+    videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED,
+    narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
+  };
 }
 
 function retainedWindows(windows: SourceWindow[], additional: boolean) {

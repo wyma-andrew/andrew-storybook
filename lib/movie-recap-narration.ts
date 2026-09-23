@@ -4,13 +4,13 @@ import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ffprobeFor } from "./movie-recap-captions";
+import { mapConcurrent } from "./map-concurrent";
 import { getObjectBytes, movieRecapNarrationKey, movieRecapNarrationTimingKey, putObject } from "./r2";
 import { synthesize } from "./tts/synthesize";
 import type { Voice } from "./tts/types";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import {
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
-  MOVIE_RECAP_NARRATION_RATE_STEP,
   MOVIE_RECAP_NARRATION_SAMPLE_RATE,
   MOVIE_RECAP_TARGET_FPS,
 } from "./constants/movie-recap";
@@ -138,6 +138,7 @@ export async function narrationClip({
   slot,
   workDir,
   signal,
+  knownDurationSeconds,
 }: {
   projectId: string;
   voice: Voice;
@@ -146,6 +147,7 @@ export async function narrationClip({
   slot: number | string;
   workDir: string;
   signal?: AbortSignal;
+  knownDurationSeconds?: number;
 }): Promise<{ path: string; durationSeconds: number; cached: boolean }> {
   const wavPath = path.join(workDir, `narration-${slot}.wav`);
   // The voice's own rate is part of the key. Raising AZURE_NARRATION_RATE
@@ -158,7 +160,9 @@ export async function narrationClip({
   const cached = await getObjectBytes(cacheKey);
   if (cached) {
     await writeFile(wavPath, cached);
-    const durationSeconds = await probeDurationS(wavPath, signal);
+    const durationSeconds = knownDurationSeconds && knownDurationSeconds > 0
+      ? knownDurationSeconds
+      : await probeDurationS(wavPath, signal);
     if (durationSeconds) return { path: wavPath, durationSeconds, cached: true };
     // Unreadable: fall through and synthesize it again rather than size a beat
     // against a guessed length.
@@ -182,26 +186,6 @@ export type MovieRecapNarrationBeatTiming = {
 
 export function narrationDurationAtRate(inputDurationS: number, playbackRate: number) {
   return Math.ceil((inputDurationS / playbackRate) * MOVIE_RECAP_TARGET_FPS) / MOVIE_RECAP_TARGET_FPS;
-}
-
-export function narrationPlaybackRateForDuration(
-  inputDurationsS: number[],
-  targetS: number,
-  baseRate = MOVIE_RECAP_NARRATION_PLAYBACK_RATE
-) {
-  if (!(targetS > 0) || !inputDurationsS.some((duration) => duration > 0)) return baseRate;
-  const durationAt = (rate: number) => inputDurationsS.reduce(
-    (total, duration) => total + narrationDurationAtRate(duration, rate),
-    0
-  );
-  if (durationAt(baseRate) <= targetS + 1e-9) return baseRate;
-
-  const rawS = inputDurationsS.reduce((total, duration) => total + Math.max(0, duration), 0);
-  let rate = Math.max(baseRate, Math.ceil((rawS / targetS) / MOVIE_RECAP_NARRATION_RATE_STEP) * MOVIE_RECAP_NARRATION_RATE_STEP);
-  while (durationAt(rate) > targetS + 1e-9) {
-    rate = Number((rate + MOVIE_RECAP_NARRATION_RATE_STEP).toFixed(6));
-  }
-  return rate;
 }
 
 export async function renderNarrationClipAtConfiguredRate({
@@ -238,6 +222,149 @@ function masterHash(voice: Voice, texts: string[], playbackRate: number) {
     .slice(0, 32);
 }
 
+export function narrationMasterObjectKeys(
+  projectId: string,
+  voice: Voice,
+  texts: string[],
+  playbackRate: number
+) {
+  const hash = masterHash(voice, texts, playbackRate);
+  return {
+    audioKey: movieRecapNarrationKey(projectId, `master-${hash}`),
+    timingKey: movieRecapNarrationTimingKey(projectId, `master-${hash}`),
+  };
+}
+
+function parseMasterTimings(bytes: Buffer | null, beatCount: number) {
+  if (!bytes) return null;
+  try {
+    const timings = JSON.parse(bytes.toString("utf8")) as MovieRecapNarrationBeatTiming[];
+    return timings.length === beatCount && timings.every((timing, index) => (
+      timing.beat === index + 1 &&
+      Number.isFinite(timing.startS) &&
+      Number.isFinite(timing.endS) &&
+      Number.isFinite(timing.durationS)
+    )) ? timings : null;
+  } catch {
+    return null;
+  }
+}
+
+export function replaceNarrationBeatTiming(
+  timings: MovieRecapNarrationBeatTiming[],
+  beatIndex: number,
+  durationS: number
+) {
+  const replaced = timings[beatIndex];
+  if (!replaced || !(durationS > 0)) throw new Error("That beat has no saved narration timing.");
+  const deltaS = durationS - replaced.durationS;
+  return timings.map((timing, index) => {
+    if (index < beatIndex) return timing;
+    if (index === beatIndex) {
+      return { ...timing, endS: timing.startS + durationS, durationS };
+    }
+    return { ...timing, startS: timing.startS + deltaS, endS: timing.endS + deltaS };
+  });
+}
+
+export async function replaceNarrationMasterBeat({
+  projectId,
+  voice,
+  previousTexts,
+  nextTexts,
+  beatIndex,
+  replacementClip,
+  workDir,
+  previousPlaybackRate,
+  playbackRate = MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
+}: {
+  projectId: string;
+  voice: Voice;
+  previousTexts: string[];
+  nextTexts: string[];
+  beatIndex: number;
+  replacementClip: { path: string; durationSeconds: number };
+  workDir: string;
+  previousPlaybackRate?: number;
+  playbackRate?: number;
+}) {
+  if (
+    previousTexts.length !== nextTexts.length ||
+    !previousTexts[beatIndex] ||
+    !nextTexts[beatIndex] ||
+    previousPlaybackRate !== playbackRate
+  ) return null;
+
+  const previousKeys = narrationMasterObjectKeys(projectId, voice, previousTexts, previousPlaybackRate);
+  const nextKeys = narrationMasterObjectKeys(projectId, voice, nextTexts, playbackRate);
+  const [cachedNextAudio, cachedNextTiming] = await Promise.all([
+    getObjectBytes(nextKeys.audioKey),
+    getObjectBytes(nextKeys.timingKey),
+  ]);
+  const cachedNextTimings = parseMasterTimings(cachedNextTiming, nextTexts.length);
+  const narrationPath = path.join(workDir, "narration.wav");
+  if (cachedNextAudio && cachedNextTimings) {
+    await writeFile(narrationPath, cachedNextAudio);
+    return { path: narrationPath, timings: cachedNextTimings, cached: true, ...nextKeys, previousKeys, clipDurations: [] };
+  }
+
+  const [previousAudio, previousTiming] = await Promise.all([
+    getObjectBytes(previousKeys.audioKey),
+    getObjectBytes(previousKeys.timingKey),
+  ]);
+  const previousTimings = parseMasterTimings(previousTiming, previousTexts.length);
+  if (!previousAudio || !previousTimings) return null;
+
+  const previousPath = path.join(workDir, "previous-narration.wav");
+  const replacementPath = path.join(workDir, `replacement-${beatIndex}.wav`);
+  await writeFile(previousPath, previousAudio);
+  const replacementDurationS = await renderNarrationClipAtConfiguredRate({
+    inputPath: replacementClip.path,
+    inputDurationS: replacementClip.durationSeconds,
+    outputPath: replacementPath,
+    playbackRate,
+  });
+
+  const replaced = previousTimings[beatIndex];
+  const previousEndS = previousTimings.at(-1)?.endS ?? 0;
+  const parts: string[] = [];
+  if (replaced.startS > 0) {
+    const prefixPath = path.join(workDir, "narration-prefix.wav");
+    await run(FFMPEG, [
+      "-y", "-i", previousPath, "-t", replaced.startS.toFixed(6),
+      "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", prefixPath,
+    ]);
+    parts.push(prefixPath);
+  }
+  parts.push(replacementPath);
+  if (replaced.endS < previousEndS) {
+    const suffixPath = path.join(workDir, "narration-suffix.wav");
+    await run(FFMPEG, [
+      "-y", "-ss", replaced.endS.toFixed(6), "-i", previousPath,
+      "-t", (previousEndS - replaced.endS).toFixed(6),
+      "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", suffixPath,
+    ]);
+    parts.push(suffixPath);
+  }
+
+  const listPath = path.join(workDir, "narration-replacement.txt");
+  await writeFile(listPath, parts.map((part) => `file '${part}'`).join("\n"));
+  await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", narrationPath]);
+
+  const timings = replaceNarrationBeatTiming(previousTimings, beatIndex, replacementDurationS);
+  const expectedDurationS = timings.at(-1)?.endS ?? 0;
+  const actualDurationS = await probeDurationS(narrationPath);
+  if (!actualDurationS || Math.abs(actualDurationS - expectedDurationS) > 1 / MOVIE_RECAP_TARGET_FPS) {
+    return null;
+  }
+
+  await Promise.all([
+    putObject(nextKeys.audioKey, await readFile(narrationPath), "audio/wav"),
+    putObject(nextKeys.timingKey, Buffer.from(JSON.stringify(timings)), "application/json"),
+  ]);
+  return { path: narrationPath, timings, cached: false, ...nextKeys, previousKeys, clipDurations: [] };
+}
+
 /**
  * Materialize and cache the narration master plus its beat boundaries.
  *
@@ -255,6 +382,9 @@ export async function ensureNarrationMaster({
   workDir,
   signal,
   clips: suppliedClips,
+  knownClipDurations,
+  beforeClip,
+  onClipReady,
   playbackRate = MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
 }: {
   projectId: string;
@@ -263,11 +393,12 @@ export async function ensureNarrationMaster({
   workDir: string;
   signal?: AbortSignal;
   clips?: { path: string; durationSeconds: number; cached: boolean }[];
+  knownClipDurations?: (number | undefined)[];
+  beforeClip?: (index: number) => Promise<void>;
+  onClipReady?: (index: number) => Promise<void>;
   playbackRate?: number;
 }) {
-  const hash = masterHash(voice, texts, playbackRate);
-  const audioKey = movieRecapNarrationKey(projectId, `master-${hash}`);
-  const timingKey = movieRecapNarrationTimingKey(projectId, `master-${hash}`);
+  const { audioKey, timingKey } = narrationMasterObjectKeys(projectId, voice, texts, playbackRate);
   const narrationPath = path.join(workDir, "narration.wav");
   const [cachedAudio, cachedTiming] = await Promise.all([
     getObjectBytes(audioKey),
@@ -275,25 +406,32 @@ export async function ensureNarrationMaster({
   ]);
   if (cachedAudio && cachedTiming) {
     try {
-      const timings = JSON.parse(cachedTiming.toString("utf8")) as MovieRecapNarrationBeatTiming[];
-      if (timings.length === texts.length && timings.every((timing, index) => timing.beat === index + 1)) {
+      const timings = parseMasterTimings(cachedTiming, texts.length);
+      if (timings) {
         await writeFile(narrationPath, cachedAudio);
-        return { path: narrationPath, timings, cached: true, audioKey, timingKey };
+        return { path: narrationPath, timings, cached: true, audioKey, timingKey, clipDurations: knownClipDurations ?? [] };
       }
     } catch {
       // Rebuild both objects when either cache member is incomplete or invalid.
     }
   }
 
-  const clips = suppliedClips ?? [];
-  for (let i = clips.length; i < texts.length; i++) {
-    clips.push(await narrationClip({ projectId, voice, text: texts[i], slot: `master-${i}`, workDir, signal }));
-  }
+  const clips = suppliedClips ?? await mapConcurrent(texts, 6, async (text, index) => {
+    await beforeClip?.(index);
+    const clip = await narrationClip({
+      projectId,
+      voice,
+      text,
+      slot: `master-${index}`,
+      workDir,
+      signal,
+      knownDurationSeconds: knownClipDurations?.[index],
+    });
+    await onClipReady?.(index);
+    return clip;
+  });
 
-  const timings: MovieRecapNarrationBeatTiming[] = [];
-  const parts: string[] = [];
-  let cursor = 0;
-  for (const [index, clip] of clips.entries()) {
+  const renderedParts = await mapConcurrent(clips, 4, async (clip, index) => {
     const partPath = path.join(workDir, `narration-track-part-${index}.wav`);
     const durationS = await renderNarrationClipAtConfiguredRate({
       inputPath: clip.path,
@@ -302,17 +440,28 @@ export async function ensureNarrationMaster({
       signal,
       playbackRate,
     });
-    parts.push(partPath);
+    return { partPath, durationS };
+  });
+  const timings: MovieRecapNarrationBeatTiming[] = [];
+  let cursor = 0;
+  for (const [index, { durationS }] of renderedParts.entries()) {
     timings.push({ beat: index + 1, startS: cursor, endS: cursor + durationS, durationS });
     cursor += durationS;
   }
 
   const listPath = path.join(workDir, "narration-master.txt");
-  await writeFile(listPath, parts.map((part) => `file '${part}'`).join("\n"));
+  await writeFile(listPath, renderedParts.map(({ partPath }) => `file '${partPath}'`).join("\n"));
   await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", narrationPath], signal);
   await Promise.all([
     putObject(audioKey, await readFile(narrationPath), "audio/wav"),
     putObject(timingKey, Buffer.from(JSON.stringify(timings)), "application/json"),
   ]);
-  return { path: narrationPath, timings, cached: false, audioKey, timingKey };
+  return {
+    path: narrationPath,
+    timings,
+    cached: false,
+    audioKey,
+    timingKey,
+    clipDurations: clips.map((clip) => clip.durationSeconds),
+  };
 }

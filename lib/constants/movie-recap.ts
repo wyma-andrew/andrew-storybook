@@ -84,16 +84,13 @@ export const MOVIE_RECAP_SUBTITLE_SIZE_PCT = {
   // (47px), 4.8% (35px) and 4% (29px) all read large. 3.4% is 24px, or 2% of
   // width.
   //
-  // This is below the comfortable floor for Burmese at 720p: at this size the
-  // marks stacked above and below a letter start closing into it, and the
-  // outline (0.14em, ~3px here) does most of the separating. If it needs to go
-  // smaller again, raise TARGET_DIMENSIONS to 1920x1080 instead — the same
-  // relative size then has more pixels to draw with.
-  "16:9": 3.4,
-  // Portrait runs a little larger than the width rule alone gives (2.5 rather
-  // than 2.0, i.e. 4.4% of width against 3.6%): a phone-sized frame is watched
-  // at phone size, and the strict match read undersized on it.
-  "9:16": 2.5,
+  // 3.4% was the floor at 720p. 3.0% (~32px) is only legible because output
+  // is now 1080p — do not lower this while rendering at 720p.
+  "16:9": 3,
+  // Portrait runs a little larger than the width rule alone gives (2.2 rather
+  // than 2.0, i.e. 3.9% of width against 3.6%): a phone-sized frame is watched
+  // at phone size, and 2.0 read undersized on it. 2.5 read large.
+  "9:16": 2.2,
   // Square leaves less room around persistent social overlays than landscape.
   // Keep its captions compact so one Burmese line does not dominate the frame.
   "1:1": 2,
@@ -158,12 +155,11 @@ export const MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT = 2;
 // policy makes the audio timeline just as configurable as the picture timeline.
 export const MOVIE_RECAP_NARRATION_SAMPLE_RATE = 24_000;
 
-// Applied once while the cached narration master is assembled. Individual TTS
-// beat caches stay at the provider's output rate, so tuning this value rebuilds
-// only narration.wav and its timing manifest, not the synthesized speech.
-export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.05;
-export const MOVIE_RECAP_NARRATION_MAX_PLAYBACK_RATE = 1.1;
-export const MOVIE_RECAP_NARRATION_RATE_STEP = 0.001;
+// Applied once while the cached narration master is assembled. This is fixed:
+// narration length owns the timeline, and picture is trimmed, slowed or frozen
+// per beat to match it. Individual TTS caches stay at the provider output rate,
+// so tuning this rebuilds narration.wav without synthesizing unchanged speech.
+export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.2;
 
 // While one beat preview plays, prepare this many following beats so sequential
 // playback normally advances without waiting on R2 or ffmpeg.
@@ -367,9 +363,9 @@ export const MOVIE_RECAP_HOLD_MOTION = {
 export const MOVIE_RECAP_TARGET_FPS = 30;
 
 export const MOVIE_RECAP_TARGET_DIMENSIONS = {
-  // Still 720p. Long form has never been rendered at length and is a draft
-  // config; raise it when it is actually being published to YouTube.
-  "16:9": [1280, 720],
+  // 1080p, raised from 1280x720 so captions could shrink below 3.4% without
+  // Burmese marks closing into the letter.
+  "16:9": [1920, 1080],
   // 1080x1920, raised from 720x1280 once reels were being published rather than
   // test-rendered. TikTok, Facebook and Reels all re-encode whatever they are
   // given, so handing them a 720-wide source means their compression starts
@@ -390,7 +386,7 @@ export const MOVIE_RECAP_TARGET_DIMENSIONS = {
 // at 720 would stop hiding it at 1080. That is a correctness bug, not a
 // cosmetic one — which is why this scales rather than staying constant.
 //
-// Anchoring per ratio is what keeps 16:9 byte-identical while 9:16 moves.
+// Anchoring per ratio keeps each radius relative to the frame it was tuned on.
 const BLUR_REFERENCE_WIDTH = {
   "16:9": 1280,
   "9:16": 720,
@@ -447,6 +443,16 @@ export function movieRecapBackfillBlurCssPx(frameWidthPx: number, aspectRatio: M
 // are square, so the contain box is square too rather than using independent
 // percentages of the frame width and height.
 export const MOVIE_RECAP_LOGO_BOX = { widthPct: 10, portraitWidthPct: 10, heightPct: 8, marginPct: 4 } as const;
+
+// Centred text mark burned under the logo. `sizePct` is of frame height, like
+// subtitles. 16:9 read large at 3.4% and 2.2%.
+export const MOVIE_RECAP_WATERMARK = {
+  color: "#FFFFFF",
+  opacityPct: 30,
+  weight: 700,
+  letterSpacingEm: 0.14,
+  sizePct: { "16:9": 1.5, "9:16": 1.9, "1:1": 1.9 } satisfies Record<MovieRecapAspectRatio, number>,
+} as const;
 
 // The stand-in caption the step-3 preview draws. It is also the mock render's
 // first line, so a mock render puts the EXACT same words on screen as the

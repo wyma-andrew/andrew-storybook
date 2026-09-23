@@ -137,12 +137,6 @@ export type ApiSchema = {
   "movie-recaps/:id/script": {
     POST: { data: MovieRecapProject };
   };
-  // Speaks and measures every beat again as they stand — the beats are read, the
-  // transcript is not. Answers "does each line still fit its footage" without
-  // moving a shot or a word.
-  "movie-recaps/:id/script/recheck": {
-    POST: { data: MovieRecapProject };
-  };
   "movie-recaps/:id/script/cancel": {
     POST: { data: MovieRecapProject };
   };

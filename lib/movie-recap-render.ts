@@ -5,13 +5,11 @@ import { type TranscriptSegment } from "./openai";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import {
   ensureNarrationMaster,
-  narrationClip,
-  narrationPlaybackRateForDuration,
   probeDurationS,
   probeVideoFrameCount,
 } from "./movie-recap-narration";
 import { estimateSpokenSeconds, MIN_SEGMENT_S } from "./movie-recap-speech";
-import { getObjectText, movieRecapObjectKey, publicUrlFor, putObject } from "./r2";
+import { deleteObject, getObjectText, movieRecapObjectKey, publicUrlFor, putObject } from "./r2";
 import { trimFailureMessage } from "./movie-recap";
 import { buildShotFilter, holdMotionFilter, shotFilterContext } from "./movie-recap-transform";
 import {
@@ -25,6 +23,7 @@ import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
   MOVIE_RECAP_LOGO_BOX,
+  MOVIE_RECAP_WATERMARK,
   MOVIE_RECAP_MOCK_NARRATION,
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
@@ -333,6 +332,10 @@ export function spreadCuesOverShots(chunks: string[], shotCount: number): number
   return spread;
 }
 
+function movieRecapWatermarkText(project: MovieRecapProject) {
+  return project.logoEnabled ? project.logoWatermarkText?.trim() || null : null;
+}
+
 // ASS colors are &HAABBGGRR — byte-reversed from CSS hex, and the alpha byte
 // is INVERTED (00 = fully opaque, FF = fully transparent).
 function toAssColor(hex: string, opacityPercent = 100) {
@@ -384,7 +387,12 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
   // carry existed only to draw the background pill (BorderStyle 3 with the box
   // colour in OutlineColour); with the pill gone there is nothing behind the
   // text to keep independent.
+  const watermarkPx = (MOVIE_RECAP_WATERMARK.sizePct[project.aspectRatio] / 100) * h;
+  const watermarkColor = toAssColor(MOVIE_RECAP_WATERMARK.color, MOVIE_RECAP_WATERMARK.opacityPct);
+  const watermarkFace = subtitleFace(MOVIE_RECAP_WATERMARK.weight);
+  const watermarkSpacing = Math.round(watermarkPx * MOVIE_RECAP_WATERMARK.letterSpacingEm);
   const styles = [
+    `Style: Watermark,${watermarkFace.name},${Math.round(watermarkPx * ASS_FONT_SIZE_RATIO)},${watermarkColor},${watermarkColor},${transparent},${transparent},${watermarkFace.bold},0,0,0,100,100,${watermarkSpacing},0,1,0,0,5,${marginH},${marginH},0,1`,
     `Style: Text,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},${transparent},${common},1,${outline},0,${geometry}`,
     `Style: HookTitle,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},${transparent},${common},1,${outline},0,${hookGeometry}`,
   ];
@@ -416,7 +424,12 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
     ? `Dialogue: 1,${toAssTimestamp(0)},${toAssTimestamp(durationS)},HookTitle,,0,0,0,,${project.hookTitle.replace(/\r?\n/g, "\\N")}`
     : "";
 
-  return `${header}\n${[events, hookEvent].filter(Boolean).join("\n")}\n`;
+  const watermarkText = movieRecapWatermarkText(project);
+  const watermarkEvent = watermarkText
+    ? `Dialogue: 0,${toAssTimestamp(0)},${toAssTimestamp(durationS)},Watermark,,0,0,0,,${watermarkText.toUpperCase().replace(/\r?\n/g, "\\N")}`
+    : "";
+
+  return `${header}\n${[watermarkEvent, events, hookEvent].filter(Boolean).join("\n")}\n`;
 }
 
 // Runs the full pipeline synchronously: read -> copyright-free transform ->
@@ -593,7 +606,6 @@ export async function runMovieRecapRender(
     );
 
     let narration: MovieRecapNarrationSegment[];
-    let sourceDurationS = project.sourceDurationSeconds;
     // The source's own letterbox, found by the script run. A mock render has no
     // analysis, so it frames the raw file — the same thing it did before.
     let sourceCrop: MovieRecapRenderAnalysis["crop"] = null;
@@ -618,7 +630,6 @@ export async function runMovieRecapRender(
       await setProgress(db, project.id, "downloading_source");
       const sourcePath = path.join(workDir, "source.mp4");
       await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", sourcePath], signal);
-      sourceDurationS = (await probeDurationS(sourcePath, signal)) ?? sourceDurationS;
       console.log(
         `[MovieRecapRender] project=${project.id} cutting ${narration.length} beat(s); ` +
           `detection, the vision pass and the split are not run here.`
@@ -630,28 +641,15 @@ export async function runMovieRecapRender(
     // cache hit. If they are missing, rebuilding still uses the per-beat cache,
     // so only edited/missing beats are synthesized.
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
-    let cachedNarrationClips: Awaited<ReturnType<typeof narrationClip>>[] | undefined;
     let renderRates;
     if (mock) {
       renderRates = resolveMovieRecapTimelineRates(
         narration.map((segment) => ({ shots: segment.shots, targetS: estimateSpokenSeconds(segment.text) }))
       );
     } else {
-      cachedNarrationClips = [];
-      await setProgress(db, project.id, "synthesizing_narration", 0, narration.length);
-      for (const [index, segment] of narration.entries()) {
-        cachedNarrationClips.push(
-          await narrationClip({ projectId: project.id, voice, text: segment.text, slot: `render-${index}`, workDir, signal })
-        );
-        await setProgress(db, project.id, "synthesizing_narration", index + 1, narration.length);
-      }
       renderRates = {
         videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED,
-        narrationRate: narrationPlaybackRateForDuration(
-          cachedNarrationClips.map((clip) => clip.durationSeconds),
-          sourceDurationS,
-          MOVIE_RECAP_NARRATION_PLAYBACK_RATE
-        ),
+        narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
       };
     }
     const videoSpeed = renderRates.videoSpeed;
@@ -667,7 +665,9 @@ export async function runMovieRecapRender(
         texts: narration.map((segment) => segment.text),
         workDir,
         signal,
-        clips: cachedNarrationClips,
+        knownClipDurations: narration.map((segment) => segment.rawAudioS ?? (
+          segment.audioS && segment.narrationRate ? segment.audioS * segment.narrationRate : undefined
+        )),
         playbackRate: narrationRate,
       });
       narrationPath = master.path;
@@ -949,7 +949,9 @@ export async function runMovieRecapRender(
     // output then stream-copies these exact video frames and adds narration, so
     // downloading footage never produces a visually different render.
     const footagePath = path.join(workDir, "footage.mp4");
-    const assPath = project.subtitlesEnabled || project.hookTitle ? path.join(workDir, "subtitles.ass") : null;
+    const assPath = project.subtitlesEnabled || project.hookTitle || movieRecapWatermarkText(project)
+      ? path.join(workDir, "subtitles.ass")
+      : null;
     if (assPath) {
       await writeFile(assPath, buildAss(project, project.subtitlesEnabled ? cues : [], plannedVideoDurationS ?? project.sourceDurationSeconds), "utf-8");
     }
@@ -996,7 +998,7 @@ export async function runMovieRecapRender(
     ]);
     const audioUrl = narrationAudioKey ? publicUrlFor(narrationAudioKey) : null;
 
-    await db
+    const { error: saveError } = await db
       .from("movie_recap_projects")
       .update({
         render_status: "done",
@@ -1021,6 +1023,13 @@ export async function runMovieRecapRender(
         render_completed_at: new Date().toISOString(),
       })
       .eq("id", project.id);
+    if (saveError) throw new Error(saveError.message);
+    if (
+      project.renderAudioObjectKey &&
+      project.renderAudioObjectKey !== narrationAudioKey
+    ) {
+      await deleteObject(project.renderAudioObjectKey).catch(() => undefined);
+    }
     return {
       createdAt: new Date().toISOString(),
       mock,

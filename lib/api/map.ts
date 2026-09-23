@@ -16,6 +16,7 @@ import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
 import { DEFAULT_REGION, isRegion } from "@/lib/constants/regions";
 import { DEFAULT_MOTION_STYLE_ID, isMotionMode } from "@/lib/constants/motion-styles";
 import { isShotScale } from "@/lib/constants/shot-scales";
+import { normalizeMovieRecapNarrationManifest } from "../movie-recap-manifest";
 
 type Row = Record<string, unknown>;
 
@@ -82,10 +83,11 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     scriptProgressTotal: (r.script_progress_total as number | null) ?? null,
     scriptError: (r.script_error as string | null) ?? null,
     scriptApproved: Boolean(r.script_approved),
-    renderScript: (r.render_script as MovieRecapProject["renderScript"]) ?? null,
+    renderScript: normalizeMovieRecapNarrationManifest((r.render_script as MovieRecapProject["renderScript"]) ?? null),
     renderAnalysisKey: (r.render_analysis_key as string | null) ?? null,
     renderOutputUrl: (r.render_output_url as string) ?? null,
     renderAudioUrl: (r.render_audio_url as string) ?? null,
+    renderAudioObjectKey: (r.render_audio_object_key as string) ?? null,
     renderFootageUrl: (r.render_footage_url as string) ?? null,
     renderStartedAt: (r.render_started_at as string) ?? null,
     renderCompletedAt: (r.render_completed_at as string) ?? null,

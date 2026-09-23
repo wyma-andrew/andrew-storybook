@@ -146,6 +146,7 @@ export type MovieRecapProject = {
   renderAnalysisKey: string | null;
   renderOutputUrl: string | null;
   renderAudioUrl: string | null;
+  renderAudioObjectKey: string | null;
   renderFootageUrl: string | null;
   renderStartedAt: string | null;
   renderCompletedAt: string | null;
@@ -207,15 +208,19 @@ export type MovieRecapNarrationSegment = {
   // it described, so a re-render cuts on the same action the first one did.
   shots: { sourceStartS: number; sourceEndS: number; keyframeFraction?: number }[];
   text: string;
-  // MEASURED length of this line's synthesized audio, in seconds. Written by the
-  // script run and re-written when one beat is re-checked; absent on a script
-  // from before measuring existed, and on a mock.
+  // Provider-output duration before the fixed global playback rate. Persisting
+  // it means a later rate change can rebuild timing without measuring an
+  // unchanged cached file again.
+  rawAudioS?: number;
+  // Duration after the fixed global playback rate, in seconds. Written by the
+  // script run and re-written when one beat is rebuilt; absent on old scripts
+  // and mocks.
   //
   // Against the beat's own footage it is the only number that matters at the
   // script step: more audio than footage is a held frame in the finished video,
   // and the fix — fewer words, or a later timestamp — is the user's.
   audioS?: number;
-  // One pair of rates is resolved for the entire script. They are repeated on
+  // One pair of rates applies to the entire script. They are repeated on
   // each beat because render_script is the durable narration manifest and a
   // single-beat preview must reproduce the rendered audio exactly.
   narrationRate?: number;
