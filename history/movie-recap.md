@@ -5999,3 +5999,108 @@ intended, not drift.
 **Supersedes:** "Output stays 1280×720 for now" for 16:9, and the 2026-09-18
 note that 16:9 stays at 720p. Do not lower 16:9 captions below 3.4% if the
 output ever returns to 720p.
+
+## 2026-09-23 — Source replacement: same video (keep script) or different video
+
+**Decision, confirmed by the user:** `Replace video` is a menu with two items.
+**Same video, better quality** (`mode: "same"`) keeps the narrative script,
+approval, narration master and current step; it clears the source crop analysis,
+render outputs and render history. **Different video** is the previous
+behaviour: the script is cleared as well and the project returns to step 1.
+
+**Why:** in practice replacement is mostly swapping in a higher-quality copy of
+the same movie. Clearing the script then threw away every beat edit for timing
+that was still correct.
+
+**Crop is measured by the render when missing.** The crop is stored in source
+pixels, so it cannot survive a resolution change. Instead of asking for a script
+rebuild, the render detects it on the downloaded file, saves `analysis.json` and
+sets `render_analysis_key`. The render route no longer requires the key — this
+is intended, not a missing guard.
+
+**Duration guard:** a "same" replacement whose duration differs by more than
+2s asks before keeping the script, because a different cut makes the kept beat
+timestamps point at the wrong footage. It is a warning, not a block.
+
+**Supersedes:** the script-clearing part of "2026-09-21 (later) — source
+replacement keeps the project and resets derived work" and "Source replacement
+is revised with the same boundary" — both now describe only **Different video**.
+
+## 2026-09-23 — Part uploads abort after 60s without progress
+
+**Bug:** an upload sat at 100% forever. R2 had parts 1-3 and 5-6; part 4's retry
+PUT had sent every byte (so the bar read 100%) and R2 never answered. The XHR
+had no timeout, so the three-attempt retry loop never got a failure to act on.
+
+**Fix:** `uploadPart` aborts when no upload progress arrives for
+`PART_STALL_MS` (60s), rejecting as a stall so the retry runs. The timer resets
+on each progress event, so slow-but-moving uploads are not cut off.
+
+**Also:** `multipart/complete` no longer writes `current_step: 1`. New projects
+already start at 1 and a Different-video replacement sets it itself; resetting it
+here sent Same-video replacements back to the first step.
+
+## 2026-09-23 — Part retries: five attempts with backoff, and a failed part stops the rest
+
+**Problem:** stalls kept recurring; all three immediate retries of one part could
+stall in a row, stopping the upload. The same presign + PUT pattern from Node
+(3 parallel 16 MiB parts) completed every part in 2.6-14s, so R2 itself and the
+signing are not the cause; the fault sits on the browser-to-R2 path, still not
+identified.
+
+**Change:** `PART_ATTEMPTS` is 5 with exponential backoff (2s, 4s, 8s, 16s)
+between attempts, so a wedged connection has time to drop before the retry. A
+stall now reports whether every byte was sent (`sentBytes` vs `partBytes` in
+`part-attempt-failed`), separating "R2 received it but never answered" from
+"sending stopped" for the next diagnosis. When a part exhausts its attempts the
+other workers stop taking new parts, instead of uploading on in the background
+after the user has been told the upload stopped.
+
+## 2026-09-23 — Mirroring is a per-project toggle, on by default
+
+**Decision, requested by the user:** `movie_recap_projects.mirror_enabled`
+(default `true`) with a `Mirror video` switch on the Customize Aspect tab. Off
+skips `hflip` in the render and `scaleX(-1)` in the preview; the colour grade is
+unaffected. `MOVIE_RECAP_LOOK.mirrorAspectRatios` still gates which ratios can
+mirror (currently all three) — the toggle only turns it off per project.
+
+**Why:** mirroring's cost is already recorded — text in the source reads
+backwards — and some footage (signs, screens, burned-in subtitles) is worth more
+unmirrored. Existing projects keep their mirrored output because the column
+defaults on.
+
+## 2026-09-23 — Leaving Transcript or Customize by step tab or Back now saves
+
+**Bug:** Mirror video was off in Customize, yet the render came out mirrored.
+Customize edits live in a browser draft that only `Save & Continue` wrote. The
+step tabs and Back switched steps without saving, so Review showed the draft
+while the render read the saved row (`mirror_enabled` was still true; the row
+was only updated 30s after that render finished). Every Customize and
+Transcript field was exposed to this, not just mirroring.
+
+**Fix:** `goToStep` saves through `saveAndGo` whenever it leaves step 2 or 4,
+for tab clicks and Back alike. The save's validation (project name, logo chosen)
+therefore also blocks leaving Customize by tab — intended, since leaving would
+otherwise discard the draft.
+
+## 2026-09-23 — Source download uses parallel ranged S3 GETs and reports MB progress
+
+**Decision, requested by the user:** render, script and transcript runs download
+the source with `downloadObjectToFile` (`lib/r2.ts`): six parallel 16 MiB ranged
+`GetObject` calls over the S3 endpoint, three attempts per range. Render and
+script runs report progress as whole MB in their existing progress columns, and
+`MovieRecapRenderProgress` shows "Source downloaded X of Y MB" for
+`downloading_source`.
+
+**Measured on a 90 MB source:** old `ffmpeg -i <r2.dev URL> -c copy` took 10s;
+the new download takes 3.0s. A plain single `fetch` of the r2.dev URL also took
+3.0s, so the old cost was ffmpeg's HTTP input, not r2.dev throttling as first
+assumed; parallel ranges are kept for larger files.
+
+**Trap:** each range is buffered and written with ONE positional
+`FileHandle.write`. Writing every ~16 KB stream chunk at its offset instead made
+the same 90 MB take 121s.
+
+**Accepted consequence:** the file is copied byte-for-byte rather than remuxed
+by ffmpeg, so it keeps whatever container it was uploaded in; every consumer
+opens it with ffmpeg, which probes content rather than the `source.mp4` name.

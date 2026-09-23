@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ${IMAGE:-YOUR_DOCKERHUB_USER/ai-storybook:latest}
+    env_file: .env
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  migrate:
+    image: ${IMAGE:-YOUR_DOCKERHUB_USER/ai-storybook:latest}
+    env_file: .env
+    command: migrate
+    profiles: ["migrate"]

@@ -22,7 +22,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         source_url: publicUrlFor(project.source_object_key),
         source_upload_id: null,
         source_upload_status: "ready",
-        current_step: 1,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)

@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import { detectContentCrop } from "./movie-recap-crop";
+import { downloadMovieRecapSource } from "./movie-recap-source-download";
 import { parseTimestampedBlocks } from "./movie-recap-manual-script";
 import { mapConcurrent } from "./map-concurrent";
 import {
@@ -107,7 +107,10 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
 
     await setStage(db, project.id, "downloading_source");
     const sourcePath = path.join(workDir, "source.mp4");
-    await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", sourcePath], signal);
+    await downloadMovieRecapSource(project, sourcePath, {
+      signal,
+      report: (done, total) => setStage(db, project.id, "downloading_source", done, total),
+    });
 
     const crop = await detectContentCrop(sourcePath, project.sourceDurationSeconds, signal).catch(() => null);
     if (crop) {

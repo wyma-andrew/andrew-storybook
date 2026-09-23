@@ -37,10 +37,11 @@ function StepIcon({ state, index }: { state: MovieRecapStepState; index: number 
 
 // What the counted stages are counting. A stage missing from here reports no
 // bar rather than an unlabelled one — a number with no noun is worse than none.
-const COUNTED: Partial<Record<NonNullable<MovieRecapProject["renderStage"]>, string>> = {
-  writing_script: "Blocks divided",
-  synthesizing_narration: "Narration beats spoken",
-  rendering_segments: "Beats cut",
+const COUNTED: Partial<Record<NonNullable<MovieRecapProject["renderStage"]>, { label: string; unit?: string }>> = {
+  downloading_source: { label: "Source downloaded", unit: "MB" },
+  writing_script: { label: "Blocks divided" },
+  synthesizing_narration: { label: "Narration beats spoken" },
+  rendering_segments: { label: "Beats cut" },
 };
 
 /**
@@ -71,7 +72,8 @@ export function MovieRecapRenderProgress({
   const steps: readonly { id: string; label: string }[] = script ? MOVIE_RECAP_SCRIPT_STEPS : MOVIE_RECAP_RENDER_STEPS;
   // These counters are written AFTER each beat finishes, so `current` is how
   // many are done — not the one in flight. The bar can read it straight.
-  const label = stage ? COUNTED[stage] : undefined;
+  const counted = stage ? COUNTED[stage] : undefined;
+  const label = counted?.label;
   const total = (script ? project.scriptProgressTotal : project.renderProgressTotal) ?? 0;
   const done = (script ? project.scriptProgressCurrent : project.renderProgressCurrent) ?? 0;
   const counting = Boolean(label) && total > 0 && status === "running";
@@ -114,7 +116,7 @@ export function MovieRecapRenderProgress({
       {counting && (
         <div className="mt-4" aria-live="polite">
           <div className="mb-1.5 flex justify-between text-xs text-fg-2">
-            <span>{label} {done} of {total}</span>
+            <span>{label} {done} of {total}{counted?.unit ? ` ${counted.unit}` : ""}</span>
             <span className="tabular-nums">{Math.round((done / total) * 100)}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-chip">

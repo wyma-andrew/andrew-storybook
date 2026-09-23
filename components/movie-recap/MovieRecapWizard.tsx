@@ -48,6 +48,7 @@ const CUSTOMIZE_FIELDS = [
   "aspectRatio",
   "fitMode",
   "dynamicBackgroundBlurEnabled",
+  "mirrorEnabled",
   "copyrightZoom",
   "subtitlePreset",
   "subtitlesEnabled",
@@ -275,7 +276,14 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     merge({ aspectRatio });
   }
 
-  async function saveAndGo(target: 2 | 3 | 4 | 5) {
+  // Transcript and Customize edit a browser draft; leaving those steps any other
+  // way than Continue dropped it, and a render then used the stale saved row.
+  function goToStep(target: StepNumber) {
+    if (step === 2 || step === 4) void saveAndGo(target);
+    else void setStep(target);
+  }
+
+  async function saveAndGo(target: StepNumber) {
     if (!project) return;
     const body: MovieRecapProjectPatch = { currentStep: target };
     // Transcript fields edit the project draft and this writes them together,
@@ -704,7 +712,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               const active = step === number;
               const available = number <= maxStep;
               return (
-                <Button key={name} disabled={!available} onClick={() => available && void setStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
+                <Button key={name} disabled={!available} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
                   <span className={`mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
                   <span className="truncate text-xs sm:text-sm">{name}</span>
                 </Button>
@@ -777,6 +785,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                       <span className="mt-2 block text-[11px] text-fg-3">
                         1.00x keeps the original framing. Ratio and fit-mode changes preserve your zoom.
                       </span>
+                    </label>
+                    <label className="mt-5 flex items-center justify-between gap-3">
+                      <span><span className="block text-sm font-medium">Mirror video</span><span className="text-xs text-fg-3">Flip the footage left to right. Text in the source reads backwards.</span></span>
+                      <Switch checked={project.mirrorEnabled} onChange={(checked) => merge({ mirrorEnabled: checked })} />
                     </label>
                   </div>}
                   {tab === "subtitle" && <div>
@@ -957,7 +969,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           )}
 
           <div className="mt-8 flex items-center justify-between border-t border-line pt-5">
-            {step > 1 ? <Button onClick={() => void setStep((step - 1) as StepNumber)}><ChevronLeft size={16} /> Back</Button> : <span />}
+            {step > 1 ? <Button onClick={() => goToStep((step - 1) as StepNumber)}><ChevronLeft size={16} /> Back</Button> : <span />}
             {step === 1 && <LoadingButton variant="primary" disabled={project?.sourceUploadStatus !== "ready"} loading={saving} onClick={() => saveAndGo(2)}>Continue <ChevronRight size={16} /></LoadingButton>}
             {step === 2 && (
               <div className="flex items-center gap-2">

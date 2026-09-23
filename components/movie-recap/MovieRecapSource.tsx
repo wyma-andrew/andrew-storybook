@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Film, RefreshCw, Trash2, Upload } from "lucide-react";
-import { ConfirmDialog, toast, useFilePicker } from "@geckoui/geckoui";
+import { CheckCircle2, ChevronDown, Film, Loader2, MoreHorizontal, RefreshCw, Trash2, Upload } from "lucide-react";
+import { ConfirmDialog, Menu, MenuItem, MenuTrigger, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { formatBytes, formatDuration, movieRecapPartCount, movieRecapPartSize } from "@/lib/movie-recap";
@@ -11,6 +11,23 @@ import { clearRenderHistory } from "@/lib/movie-recap-render-history";
 import { apiClient, useWrite } from "@/lib/spoosh";
 
 const UPLOAD_LOG = "[MovieRecapUpload]";
+
+type ReplaceMode = "same" | "different";
+
+// An R2 part PUT has been seen to send every byte and then never answer. With no
+// progress for this long the attempt is aborted so the retry loop can run.
+const PART_STALL_MS = 60_000;
+const PART_ATTEMPTS = 5;
+
+class PartStallError extends Error {
+  constructor(readonly sentBytes: number, readonly partBytes: number) {
+    super(sentBytes >= partBytes ? "R2 received the part but never answered." : "Part upload stopped sending.");
+  }
+}
+
+// Beyond this, a "same video" replacement is probably a different cut, and the
+// kept beat timestamps would point at the wrong footage.
+const SAME_VIDEO_DURATION_TOLERANCE_S = 2;
 
 function uploadLog(event: string, details?: Record<string, unknown>) {
   console.info(UPLOAD_LOG, event, details ?? {});
@@ -55,9 +72,22 @@ function uploadPart(
 ) {
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let stalled = false;
+    let sentBytes = 0;
+    let stallTimer = 0;
+    const armStallTimer = () => {
+      window.clearTimeout(stallTimer);
+      stallTimer = window.setTimeout(() => {
+        stalled = true;
+        xhr.abort();
+      }, PART_STALL_MS);
+    };
+    xhr.addEventListener("loadend", () => window.clearTimeout(stallTimer));
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", contentType);
     xhr.upload.addEventListener("progress", (event) => {
+      armStallTimer();
+      sentBytes = event.loaded;
       if (event.lengthComputable) onProgress(event.loaded);
     });
     xhr.addEventListener("load", () => {
@@ -68,7 +98,10 @@ function uploadPart(
       } else reject(new Error(`Part upload failed (${xhr.status}).`));
     });
     xhr.addEventListener("error", () => reject(new Error("Part upload failed.")));
-    xhr.addEventListener("abort", () => reject(new Error("Part upload was cancelled.")));
+    xhr.addEventListener("abort", () =>
+      reject(stalled ? new PartStallError(sentBytes, blob.size) : new Error("Part upload was cancelled."))
+    );
+    armStallTimer();
     xhr.send(blob);
   });
 }
@@ -91,7 +124,9 @@ export function MovieRecapSource({
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  async function begin(file: File, replacing = false) {
+  const replaceMode = useRef<ReplaceMode>("same");
+
+  async function begin(file: File, replacing: ReplaceMode | null = null) {
     uploadLog("file-selected", {
       fileName: file.name,
       contentType: file.type,
@@ -126,6 +161,7 @@ export function MovieRecapSource({
             width: metadata.width,
             height: metadata.height,
             lastModified: file.lastModified,
+            mode: replacing,
           },
           invalidate: ["movie-recaps", `movie-recaps/${active.id}`],
         });
@@ -219,13 +255,15 @@ export function MovieRecapSource({
 
       const pending = Array.from({ length: count }, (_, index) => index + 1).filter((number) => !etags.has(number));
       let cursor = 0;
+      let stopped = false;
       async function worker() {
-        while (cursor < pending.length) {
+        while (!stopped && cursor < pending.length) {
           const partNumber = pending[cursor++];
           const start = (partNumber - 1) * partSize;
           const blob = file.slice(start, Math.min(file.size, start + partSize));
           let lastError: unknown;
-          for (let attempt = 0; attempt < 3; attempt++) {
+          for (let attempt = 0; attempt < PART_ATTEMPTS && !stopped; attempt++) {
+            if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(20_000, 2_000 * 2 ** (attempt - 1))));
             try {
               uploadLog("part-attempt", { partNumber, attempt: attempt + 1, totalParts: count });
               const signed = await signPart({ params: { id: active!.id }, body: { partNumber } });
@@ -241,13 +279,21 @@ export function MovieRecapSource({
               lastError = null;
               break;
             } catch (error) {
-              uploadError("part-attempt-failed", error, { partNumber, attempt: attempt + 1, totalParts: count });
+              uploadError("part-attempt-failed", error, {
+                partNumber,
+                attempt: attempt + 1,
+                totalParts: count,
+                ...(error instanceof PartStallError && { sentBytes: error.sentBytes, partBytes: error.partBytes }),
+              });
               lastError = error;
               loaded.delete(partNumber);
               updateProgress();
             }
           }
-          if (lastError) throw lastError;
+          if (lastError) {
+            stopped = true;
+            throw lastError;
+          }
         }
       }
       await Promise.all(Array.from({ length: Math.min(3, pending.length || 1) }, () => worker()));
@@ -275,7 +321,7 @@ export function MovieRecapSource({
   function confirmDelete() {
     if (!project) return;
     ConfirmDialog.show({
-      title: "Delete this video?",
+      title: "Delete this project?",
       content: `“${project.sourceFileName}” and everything generated from it will be permanently deleted, and the project with it.`,
       confirmButtonLabel: "Delete",
       cancelButtonLabel: "Cancel",
@@ -286,22 +332,51 @@ export function MovieRecapSource({
           return;
         }
         dismiss();
-        toast.success("Video deleted.");
+        toast.success("Project deleted.");
         router.push("/movie-recap");
       },
     });
   }
 
-  function confirmReplace() {
+  function confirmReplace(mode: ReplaceMode) {
     if (!project) return;
     ConfirmDialog.show({
-      title: "Replace source video?",
-      content: "Your transcript and all Customize Video settings will stay. The narrative script, source analysis, render outputs, and render history made from the current video will be permanently cleared.",
+      title: mode === "same" ? "Replace with a better-quality copy?" : "Replace with a different video?",
+      content:
+        mode === "same"
+          ? "Use this for the same video in better quality. Your transcript, narrative script, narration, and Customize Video settings stay. Render outputs and render history are cleared, and the letterbox crop is measured again at the next render."
+          : "Your transcript and all Customize Video settings will stay. The narrative script, source analysis, render outputs, and render history made from the current video will be permanently cleared.",
       confirmButtonLabel: "Choose replacement",
       cancelButtonLabel: "Cancel",
       onConfirm: ({ dismiss }) => {
         dismiss();
+        replaceMode.current = mode;
         void openReplacementPicker({ multiple: false });
+      },
+    });
+  }
+
+  async function replaceWith(file: File) {
+    const mode = replaceMode.current;
+    if (mode !== "same" || !project) {
+      void begin(file, mode);
+      return;
+    }
+    const metadata = await readVideo(file).catch(() => null);
+    if (metadata) URL.revokeObjectURL(metadata.url);
+    const driftS = metadata ? Math.abs(metadata.duration - project.sourceDurationSeconds) : 0;
+    if (driftS <= SAME_VIDEO_DURATION_TOLERANCE_S) {
+      void begin(file, "same");
+      return;
+    }
+    ConfirmDialog.show({
+      title: "Durations do not match",
+      content: `The new file is ${formatDuration(metadata!.duration)} and the current one is ${formatDuration(project.sourceDurationSeconds)}. If this is a different cut, the kept beats will point at the wrong footage. Use Different video to rebuild the script instead.`,
+      confirmButtonLabel: "Keep script anyway",
+      cancelButtonLabel: "Cancel",
+      onConfirm: ({ dismiss }) => {
+        dismiss();
+        void begin(file, "same");
       },
     });
   }
@@ -317,7 +392,7 @@ export function MovieRecapSource({
     accept: "video/*",
     onChange: (_files, newFiles) => {
       const file = newFiles[0];
-      if (file) void begin(file, true);
+      if (file) void replaceWith(file);
     },
   });
   const ready = project?.sourceUploadStatus === "ready";
@@ -365,8 +440,29 @@ export function MovieRecapSource({
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
             <p className="text-xs text-fg-3">Replace the source and keep your settings, or delete the entire project.</p>
             <div className="flex items-center gap-2">
-              <Button disabled={uploading || deleting} onClick={confirmReplace}><RefreshCw size={15} /> Replace video</Button>
-              <LoadingButton variant="danger" loading={deleting} disabled={uploading} onClick={confirmDelete}><Trash2 size={15} /> Delete video</LoadingButton>
+              <Menu menuClassName="min-w-[240px] p-0" placement="bottom-end">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <Button disabled={uploading || deleting} onClick={toggleMenu}>
+                      <RefreshCw size={15} /> Replace video <ChevronDown size={14} />
+                    </Button>
+                  )}
+                </MenuTrigger>
+                <MenuItem onClick={() => confirmReplace("same")}>Same video, better quality</MenuItem>
+                <MenuItem onClick={() => confirmReplace("different")}>Different video</MenuItem>
+              </Menu>
+              <Menu menuClassName="min-w-[180px] p-0" placement="bottom-end">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <Button className="!w-9 !px-0" aria-label="More actions" disabled={uploading || deleting} onClick={toggleMenu}>
+                      {deleting ? <Loader2 size={15} className="animate-spin" /> : <MoreHorizontal size={16} />}
+                    </Button>
+                  )}
+                </MenuTrigger>
+                <MenuItem onClick={confirmDelete}>
+                  <span className="flex items-center gap-2 text-danger"><Trash2 size={14} /> Delete project</span>
+                </MenuItem>
+              </Menu>
             </div>
           </div>
         </div>

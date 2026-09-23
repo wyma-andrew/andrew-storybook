@@ -67,6 +67,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.dynamic_background_blur_enabled = body.dynamicBackgroundBlurEnabled;
     changesConfiguration = true;
   }
+  if (body?.mirrorEnabled !== undefined) {
+    if (typeof body.mirrorEnabled !== "boolean") return NextResponse.json({ error: "mirrorEnabled must be boolean." }, { status: 400 });
+    patch.mirror_enabled = body.mirrorEnabled;
+    changesConfiguration = true;
+  }
   if (body?.subtitlePosition !== undefined) {
     if (!isMovieRecapSubtitlePosition(body.subtitlePosition)) return NextResponse.json({ error: "Invalid subtitle position." }, { status: 400 });
     patch.subtitle_position = body.subtitlePosition;

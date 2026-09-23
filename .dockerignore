@@ -1,0 +1,16 @@
+.git
+.next
+node_modules
+.venv
+.venv-scenedetect
+.env*
+!.env.example
+.claude
+.agents
+demo
+history
+workers
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+docker-compose.yml

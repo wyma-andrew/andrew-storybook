@@ -12,6 +12,8 @@ import { estimateSpokenSeconds, MIN_SEGMENT_S } from "./movie-recap-speech";
 import { deleteObject, getObjectText, movieRecapObjectKey, publicUrlFor, putObject } from "./r2";
 import { trimFailureMessage } from "./movie-recap";
 import { buildShotFilter, holdMotionFilter, shotFilterContext } from "./movie-recap-transform";
+import { detectContentCrop } from "./movie-recap-crop";
+import { downloadMovieRecapSource } from "./movie-recap-source-download";
 import {
   planMovieRecapBeatTimeline,
   resolveMovieRecapTimelineRates,
@@ -491,6 +493,14 @@ export function silentTimingFilter() {
 // Null on anything unreadable — a missing object, a bucket change, a half-written
 // blob. The caller turns that into "render again from the source" rather than a
 // render that silently plans against nothing.
+async function detectAndSaveSourceCrop(db: Db, project: MovieRecapProject, sourcePath: string, signal: AbortSignal) {
+  const crop = await detectContentCrop(sourcePath, project.sourceDurationSeconds, signal).catch(() => null);
+  const analysisKey = movieRecapObjectKey(project.id, "analysis", "analysis.json");
+  await putObject(analysisKey, Buffer.from(JSON.stringify({ crop } satisfies MovieRecapRenderAnalysis)), "application/json");
+  await db.from("movie_recap_projects").update({ render_analysis_key: analysisKey }).eq("id", project.id);
+  return crop;
+}
+
 async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieRecapRenderAnalysis | null> {
   if (!project.renderAnalysisKey) return null;
   const text = await getObjectText(project.renderAnalysisKey);
@@ -548,7 +558,10 @@ export async function runMovieRecapRender(
       const sourcePath = path.join(workDir, "source.mp4");
       const outputPath = path.join(workDir, "silent-timing-test.mp4");
       await setProgress(db, project.id, "downloading_source");
-      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", sourcePath], signal);
+      await downloadMovieRecapSource(project, sourcePath, {
+        signal,
+        report: (done, total) => setProgress(db, project.id, "downloading_source", done, total),
+      });
       const sourceDurationS = (await probeDurationS(sourcePath, signal)) ?? project.sourceDurationSeconds;
       await setProgress(db, project.id, "rendering_segments", 0, 1);
       await run(
@@ -624,12 +637,19 @@ export async function runMovieRecapRender(
       narration = project.renderScript ?? [];
       if (!narration.length) throw new Error("Build the script first — there is nothing to render.");
       const analysis = await loadRenderAnalysis(project);
-      if (!analysis) throw new Error("The saved analysis for this script is missing. Build the script again.");
-      sourceCrop = analysis.crop ?? null;
 
       await setProgress(db, project.id, "downloading_source");
       const sourcePath = path.join(workDir, "source.mp4");
-      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", sourcePath], signal);
+      await downloadMovieRecapSource(project, sourcePath, {
+        signal,
+        report: (done, total) => setProgress(db, project.id, "downloading_source", done, total),
+      });
+      // Missing after a same-video quality replacement: the crop is in source
+      // pixels, so it is measured again on the new file rather than rebuilt with
+      // the script.
+      sourceCrop = analysis
+        ? analysis.crop ?? null
+        : await detectAndSaveSourceCrop(db, project, sourcePath, signal);
       console.log(
         `[MovieRecapRender] project=${project.id} cutting ${narration.length} beat(s); ` +
           `detection, the vision pass and the split are not run here.`

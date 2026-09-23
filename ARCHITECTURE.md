@@ -177,9 +177,11 @@ only position and edge distance stay adjustable. The source's pixel dimensions a
 aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
 same local file is reselected. An existing project's source can be replaced through
-the same multipart path: its transcript, narration beat cache, and Customize Video
-settings remain, while the narrative timeline, source analysis, render artifacts,
-and browser render history are cleared. Generate currently records
+the same multipart path, chosen from the Replace video menu. **Same video, better
+quality** keeps the narrative script and narration too, clearing only the source
+crop, render artifacts, and browser render history; the next render re-measures
+the crop on the new file. **Different video** also clears the narrative timeline.
+Transcript, narration caches, and Customize Video settings remain in both. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.

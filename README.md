@@ -128,3 +128,27 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Docker
+
+The image bundles the standalone Next server, ffmpeg (libass + libopus),
+PySceneDetect, Noto Sans Myanmar (Regular/Medium/SemiBold/Bold) and the
+Supabase CLI with this repo's migrations, so it runs without the source.
+
+Build and push (multi-arch, so it runs on Intel and Apple Silicon hosts):
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t <dockerhub-user>/ai-storybook:latest --push .
+```
+
+On the host that runs it, only `docker-compose.yml` and a filled-in `.env`
+(from `.env.example`) are needed:
+
+```bash
+docker compose run --rm migrate
+docker compose up -d
+```
+
+`migrate` runs `supabase db push` against `DATABASE_URL`. Set `IMAGE` in `.env`
+to the pushed tag. `NEXT_PUBLIC_*` values are read at runtime, not baked into
+the image, so one image serves any Supabase project.

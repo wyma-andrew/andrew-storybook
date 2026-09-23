@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   ListPartsCommand,
   PutObjectCommand,
@@ -12,6 +13,8 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { open } from "node:fs/promises";
+import type { Readable } from "node:stream";
 
 // Cloudflare R2 is S3-compatible, so the AWS SDK talks to it unchanged — the
 // only differences are the endpoint and a fixed "auto" region.
@@ -239,6 +242,62 @@ export async function getObjectBytes(objectKey: string) {
   } catch {
     return null;
   }
+}
+
+const DOWNLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
+const DOWNLOAD_WORKERS = 6;
+const DOWNLOAD_ATTEMPTS = 3;
+
+// Parallel ranged GETs over the S3 endpoint. The public r2.dev URL is
+// rate-limited by Cloudflare and ffmpeg reads it over one connection, which made
+// "Downloading source" the slowest stage of a render.
+export async function downloadObjectToFile(
+  objectKey: string,
+  destPath: string,
+  { signal, onProgress }: { signal?: AbortSignal; onProgress?: (doneBytes: number, totalBytes: number) => void } = {}
+) {
+  const head = await r2().send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }), { abortSignal: signal });
+  const total = head.ContentLength ?? 0;
+  const file = await open(destPath, "w");
+  try {
+    const starts = Array.from({ length: Math.ceil(total / DOWNLOAD_CHUNK_BYTES) }, (_, i) => i * DOWNLOAD_CHUNK_BYTES);
+    const received = new Map<number, number>();
+    const report = () => onProgress?.([...received.values()].reduce((sum, n) => sum + n, 0), total);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < starts.length) {
+        const start = starts[cursor++];
+        const end = Math.min(total, start + DOWNLOAD_CHUNK_BYTES) - 1;
+        for (let attempt = 1; ; attempt++) {
+          received.set(start, 0);
+          try {
+            const part = await r2().send(
+              new GetObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, Range: `bytes=${start}-${end}` }),
+              { abortSignal: signal }
+            );
+            const chunks: Buffer[] = [];
+            let length = 0;
+            for await (const chunk of part.Body as Readable) {
+              chunks.push(chunk as Buffer);
+              length += (chunk as Buffer).length;
+              received.set(start, length);
+              report();
+            }
+            if (length !== end - start + 1) throw new Error(`Short read for bytes ${start}-${end}.`);
+            await file.write(Buffer.concat(chunks, length), 0, length, start);
+            break;
+          } catch (error) {
+            if (signal?.aborted || attempt >= DOWNLOAD_ATTEMPTS) throw error;
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(DOWNLOAD_WORKERS, starts.length || 1) }, worker));
+    report();
+  } finally {
+    await file.close();
+  }
+  return total;
 }
 
 export async function createMultipartUpload(objectKey: string, contentType: string) {

@@ -33,6 +33,12 @@ describe("buildShotFilter", () => {
     expect(filter).toContain(`eq=contrast=${contrast}:saturation=${saturation}:gamma=${gamma}`);
   });
 
+  it("skips the mirror when the project turns it off", () => {
+    const filter = buildShotFilter(ctx({ mirrorEnabled: false }));
+    expect(filter).not.toContain("hflip");
+    expect(filter).toContain("eq=");
+  });
+
   it("mirrors portrait too", () => {
     const filter = buildShotFilter(ctx({ aspectRatio: "9:16" }));
     expect(filter).toContain("hflip");

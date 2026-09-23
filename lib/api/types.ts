@@ -70,6 +70,7 @@ export type MovieRecapProject = {
   aspectRatio: MovieRecapAspectRatio;
   fitMode: MovieRecapFitMode;
   dynamicBackgroundBlurEnabled: boolean;
+  mirrorEnabled: boolean;
   // Divisor on the source crop; 1 is no zoom. NULL means the user has not chosen
   // one and the recommendation for the fit mode applies — see
   // effectiveMovieRecapZoom().
@@ -267,6 +268,7 @@ export type MovieRecapProjectPatch = Partial<{
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
   dynamicBackgroundBlurEnabled: boolean;
+  mirrorEnabled: boolean;
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitlesEnabled: boolean;

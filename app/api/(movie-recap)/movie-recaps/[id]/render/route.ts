@@ -18,10 +18,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (project.sourceUploadStatus !== "ready" || !project.sourceUrl) {
     return NextResponse.json({ error: "The source video is not ready." }, { status: 400 });
   }
-  // A real render needs the measured narration and the source crop prepared by
-  // the script run. Audio and full-source footage are rendered independently.
+  // A real render needs the measured narration. A missing source crop is
+  // measured by the render itself (same-video replacement clears it).
   if (!mock) {
-    if (!(project.renderScript?.length && project.renderAnalysisKey)) {
+    if (!project.renderScript?.length) {
       return NextResponse.json({ error: "Build the script first — there is nothing to render." }, { status: 400 });
     }
   }

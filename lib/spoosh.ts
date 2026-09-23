@@ -89,6 +89,9 @@ export type ApiSchema = {
         width?: number;
         height?: number;
         lastModified: number;
+        // "same" keeps the narrative script for a better-quality copy of the
+        // same video; anything else clears it.
+        mode: "same" | "different";
       };
     };
   };

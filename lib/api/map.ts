@@ -39,6 +39,7 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     aspectRatio: r.aspect_ratio as MovieRecapProject["aspectRatio"],
     fitMode: r.fit_mode as MovieRecapProject["fitMode"],
     dynamicBackgroundBlurEnabled: r.dynamic_background_blur_enabled === undefined ? false : Boolean(r.dynamic_background_blur_enabled),
+    mirrorEnabled: r.mirror_enabled === undefined ? true : Boolean(r.mirror_enabled),
     copyrightZoom: r.copyright_zoom === null || r.copyright_zoom === undefined ? null : Number(r.copyright_zoom),
     subtitlePreset: r.subtitle_preset as MovieRecapProject["subtitlePreset"],
     subtitlesEnabled: r.subtitles_enabled === undefined ? true : Boolean(r.subtitles_enabled),

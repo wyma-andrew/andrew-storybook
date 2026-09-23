@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { downloadMovieRecapSource } from "./movie-recap-source-download";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -205,7 +206,7 @@ export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject
     if (!storyOnly) {
       await setProgress("downloading_source");
       const localSource = path.join(workDir, "source.mp4");
-      await run(FFMPEG, ["-y", "-i", project.sourceUrl!, "-c", "copy", localSource], signal);
+      await downloadMovieRecapSource(project, localSource, { signal });
 
       const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal);
       segments = read.segments;

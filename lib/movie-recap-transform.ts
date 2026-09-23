@@ -25,6 +25,7 @@ export type ShotFilterContext = {
   aspectRatio: MovieRecapProject["aspectRatio"];
   fitMode: MovieRecapProject["fitMode"];
   dynamicBackgroundBlurEnabled?: boolean;
+  mirrorEnabled?: boolean;
   // A divisor on the source crop, so 1 is no zoom. Per project, not a constant.
   zoom: number;
   // The source's own letterbox, cut away before anything else. A 2.39:1 film
@@ -42,6 +43,7 @@ export function shotFilterContext(
     aspectRatio: project.aspectRatio,
     fitMode: project.fitMode,
     dynamicBackgroundBlurEnabled: project.dynamicBackgroundBlurEnabled,
+    mirrorEnabled: project.mirrorEnabled,
     zoom: effectiveMovieRecapZoom(project),
     crop: crop ?? null,
   };
@@ -106,7 +108,7 @@ function framingFilter(ctx: ShotFilterContext) {
 function adjustmentFilters(ctx: ShotFilterContext) {
   const { contrast, saturation, gamma, mirrorAspectRatios } = MOVIE_RECAP_LOOK;
   const filters: string[] = [];
-  if (mirrorAspectRatios.includes(ctx.aspectRatio)) filters.push("hflip");
+  if (ctx.mirrorEnabled !== false && mirrorAspectRatios.includes(ctx.aspectRatio)) filters.push("hflip");
   filters.push(`eq=contrast=${contrast}:saturation=${saturation}:gamma=${gamma}`);
   return filters;
 }

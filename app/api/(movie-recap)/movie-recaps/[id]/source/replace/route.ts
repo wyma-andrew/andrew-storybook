@@ -26,6 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const sizeBytes = Number(body?.sizeBytes);
   const durationSeconds = Number(body?.durationSeconds);
   const lastModified = Number(body?.lastModified);
+  const keepScript = body?.mode === "same";
   if (!fileName || !isVideoContentType(contentType)) {
     return NextResponse.json({ error: "Choose a valid video file." }, { status: 400 });
   }
@@ -69,12 +70,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       source_last_modified: lastModified,
       source_upload_id: uploadId,
       source_upload_status: "uploading",
-      script_status: "idle",
-      script_stage: null,
-      script_progress_current: null,
-      script_progress_total: null,
-      script_error: null,
-      script_approved: false,
+      ...(keepScript
+        ? {}
+        : {
+            script_status: "idle",
+            script_stage: null,
+            script_progress_current: null,
+            script_progress_total: null,
+            script_error: null,
+            script_approved: false,
+            render_script: null,
+            current_step: 1,
+          }),
       render_status: "idle",
       render_is_mock: false,
       render_error: null,
@@ -82,7 +89,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       render_progress_current: null,
       render_progress_total: null,
       render_transcript: null,
-      render_script: null,
       render_analysis_key: null,
       render_output_url: null,
       render_output_object_key: null,
@@ -92,7 +98,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       render_footage_object_key: null,
       render_started_at: null,
       render_completed_at: null,
-      current_step: 1,
       status: "draft",
       updated_at: now,
     })

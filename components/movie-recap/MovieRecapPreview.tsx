@@ -73,7 +73,7 @@ export function MovieRecapPreview({
   // pixels wide, so the same radius here would blur far harder than the render.
   const blurPx = movieRecapBlurCssPx(frameWidth, project.aspectRatio);
   const backfillBlurPx = movieRecapBackfillBlurCssPx(frameWidth, project.aspectRatio);
-  const mirrored = MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio);
+  const mirrored = project.mirrorEnabled && MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio);
   const colorFilter = `contrast(${MOVIE_RECAP_LOOK.contrast}) saturate(${MOVIE_RECAP_LOOK.saturation})`;
   const dragRef = useRef<
     { pointerId: number; clientX: number; clientY: number; x: number; y: number; index: number } | null
