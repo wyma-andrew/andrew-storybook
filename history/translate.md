@@ -38,23 +38,13 @@ Below `md` the same header button opens the bottom sheet (icon only below `sm`);
 
 **Consequence:** Frame rate is not stored. It is assumed 30 fps and measured with `requestVideoFrameCallback` once the video has played about 2 s, snapped to the nearest common rate (shown as "~30 fps" until measured). Frame steps can be off by one on variable-frame-rate sources. Dragging an edge saves the whole project draft, as the edit modal already does. Original and Synced Original cues stay read-only.
 
-## 2026-09-27 — Route time limit back to 3600 s
-
-**Decision:** Render, align, and generate set `maxDuration = 3600` again, at the user's request, for local use.
-
-**Why:** Long videos need more than 5 minutes to render, sync, or translate.
-
-**Consequence:** Vercel Hobby rejects any deploy that includes these values (maximum 300 s). Route segment config must be a literal, so it cannot depend on the environment; change it to 300 before deploying to Hobby.
-
-**Supersedes:** "Route time limit capped at 300 s for Vercel Hobby" below.
-
-## 2026-09-27 — Route time limit capped at 300 s for Vercel Hobby (superseded)
+## 2026-09-27 — Route time limit capped at 300 s for Vercel Hobby
 
 **Decision:** Render, align, and generate set `maxDuration = 300` (was 3600).
 
 **Why:** Vercel Hobby rejects the deploy when any function asks for more than 300 s.
 
-**Consequence:** On Vercel, a render, Auto Sync, or AI translation that runs past 5 minutes is killed; the project can be left `running` until the 2-hour stale check. These routes also have no ffmpeg on Vercel (see `history/movie-recap.md`). Raise the limit again only on a host or plan that allows it.
+**Consequence:** On Vercel, a render, Auto Sync, or AI translation that runs past 5 minutes is killed; the project can be left `running` until the 2-hour stale check. These routes also have no ffmpeg on Vercel (see `history/movie-recap.md`). Raise the limit again only on a host or plan that allows it. A local-only change to 3600 was committed by accident once; keep 300 in commits.
 
 ## 2026-09-27 — Export and import a project as JSON, without the video
 
