@@ -10,6 +10,7 @@ import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatBytes, formatDuration } from "@/lib/movie-recap";
 import { applyCueEdit, buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, mergeSrtBlocks, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
 import { replaceTranslateVideo, uploadTranslateVideo } from "@/lib/translate-upload";
+import { toTranslateBundle, translateBundleFileName } from "@/lib/translate-transfer";
 import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS } from "@/lib/constants/movie-recap";
 
 // Same face and metrics libass burns in (see lib/translate-render.ts); a system Burmese
@@ -332,6 +333,18 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     anchor.click();
   }
 
+  function exportProject() {
+    if (!project) return;
+    const bundle = toTranslateBundle(project);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = translateBundleFileName(bundle);
+    anchor.click();
+    URL.revokeObjectURL(url);
+    if (dirty) toast.info("Exported including unsaved changes.");
+  }
+
   function downloadSrt(kind: TranslateProject["subtitleTimingMode"]) {
     if (!project) return;
     const baseName = (project.srtFileName || "subtitles.srt").replace(/\.srt$/i, "");
@@ -520,7 +533,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   </>;
 
   return <>
-    <TopBar><LinkButton variant="ghost" href="/translate"><ChevronLeft size={16} /> Translate</LinkButton><span className="text-fg-3">/</span><span className="min-w-0 truncate font-medium">{project.name}</span></TopBar>
+    <TopBar><LinkButton variant="ghost" href="/translate"><ChevronLeft size={16} /> Translate</LinkButton><span className="text-fg-3">/</span><span className="min-w-0 truncate font-medium">{project.name}</span><Button className="ml-auto shrink-0" onClick={exportProject}><Download size={15} /> <span className="hidden sm:inline">Export</span></Button></TopBar>
     <Body><Wrap wide>
       <div className="space-y-5">
       {sourceReady ? <section>

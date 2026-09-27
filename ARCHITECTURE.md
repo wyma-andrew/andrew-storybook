@@ -535,7 +535,7 @@ and saved beat-range video outputs, and output history.
 
 Translate projects persist a replaceable source video, original-language SRT, selectable
 original, speech-aligned, or imported translated timing, editable blur and subtitle placement, and a
-rendered MP4.
+rendered MP4. A project exports to a JSON file (everything but the video and render) that New project imports alongside a re-uploaded video.
 
 Accounts are created and deleted by an administrator at `/admin`, which also
 grants each account its Stories, Movie Recap, Translate, and Voice Lab access; deleting an

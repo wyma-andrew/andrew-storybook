@@ -1,8 +1,18 @@
 # Translate
 
 Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
-`app/api/(translate)/translate-projects/**`, `lib/translate*.ts`, the
+`app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
+
+## 2026-09-27 — Export and import a project as JSON, without the video
+
+**Decision:** The editor's Export button downloads `<name>-<date>.translate.json` (`lib/translate-transfer.ts`) with the name, original SRT, synced cues, translated SRT, timing mode, blur areas, and subtitle placement, built client-side from the loaded project (unsaved edits included). Import is optional on New project: choose the file, then choose the video; the project is created from the video, the bundle is applied through the normal PATCH, then the video uploads. The list page's Import button opens New project.
+
+**Why:** The user re-adds the video themselves, so the file only carries the work done on it. Reusing PATCH keeps one validation path and needs no import route.
+
+**Rejected:** Including the source video or render (hundreds of MB, same reason as `history/story-transfer.md`).
+
+**Consequence:** Import sends two PATCHes, because PATCH resets timing to Original whenever the SRT text changes; cues and timing mode go second. A timing mode whose data is missing falls back to Original. If the chosen video's length differs by more than 1 s from the exported one, import warns but continues; synced timing may then be wrong. No render output is carried over.
 
 ## 2026-09-27 — Render a time range
 
