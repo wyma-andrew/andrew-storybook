@@ -28,3 +28,11 @@ runs `supabase db push --db-url`, keeping the "db push only" rule.
 
 **Not included.** `workers/voice-lab` (GPU worker) stays separate; point
 `VOICE_LAB_WORKER_URL` at it if used.
+
+## 2026-09-27 — Deployment moved to Vercel; standalone output removed
+
+**Decision:** `next.config.ts` no longer sets `output: "standalone"`. The app deploys to Vercel; Docker is no longer used.
+
+**Why:** Standalone only existed for the Docker image. With Turbopack, Next 16.3.4 does not write `.next/next-server.js.nft.json`, but the standalone step on Vercel reads it and the build fails with ENOENT (vercel/next.js#96646).
+
+**Consequence:** The Dockerfile no longer builds a runnable image (it copies `.next/standalone`). Restore `output: "standalone"` before using it again, on a Next release with the fix (reported fixed in 16.3.5+).
