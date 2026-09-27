@@ -4,6 +4,14 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-27 — Cue edit is a bottom sheet without a backdrop
+
+**Decision:** Editing a translated cue opens a bottom `Drawer` (max 560px content, 3-row text) instead of a dialog, with no backdrop and no outside-click close. Start and End each have a "Now" button that copies the video's current time.
+
+**Why:** User request: set times from the playhead while playing, seeking, or stepping frames with the sheet open.
+
+**Consequence:** The page stays interactive behind the sheet. Retiming the same cue on the timeline while the sheet is open does not update the form's fields; the form saves what it shows.
+
 ## 2026-09-27 — Timing selector is a Select before View
 
 **Decision:** The Original / Synced Original / Synced Translated pill switch becomes a GeckoUI `Select` at the start of the action row under the cue list. The actions after it show only when the selected timing is the active one; selecting a timing without data (no sync yet, no translated SRT) shows its empty state below instead.
@@ -128,7 +136,7 @@ Below `md` the same header button opens the bottom sheet (icon only below `sm`);
 
 ## 2026-09-27 — One cue list under the preview, following playback
 
-**Decision:** The timed cue lists move out of the Synced Original and Synced Translated tabs into one list under the Customize video. It shows the cues of the active timing, about three rows tall, highlights the cue under the playhead with the ghost-button hover background, and scrolls it into view as the video plays. Clicking a row seeks; the edit icon appears on hover only while Synced Translated is active.
+**Decision:** The timed cue lists move out of the Synced Original and Synced Translated tabs into one list under the Customize video. It shows the cues of the active timing, about four rows tall (three until 2026-09-27), highlights the cue under the playhead with the ghost-button hover background, and scrolls it into view as the video plays. Clicking a row seeks; the edit icon appears on hover only while Synced Translated is active.
 
 **Why:** Reviewing timing means watching the video and the text together; lists inside the SRT tabs were far from the preview and did not follow playback.
 

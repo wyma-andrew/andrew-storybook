@@ -48,8 +48,9 @@ const timingLabels: Record<TranslateProject["subtitleTimingMode"], string> = {
   original: "Original", aligned: "Synced Original", translated: "Synced Translated",
 };
 
-function CueEditForm({ cue, preview, onSave, onCancel }: {
+function CueEditForm({ cue, now, preview, onSave, onCancel }: {
   cue: TranslateCue;
+  now: () => number;
   preview: (cue: TranslateCue) => { previousEnd: number | null; nextStart: number | null; error: string | null };
   onSave: (cue: TranslateCue) => Promise<boolean>;
   onCancel: () => void;
@@ -66,10 +67,12 @@ function CueEditForm({ cue, preview, onSave, onCancel }: {
   return <div className="flex flex-col gap-4">
     <h2 className="text-lg font-semibold">Edit subtitle</h2>
     <div className="grid grid-cols-2 gap-3">
-      <label className="text-xs text-fg-2"><span className="mb-1 block">Start</span><Input placeholder="1:33.50" value={start} onChange={(event) => setStart(event.target.value)} /></label>
-      <label className="text-xs text-fg-2"><span className="mb-1 block">End</span><Input placeholder="1:35.00" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+      {([["Start", start, setStart, "1:33.50"], ["End", end, setEnd, "1:35.00"]] as const).map(([label, value, setValue, placeholder]) => <div key={label} className="text-xs text-fg-2">
+        <span className="mb-1 flex items-center justify-between">{label}<Button variant="ghost" className="!h-5 !px-1 text-[11px]" aria-label={`Set ${label.toLowerCase()} to playhead`} onClick={() => setValue(formatCueTime(now()))}><LocateFixed size={12} /> Now</Button></span>
+        <Input aria-label={label} placeholder={placeholder} value={value} onChange={(event) => setValue(event.target.value)} />
+      </div>)}
     </div>
-    <label className="text-xs text-fg-2"><span className="mb-1 block">Text</span><Textarea rows={7} value={text} onChange={(event) => setText(event.target.value)} /></label>
+    <label className="text-xs text-fg-2"><span className="mb-1 block">Text</span><Textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} /></label>
     {!valid && <p className="text-xs text-danger">Use m:ss.cc times (e.g. 1:33.50), end after start, and non-empty text.</p>}
     {effect?.error && <p className="text-xs text-danger">{effect.error}</p>}
     {effect && !effect.error && (effect.previousEnd !== null || effect.nextStart !== null) && <div className="space-y-0.5 text-xs text-fg-2">
@@ -131,6 +134,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   const [fpsMeasured, setFpsMeasured] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPopover, setSettingsPopover] = useState(false);
+  const [editingCue, setEditingCue] = useState<number | null>(null);
   const [renderMode, setRenderMode] = useState<"full" | "range">("full");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -189,6 +193,12 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   }, [renderStatus, renderStartedAt, pollProject]);
 
   const cues = useMemo(() => project ? translateCues(project) : [], [project]);
+  const translatedSrtText = project?.translatedSrtText;
+  const editingTranslated = useMemo(() => {
+    if (editingCue === null || !translatedSrtText) return null;
+    const blocks = parseSrtBlocks(translatedSrtText).sort((a, b) => a.start - b.start);
+    return blocks[editingCue] ? { blocks } : null;
+  }, [editingCue, translatedSrtText]);
   const activeCueIndex = cues.findIndex((cue) => currentTime >= cue.start && currentTime < cue.end);
   const activeCue = cues[activeCueIndex];
   const cueListRef = useRef<HTMLDivElement>(null);
@@ -469,19 +479,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   }
 
   function editTranslatedCue(index: number) {
-    if (!project?.translatedSrtText) return;
-    const current = project;
-    const translated = parseSrtBlocks(project.translatedSrtText).sort((a, b) => a.start - b.start);
-    Dialog.show({
-      className: "!w-[min(92vw,560px)] !max-w-none",
-      content: ({ dismiss }) => <CueEditForm cue={translated[index]} onCancel={dismiss}
-        preview={(cue) => applyCueEdit(translated, index, cue)}
-        onSave={async (cue) => {
-          const result = applyCueEdit(translated, index, cue);
-          if (result.error) return false;
-          return !!await saveSettings({ ...current, translatedSrtText: srtBlocksToText(result.cues) });
-        }} />,
-    });
+    if (project?.translatedSrtText) setEditingCue(index);
   }
 
   function pasteTranslatedSrt() {
@@ -640,9 +638,9 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
               <Button className="!h-8 !w-8 shrink-0 !rounded-full !p-0" aria-label={playing ? "Pause preview" : "Play preview"} onClick={togglePlay}>{playing ? <Pause size={14} /> : <Play size={14} />}</Button>
               <span className="min-w-0 truncate font-mono text-xs tabular-nums text-fg-3" title={fpsMeasured ? `${fps} fps` : "Frame rate assumed 30 fps until the video plays"}>{formatTimecode(currentTime, fps)} / {formatTimecode(project.sourceDurationSeconds, fps)} <span className="hidden sm:inline">· {fpsMeasured ? "" : "~"}{fps} fps</span></span>
             </>} />
-          {cues.length > 0 && <div ref={cueListRef} className="relative mt-3 mb-4 max-h-20 shrink-0 space-y-1 overflow-y-auto">{cues.map((cue, index) => <div key={`${index}-${cue.start}`} data-cue-index={index} className="group flex items-center gap-1">
+          {cues.length > 0 && <div ref={cueListRef} className="relative mt-3 mb-4 max-h-[108px] shrink-0 space-y-1 overflow-y-auto">{cues.map((cue, index) => <div key={`${index}-${cue.start}`} data-cue-index={index} className="group flex items-center gap-1">
             <Button variant="ghost" className={`!h-auto min-w-0 flex-1 !justify-start !px-2 !py-1 text-left text-xs ${index === activeCueIndex ? "!bg-hover" : ""}`} onClick={() => seekTo(cue.start)}><span className="mr-2 shrink-0 font-mono tabular-nums text-fg-3">{formatCueTime(cue.start)}–{formatCueTime(cue.end)}</span><span className="min-w-0 truncate">{cue.text}</span></Button>
-            {project.subtitleTimingMode === "translated" && <Button variant="ghost" className="!h-7 !w-7 shrink-0 !p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100" aria-label={`Edit subtitle ${index + 1}`} disabled={aligning || saving || rendering} onClick={() => editTranslatedCue(index)}><Pencil size={13} /></Button>}
+            {project.subtitleTimingMode === "translated" && <Button variant="ghost" className="!h-6 !w-6 shrink-0 !p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100" aria-label={`Edit subtitle ${index + 1}`} disabled={aligning || saving || rendering} onClick={() => editTranslatedCue(index)}><Pencil size={13} /></Button>}
           </div>)}</div>}
           {sourceReady && project.srtText && <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
             <Select value={tab} onChange={(kind) => void selectTiming(kind)} disabled={aligning || saving || rendering}
@@ -700,6 +698,18 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
           </div>
         </section>}
 
+      {/* No backdrop so the video can play and seek while "Now" picks times. */}
+      <Drawer open={editingTranslated !== null} handleClose={() => setEditingCue(null)} placement="bottom" hideBackdrop
+        className="!h-auto max-h-[75vh] overflow-y-auto rounded-t-[14px] border-t border-line bg-panel p-4 shadow-xl">
+        {editingTranslated && <div className="mx-auto max-w-[560px]"><CueEditForm key={editingCue} cue={editingTranslated.blocks[editingCue!]}
+          now={() => videoRef.current?.currentTime ?? currentTime} onCancel={() => setEditingCue(null)}
+          preview={(cue) => applyCueEdit(editingTranslated.blocks, editingCue!, cue)}
+          onSave={async (cue) => {
+            const result = applyCueEdit(editingTranslated.blocks, editingCue!, cue);
+            if (result.error) return false;
+            return !!await saveSettings({ ...project, translatedSrtText: srtBlocksToText(result.cues) });
+          }} /></div>}
+      </Drawer>
       <Drawer open={settingsOpen} handleClose={() => setSettingsOpen(false)} placement="bottom"
         className="max-h-[75vh] space-y-5 overflow-y-auto rounded-t-[14px] border-t border-line bg-panel p-4 md:hidden" backdropClassName="md:hidden">
         {settingsPanel}
