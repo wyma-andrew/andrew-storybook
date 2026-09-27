@@ -4,6 +4,60 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts`, the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-27 — Render a time range
+
+**Decision:** The Render section has Full / Range. Range takes start and end in m:ss.cc (with "Now" buttons that copy the playhead), must be at least 1 s and inside the video, and is sent in the render request body; it is not persisted. The server seeks with `-ss/-to` before the input, keeps only cues overlapping the range, shifts them to start at 0 and clips them to the range end. A range render is stored as `translated-<startMs>-<endMs>.mp4` and becomes the project's rendered output like a full render.
+
+**Why:** Checking a subtitle fix or posting one scene as a reel should not require encoding the whole video.
+
+**Consequence:** Only the latest render (full or range) is shown; there is no list of past range renders as in Movie Recap.
+
+## 2026-09-27 — Translation batches are 200 blocks
+
+**Decision:** `TRANSLATE_PROMPT_BATCH_SIZE` is 200 for both Copy Prompt and Generate with AI (previously 100).
+
+**Why:** User preference: fewer batches to copy and paste. Longer batches raise the chance a reply stops early; the prompt's block-count check and the timing-first merge report any missing blocks.
+
+## 2026-09-27 — Generate the translated SRT with AI
+
+**Decision:** Synced Translated offers Generate with AI (after a confirm dialog). The server sends every synced cue in 100-block batches with the Copy Prompt template to `gpt-5.6-sol` (the model used for the recap retelling, chosen for Burmese dialogue quality), three batches at a time, and merges each reply with the same timing-first paste merge. The result replaces matching blocks in the translated SRT and selects Synced Translated. Requires synced timing and an OpenAI key.
+
+**Why:** Copying each batch to a chat and pasting it back is slow for long videos; the prompt and merge were already proven by the manual flow.
+
+**Supersedes:** "Rejected: an AI translation step" in "Burn a supplied translated SRT locally". The language is fixed to Burmese by the prompt, which removes the language-selection concern recorded there.
+
+**Status (2026-09-27):** The buttons are hidden behind `SHOW_AI_TRANSLATE = false` at the user's request; the route remains.
+
+**Consequence:** One request runs all batches, so the page shows only a spinner, not per-batch progress. Blocks a reply drops stay untranslated (or keep their previous translation); check the count after generating.
+
+## 2026-09-27 — Paste-merge matches synced timing before block numbers
+
+**Decision:** Each pasted block is first matched to the synced cue with the same start and end (to the millisecond) and takes that cue's number; only unmatched blocks use their own SRT number. A number used twice in one paste keeps the first block and skips the rest. The modal reports renumbered and duplicate blocks.
+
+**Why:** A real 101–200 chat reply kept every timestamp but numbered two blocks wrongly (135 twice instead of 135/136, 162 instead of 168). Merging by number alone would have overwritten 135 and 162 and lost 136 and 168.
+
+**Supersedes:** Number-only matching in "Paste translated SRT blocks to add or update by number".
+
+## 2026-09-27 — Parse pasted SRT by lines; never guess block numbers
+
+**Decision:** `parseSrtBlocks` scans lines for timing rows instead of splitting on blank lines, ignores ``` fence lines, and accepts a number wrapped in markdown (`**101**`). A block's text ends at a blank line, the next timing row, or a number line followed by a timing row. Paste-merge skips blocks with no number and reports them; it never assigns a positional number.
+
+**Why:** Chat replies often drop the blank lines between blocks or wrap the SRT in a code fence. The old parser then read a whole batch as one or two blocks and numbered them 1, 2, which would have overwritten the first translated blocks ("2 updated" for a 101–200 batch).
+
+## 2026-09-27 — Cue edits trim overlapped neighbours
+
+**Decision:** Editing a translated cue's start before the previous cue's end moves that cue's end to the new start; editing the end past the next cue's start moves that cue's start to the new end. Only overlapped neighbours change. An edit that would leave a neighbour under 0.3 s is refused with the allowed limit; neighbours are never deleted or merged. The modal states the neighbour change before Save, and edited cues keep their order (no re-sort).
+
+**Why:** Overlapping cues display two subtitles at once; silently removing or merging a neighbour could drop translated text.
+
+## 2026-09-27 — Settings become a bottom sheet on mobile
+
+**Decision:** Below the `md` breakpoint the editor is one column; the settings panel is hidden and opened as a GeckoUI bottom `Drawer` from a sticky bottom bar (Settings, Render). The same panel JSX renders in the desktop aside and the sheet. Blur deselection checks `[data-blur-panel]` instead of a ref, because the panel can exist in either place.
+
+**Why:** The 720px minimum width made phones scroll sideways to reach settings.
+
+**Supersedes:** The narrow-screen horizontal scroll in "Keep Customize and settings side by side".
+
 ## 2026-09-27 — Fixed preview height; settings panel follows the left column
 
 **Decision:** The preview container has a fixed height (`min(60vh, 560px)`); the video fits inside it by aspect ratio. The settings panel stretches to the Customize column's height and scrolls internally, so it no longer sets the row height.

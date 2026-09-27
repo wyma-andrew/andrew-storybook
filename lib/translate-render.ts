@@ -16,7 +16,9 @@ function assTime(seconds: number) {
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(centiseconds % 100).padStart(2, "0")}`;
 }
 
-function buildAss(project: TranslateProject, width: number, height: number) {
+export type TranslateRenderRange = { start: number; end: number };
+
+function buildAss(project: TranslateProject, width: number, height: number, range: TranslateRenderRange | null) {
   const style = MOVIE_RECAP_SUBTITLE_PRESETS[0];
   const face = subtitleFace(style.weight);
   const cssPx = height * project.subtitleSize / 100;
@@ -33,9 +35,13 @@ function buildAss(project: TranslateProject, width: number, height: number) {
     `Style: Text,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},&HFF000000,${face.bold},0,0,0,100,100,0,0,1,${outline},0,2,${marginH},${marginH},0,1`,
     "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
   ];
-  const events = translateCues(project).map((cue) => {
+  const offset = range?.start ?? 0;
+  const cues = range ? translateCues(project).filter((cue) => cue.end > range.start && cue.start < range.end) : translateCues(project);
+  const events = cues.map((cue) => {
     const text = cue.text.replace(/[\\{}]/g, "").replace(/\n/g, "\\N");
-    return `Dialogue: 0,${assTime(cue.start)},${assTime(cue.end)},Text,,0,0,0,,{\\an2\\pos(${x},${y})}${text}`;
+    const start = Math.max(0, cue.start - offset);
+    const end = (range ? Math.min(cue.end, range.end) : cue.end) - offset;
+    return `Dialogue: 0,${assTime(start)},${assTime(end)},Text,,0,0,0,,{\\an2\\pos(${x},${y})}${text}`;
   });
   return [...header, ...events].join("\n");
 }
@@ -79,7 +85,7 @@ function runWithProgress(args: string[], duration: number, onProgress: (fraction
   });
 }
 
-export async function renderTranslateProject(project: TranslateProject, onProgress: (fraction: number) => void = () => undefined) {
+export async function renderTranslateProject(project: TranslateProject, onProgress: (fraction: number) => void = () => undefined, range: TranslateRenderRange | null = null) {
   const workDir = await mkdtemp(path.join(tmpdir(), "translate-"));
   try {
     const sourcePath = path.join(workDir, "source-video");
@@ -88,16 +94,19 @@ export async function renderTranslateProject(project: TranslateProject, onProgre
     const width = Math.max(2, Math.floor(project.sourceWidth / 2) * 2);
     const height = Math.max(2, Math.floor(project.sourceHeight / 2) * 2);
     await downloadObjectToFile(project.sourceObjectKey, sourcePath);
-    await writeFile(assPath, buildAss(project, width, height), "utf8");
+    await writeFile(assPath, buildAss(project, width, height, range), "utf8");
+    // -ss/-to before -i seek the input, so output timestamps (and the ASS events) start at 0.
+    const trim = range ? ["-ss", range.start.toFixed(3), "-to", range.end.toFixed(3)] : [];
     await runWithProgress([
-      "-y", "-i", sourcePath,
+      "-y", ...trim, "-i", sourcePath,
       "-filter_complex", videoFilter(project, width, height, assPath),
       "-map", "[out]", "-map", "0:a?",
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", outputPath,
-    ], project.sourceDurationSeconds, (fraction) => onProgress(0.02 + fraction * 0.93));
+    ], range ? range.end - range.start : project.sourceDurationSeconds, (fraction) => onProgress(0.02 + fraction * 0.93));
     onProgress(0.95);
-    const objectKey = translateObjectKey(project.id, "render", "translated.mp4");
+    const fileName = range ? `translated-${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}.mp4` : "translated.mp4";
+    const objectKey = translateObjectKey(project.id, "render", fileName);
     const url = await uploadFileToR2(objectKey, outputPath, "video/mp4");
     return { objectKey, url };
   } finally {

@@ -49,9 +49,12 @@ export type ApiSchema = {
     POST: { data: TranslateProject; body: { parts: { partNumber: number; etag: string }[] } };
   };
   "translate-projects/:id/render": {
-    POST: { data: TranslateProject };
+    POST: { data: TranslateProject; body: { start?: number; end?: number } };
   };
   "translate-projects/:id/align": {
+    POST: { data: TranslateProject };
+  };
+  "translate-projects/:id/generate": {
     POST: { data: TranslateProject };
   };
   "translate-projects/:id/render/download": {

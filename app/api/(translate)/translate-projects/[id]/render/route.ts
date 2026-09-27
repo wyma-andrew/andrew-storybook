@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isTranslateRect, mapTranslateProject, parseSrt, translateCuesKeepAllText, validTranslateCues } from "@/lib/translate";
-import { renderTranslateProject } from "@/lib/translate-render";
+import { renderTranslateProject, type TranslateRenderRange } from "@/lib/translate-render";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export const runtime = "nodejs";
 export const maxDuration = 3600;
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const body = await req.json().catch(() => null) as { start?: unknown; end?: unknown } | null;
   const db = await supabaseRoute();
   const { data: row } = await db.from("translate_projects").select("*").eq("id", id).single();
   if (!row) return NextResponse.json({ error: "Project not found." }, { status: 404 });
@@ -27,6 +28,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (row.render_status === "running" && Date.now() - Date.parse(row.updated_at) < 2 * 60 * 60 * 1000) {
     return NextResponse.json({ error: "A render is already running." }, { status: 409 });
   }
+  let range: TranslateRenderRange | null = null;
+  if (body?.start !== undefined || body?.end !== undefined) {
+    const start = Number(body?.start);
+    const end = Number(body?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > Number(row.source_duration_seconds) + 0.05 || end - start < 1) {
+      return NextResponse.json({ error: "Range must be at least 1 second and inside the video." }, { status: 400 });
+    }
+    range = { start, end: Math.min(end, Number(row.source_duration_seconds)) };
+  }
   const claimed = await db.from("translate_projects").update({ render_status: "running", render_error: null, render_progress: 0, updated_at: new Date().toISOString() })
     .eq("id", id).eq("updated_at", row.updated_at).select("*").maybeSingle();
   if (claimed.error) return NextResponse.json({ error: claimed.error.message }, { status: 500 });
@@ -39,7 +49,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       reported = fraction;
       lastWrite = Date.now();
       void db.from("translate_projects").update({ render_progress: fraction }).eq("id", id).eq("render_status", "running");
-    });
+    }, range);
     const saved = await db.from("translate_projects").update({
       render_status: "done", render_error: null, render_progress: null, render_output_key: output.objectKey,
       render_output_url: output.url, updated_at: new Date().toISOString(),

@@ -385,3 +385,13 @@ export async function retellInBurmese(
   }
   return out.trim();
 }
+
+// One batch of synced SRT blocks translated to Burmese SRT. Same model as the recap
+// retelling: the output is read as dialogue, so the Burmese quality decides it.
+export async function translateSrtBatch(prompt: string, signal?: AbortSignal): Promise<string> {
+  const res = await openai().chat.completions.create(
+    { model: STORY_MODEL, messages: [{ role: "user", content: prompt }] },
+    { signal }
+  );
+  return res.choices[0]?.message?.content ?? "";
+}

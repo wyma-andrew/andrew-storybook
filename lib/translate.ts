@@ -104,25 +104,36 @@ export function mapTranslateProject(row: Record<string, unknown>): TranslateProj
   };
 }
 
-export type SrtBlock = TranslateCue & { number: number };
+export type SrtBlock = TranslateCue & { number: number; numbered: boolean };
 
+const SRT_NUMBER_LINE = /^[*_`\s]*(\d+)[*_`\s]*$/;
+
+function srtSeconds(value: string | undefined) {
+  const match = value?.match(/^(\d{1,3}):(\d{2}):(\d{2})[,.](\d{1,3})$/);
+  return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4].padEnd(3, "0")) / 1000 : NaN;
+}
+
+// Line-based rather than blank-line-based: SRT pasted from a chat reply often loses
+// the blank lines between blocks or arrives inside a ``` fence.
 export function parseSrtBlocks(source: string): SrtBlock[] {
+  const lines = source.replace(/^\uFEFF/, "").replace(/\r/g, "").split("\n").filter((line) => !/^\s*```/.test(line));
+  const isTiming = (line: string | undefined) => !!line && line.includes("-->");
+  const startsBlock = (index: number) => SRT_NUMBER_LINE.test(lines[index] ?? "") && isTiming(lines[index + 1]);
   const blocks: SrtBlock[] = [];
-  for (const block of source.replace(/^\uFEFF/, "").replace(/\r/g, "").trim().split(/\n\s*\n/)) {
-    const lines = block.split("\n");
-    const timingIndex = lines.findIndex((line) => line.includes("-->"));
-    if (timingIndex < 0) continue;
-    const [startText, endText] = lines[timingIndex].split("-->").map((part) => part.trim().split(/\s+/)[0]);
-    const toSeconds = (value: string) => {
-      const match = value?.match(/^(\d{1,3}):(\d{2}):(\d{2})[,.](\d{3})$/);
-      return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / 1000 : NaN;
-    };
-    const start = toSeconds(startText);
-    const end = toSeconds(endText);
-    const text = lines.slice(timingIndex + 1).join("\n").replace(/<[^>]*>/g, "").trim();
-    const label = lines[timingIndex - 1]?.trim() ?? "";
-    const number = /^\d+$/.test(label) ? Number(label) : blocks.length + 1;
-    if (text && Number.isFinite(start) && Number.isFinite(end) && end > start) blocks.push({ number, start, end, text });
+  for (let index = 0; index < lines.length; index++) {
+    if (!isTiming(lines[index])) continue;
+    const [startText, endText] = lines[index].split("-->").map((part) => part.trim().split(/\s+/)[0]);
+    const label = lines[index - 1]?.match(SRT_NUMBER_LINE);
+    const textLines: string[] = [];
+    let next = index + 1;
+    while (next < lines.length && lines[next].trim() && !isTiming(lines[next]) && !startsBlock(next)) textLines.push(lines[next++]);
+    const start = srtSeconds(startText);
+    const end = srtSeconds(endText);
+    const text = textLines.join("\n").replace(/<[^>]*>/g, "").trim();
+    if (text && Number.isFinite(start) && Number.isFinite(end) && end > start) {
+      blocks.push({ number: label ? Number(label[1]) : blocks.length + 1, numbered: !!label, start, end, text });
+    }
+    index = next - 1;
   }
   return blocks;
 }
@@ -136,18 +147,30 @@ export function srtBlocksToText(blocks: SrtBlock[]) {
     .map((block) => `${block.number}\n${formatSrtTime(block.start)} --> ${formatSrtTime(block.end)}\n${block.text}\n`).join("\n");
 }
 
-// Blocks are matched by their SRT number, so translated batches keep the numbers
-// the Copy Prompt batches were given.
-export function mergeSrtBlocks(existing: string | null, pasted: string) {
+// A pasted block takes the number of the synced cue with its exact timing when there
+// is one: chat translations keep the timestamps but sometimes repeat or skip a number.
+// Otherwise its own SRT number is used; blocks with neither are skipped.
+export function mergeSrtBlocks(existing: string | null, pasted: string, reference: TranslateCue[] = []) {
   const merged = new Map(parseSrtBlocks(existing ?? "").map((block) => [block.number, block]));
+  const byTiming = new Map(reference.map((cue, index) => [`${Math.round(cue.start * 1000)}-${Math.round(cue.end * 1000)}`, index + 1]));
+  const seen = new Set<number>();
   let added = 0;
   let updated = 0;
+  let skipped = 0;
+  let renumbered = 0;
+  let duplicates = 0;
   for (const block of parseSrtBlocks(pasted)) {
-    if (merged.has(block.number)) updated++;
+    const matched = byTiming.get(`${Math.round(block.start * 1000)}-${Math.round(block.end * 1000)}`);
+    const number = matched ?? (block.numbered ? block.number : null);
+    if (number === null) { skipped++; continue; }
+    if (seen.has(number)) { duplicates++; continue; }
+    seen.add(number);
+    if (block.numbered && number !== block.number) renumbered++;
+    if (merged.has(number)) updated++;
     else added++;
-    merged.set(block.number, block);
+    merged.set(number, { ...block, number });
   }
-  return { text: srtBlocksToText([...merged.values()]), added, updated };
+  return { text: srtBlocksToText([...merged.values()]), added, updated, skipped, renumbered, duplicates };
 }
 
 export function translateCues(project: Pick<TranslateProject, "srtText" | "subtitleCues" | "translatedSrtText" | "subtitleTimingMode">): TranslateCue[] {
@@ -215,6 +238,8 @@ export function translateCuesToSrt(cues: TranslateCue[], firstNumber = 1) {
   return cues.map((cue, index) => `${index + firstNumber}\n${formatSrtTime(cue.start)} --> ${formatSrtTime(cue.end)}\n${cue.text}\n`).join("\n");
 }
 
+export const TRANSLATE_PROMPT_BATCH_SIZE = 200;
+
 export function buildTranslateSrtPrompt(srt: string, firstBlock: number, lastBlock: number) {
   return `Act as a professional film subtitle translator. Your goal is to help Myanmar viewers fully understand the movie, not to translate word by word.
 
@@ -232,3 +257,39 @@ ${srt}
 Please ensure you translate all blocks completely, ending precisely at block ${lastBlock}.`;
 }
 
+
+export function formatCueTime(seconds: number) {
+  const centiseconds = Math.max(0, Math.round(seconds * 100));
+  const hours = Math.floor(centiseconds / 360_000);
+  const minutes = Math.floor(centiseconds / 6000) % 60;
+  const secs = `${String(Math.floor(centiseconds / 100) % 60).padStart(2, "0")}.${String(centiseconds % 100).padStart(2, "0")}`;
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
+}
+
+// Accepts h:mm:ss.cc, m:ss.cc, or plain seconds; returns NaN for anything else.
+export function parseCueTime(value: string) {
+  const parts = value.trim().replace(",", ".").split(":");
+  if (parts.length > 3 || parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return NaN;
+  if (parts.slice(0, -1).some((part) => part.includes("."))) return NaN;
+  return parts.reduce((total, part) => total * 60 + Number(part), 0);
+}
+
+const MIN_NEIGHBOUR_S = 0.3;
+
+// Neighbours are trimmed rather than removed or merged, so an edit never drops text.
+export function applyCueEdit<T extends TranslateCue>(cues: T[], index: number, edit: TranslateCue) {
+  const previous = cues[index - 1];
+  const next = cues[index + 1];
+  const previousEnd = previous && edit.start < previous.end ? edit.start : null;
+  const nextStart = next && edit.end > next.start ? edit.end : null;
+  let error: string | null = null;
+  if (previousEnd !== null && previousEnd - previous.start < MIN_NEIGHBOUR_S) {
+    error = `Start must be at least ${formatCueTime(previous.start + MIN_NEIGHBOUR_S)} to keep the previous subtitle.`;
+  } else if (nextStart !== null && next.end - nextStart < MIN_NEIGHBOUR_S) {
+    error = `End must be at most ${formatCueTime(next.end - MIN_NEIGHBOUR_S)} to keep the next subtitle.`;
+  }
+  const result = cues.map((cue, i) => i === index ? { ...cue, ...edit }
+    : i === index - 1 && previousEnd !== null ? { ...cue, end: previousEnd }
+    : i === index + 1 && nextStart !== null ? { ...cue, start: nextStart } : cue);
+  return { cues: result, previousEnd, nextStart, error };
+}
