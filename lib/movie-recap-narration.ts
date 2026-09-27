@@ -173,7 +173,7 @@ export async function narrationClip({
   const trimmed = await trimToSpeech(rawPath, wavPath, result.durationSeconds, signal);
   // `trimToSpeech` returns its INPUT when there was nothing worth trimming, so
   // cache whatever it actually chose, not `wavPath`.
-  await putObject(cacheKey, await readFile(trimmed.path), "audio/wav");
+  await putObject(cacheKey, await readFile(/* turbopackIgnore: true */ trimmed.path), "audio/wav");
   return { path: trimmed.path, durationSeconds: trimmed.durationSeconds, cached: false };
 }
 
