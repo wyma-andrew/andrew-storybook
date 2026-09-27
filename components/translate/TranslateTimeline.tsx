@@ -91,11 +91,22 @@ export function TranslateTimeline({ duration, currentTime, fps, cues, activeInde
 
   const snap = (seconds: number) => Math.round(seconds * fps) / fps;
 
+  // Touch pans the timeline, so a touch seeks only on a tap (released without moving).
+  const touchTap = useRef<{ x: number; seconds: number | null } | null>(null);
+
   function startScrub(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
+    if (event.pointerType !== "mouse") { touchTap.current = { x: event.clientX, seconds: null }; return; }
     event.currentTarget.setPointerCapture(event.pointerId);
     scrubbing.current = true;
     onSeek(timeAt(event.clientX));
+  }
+
+  function endScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    scrubbing.current = false;
+    const tap = touchTap.current;
+    touchTap.current = null;
+    if (tap && Math.abs(event.clientX - tap.x) < 8) onSeek(tap.seconds ?? timeAt(event.clientX));
   }
 
   function startEdge(event: ReactPointerEvent<HTMLDivElement>, index: number, edge: Drag["edge"]) {
@@ -149,8 +160,8 @@ export function TranslateTimeline({ duration, currentTime, fps, cues, activeInde
       <div ref={innerRef} className="relative h-[68px] max-md:h-[54px] cursor-pointer touch-pan-x select-none" style={{ width: `${Math.max(view.width, duration * scale)}px` }}
         onPointerDown={startScrub}
         onPointerMove={(event) => { if (scrubbing.current) onSeek(timeAt(event.clientX)); }}
-        onPointerUp={() => { scrubbing.current = false; }}
-        onPointerCancel={() => { scrubbing.current = false; }}>
+        onPointerUp={endScrub}
+        onPointerCancel={() => { scrubbing.current = false; touchTap.current = null; }}>
         <div className="absolute inset-x-0 top-0 h-5 border-b border-line">
           {frameTicks.map((tick) => <div key={`f${tick}`} className="absolute bottom-0 h-1 w-px bg-line-2" style={{ left: `${tick * scale}px` }} />)}
           {ticks.map((tick) => <div key={tick} className="absolute top-0 bottom-0 border-l border-line-2 pl-1 font-mono text-[10px] leading-5 text-fg-3 tabular-nums" style={{ left: `${tick * scale}px` }}>{formatCueTime(tick)}</div>)}
@@ -165,7 +176,11 @@ export function TranslateTimeline({ duration, currentTime, fps, cues, activeInde
             return <div key={`${index}-${cue.start}`} title={`${formatCueTime(start)}–${formatCueTime(end)}\n${cue.text}`}
               className={`absolute top-0 bottom-0 overflow-hidden rounded border text-[11px] leading-tight ${index === activeIndex ? "border-accent bg-accent-dim text-fg" : "border-line-2 bg-panel text-fg-2"} ${drag?.index === index ? "z-10 border-accent" : ""}`}
               style={{ left: `${start * scale}px`, width: `${width}px` }}
-              onPointerDown={(event) => { event.stopPropagation(); if (event.button === 0) onSeek(cue.start); }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                if (event.pointerType !== "mouse") touchTap.current = { x: event.clientX, seconds: cue.start };
+                else if (event.button === 0) onSeek(cue.start);
+              }}
               onDoubleClick={() => { if (editable) onEdit(index); }}>
               {width >= 28 && <div className="truncate px-2 pt-1">{cue.text}</div>}
               {handles && <>
