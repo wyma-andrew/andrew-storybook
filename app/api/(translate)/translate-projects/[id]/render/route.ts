@@ -4,7 +4,7 @@ import { renderTranslateProject, type TranslateRenderRange } from "@/lib/transla
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 3600;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

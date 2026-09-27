@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCueEdit, formatCueTime, mergeSrtBlocks, parseCueTime, parseSrtBlocks } from "./translate";
+import { applyCueEdit, formatCueTime, formatTimecode, frameIndex, frameTime, mergeSrtBlocks, nearestFrameRate, parseCueTime, parseSrtBlocks, timelineTickStep } from "./translate";
 
 const block = (number: number, text: string) => `${number}\n00:00:0${number},000 --> 00:00:0${number},500\n${text}\n`;
 
@@ -72,5 +72,31 @@ describe("mergeSrtBlocks with synced reference", () => {
     const result = mergeSrtBlocks(null, pasted, reference);
     expect([result.added, result.updated, result.renumbered, result.duplicates]).toEqual([2, 0, 1, 0]);
     expect(parseSrtBlocks(result.text).map((item) => [item.number, item.text])).toEqual([[1, "A"], [2, "B"]]);
+  });
+});
+
+describe("timeline frames", () => {
+  it("snaps measured rates to common frame rates", () => {
+    expect(nearestFrameRate(29.6)).toBe(29.97);
+    expect(nearestFrameRate(24.3)).toBe(24);
+    expect(nearestFrameRate(49.6)).toBe(50);
+  });
+
+  it("round-trips frame index and seek time", () => {
+    for (const fps of [23.976, 25, 29.97, 60]) {
+      for (const frame of [0, 1, 57_070, 90_000]) expect(frameIndex(frameTime(frame, fps), fps)).toBe(frame);
+    }
+  });
+
+  it("formats timecode with frames", () => {
+    expect(formatTimecode(0, 30)).toBe("0:00:00");
+    expect(formatTimecode(1901.7, 30)).toBe("31:41:21");
+    expect(formatTimecode(3725.5, 25)).toBe("1:02:05:12");
+  });
+
+  it("picks a tick step wide enough to label", () => {
+    expect(timelineTickStep(1, 30)).toBe(120);
+    expect(timelineTickStep(300, 30)).toBeCloseTo(10 / 30);
+    expect(timelineTickStep(3000, 30)).toBeCloseTo(1 / 30);
   });
 });

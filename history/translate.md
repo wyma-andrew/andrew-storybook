@@ -4,7 +4,51 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
-## 2026-09-27 — Route time limit capped at 300 s for Vercel Hobby
+## 2026-09-27 — Timing selector is a Select before View
+
+**Decision:** The Original / Synced Original / Synced Translated pill switch becomes a GeckoUI `Select` at the start of the action row under the cue list. The actions after it show only when the selected timing is the active one; selecting a timing without data (no sync yet, no translated SRT) shows its empty state below instead.
+
+**Why:** User request: the pill switch scrolled sideways on mobile and sat apart from the actions it controls.
+
+View and Paste SRT moved into the ⋯ menu (with Download and Replace); Prompt stays a button.
+
+**Supersedes:** The pill switch kept in the SRT section by "Timing actions sit under the cue list".
+
+## 2026-09-27 — Settings move into a popover; Customize is full width
+
+**Decision:** The desktop settings column is removed. Customize spans the full width, and a Settings button in its header opens the same settings panel as a popover (340px, scrolls inside, max 70vh). Below `md` the existing bottom sheet is unchanged.
+
+**Why:** User request: the preview and timeline need the width more than the settings do.
+
+**Supersedes:** "Customize and settings share one row" and "Fixed preview height; settings panel follows the left column" (the fixed preview height stays, reduced from `min(60vh, 560px)` to `min(45vh, 420px)` at the user's request).
+
+The separate video header row is gone once the upload is ready: the Customize header shows the file name (truncated to ~220–320px, full name and size in the tooltip) in place of "3. Customize", with Replace video, Auto Sync, and Settings beside it; the replacement notice and upload bar sit under it.
+
+Below `md` the same header button opens the bottom sheet (icon only below `sm`); the sticky bottom bar with Settings and Render is removed, since Render is inside the settings panel (user request).
+
+**Consequence:** The popover does not close on outside clicks, because blur areas are dragged on the video while it is open; it closes from its X or the Settings button. On desktop, Save and Render are only reachable inside the popover.
+
+## 2026-09-27 — Zoomable timeline with frame stepping
+
+**Decision:** The preview's range slider is replaced by `components/translate/TranslateTimeline.tsx`: a ruler, playhead, and one track of cue blocks for the active timing, zoomable from fit-to-width down to 14 px per frame (buttons, Ctrl/Cmd+wheel). Only cues and ticks in view are rendered. Click or drag on the timeline seeks. ←/→ move one frame (no on-screen step buttons, removed at the user's request) (Shift: 1 s); time shows as m:ss:ff. With Synced Translated active, dragging a cue edge retimes it (snapped to frames, the video follows the edge) and saves through the same `applyCueEdit` neighbour-trim rule as the edit modal; double-click opens that modal.
+
+**Why:** Subtitle timing needs frame accuracy and a view of neighbouring cues, like CapCut; a slider with 0.05 s steps over a 50-minute video could not show either.
+
+**Rejected (for now):** A thumbnail filmstrip; planned as a later step.
+
+**Consequence:** Frame rate is not stored. It is assumed 30 fps and measured with `requestVideoFrameCallback` once the video has played about 2 s, snapped to the nearest common rate (shown as "~30 fps" until measured). Frame steps can be off by one on variable-frame-rate sources. Dragging an edge saves the whole project draft, as the edit modal already does. Original and Synced Original cues stay read-only.
+
+## 2026-09-27 — Route time limit back to 3600 s
+
+**Decision:** Render, align, and generate set `maxDuration = 3600` again, at the user's request, for local use.
+
+**Why:** Long videos need more than 5 minutes to render, sync, or translate.
+
+**Consequence:** Vercel Hobby rejects any deploy that includes these values (maximum 300 s). Route segment config must be a literal, so it cannot depend on the environment; change it to 300 before deploying to Hobby.
+
+**Supersedes:** "Route time limit capped at 300 s for Vercel Hobby" below.
+
+## 2026-09-27 — Route time limit capped at 300 s for Vercel Hobby (superseded)
 
 **Decision:** Render, align, and generate set `maxDuration = 300` (was 3600).
 
@@ -68,7 +112,7 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 
 **Why:** Overlapping cues display two subtitles at once; silently removing or merging a neighbour could drop translated text.
 
-## 2026-09-27 — Settings become a bottom sheet on mobile
+## 2026-09-27 — Settings become a bottom sheet on mobile (bottom bar superseded by "Settings move into a popover")
 
 **Decision:** Below the `md` breakpoint the editor is one column; the settings panel is hidden and opened as a GeckoUI bottom `Drawer` from a sticky bottom bar (Settings, Render). The same panel JSX renders in the desktop aside and the sheet. Blur deselection checks `[data-blur-panel]` instead of a ref, because the panel can exist in either place.
 
@@ -76,7 +120,7 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 
 **Supersedes:** The narrow-screen horizontal scroll in "Keep Customize and settings side by side".
 
-## 2026-09-27 — Fixed preview height; settings panel follows the left column
+## 2026-09-27 — Fixed preview height; settings panel follows the left column (superseded)
 
 **Decision:** The preview container has a fixed height (`min(60vh, 560px)`); the video fits inside it by aspect ratio. The settings panel stretches to the Customize column's height and scrolls internally, so it no longer sets the row height.
 
@@ -154,7 +198,7 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 
 **Consequence:** Editing rewrites the stored translated SRT in normalized form (renumbered, markup stripped) rather than preserving the imported file byte for byte.
 
-## 2026-09-27 — Customize and settings share one row
+## 2026-09-27 — Customize and settings share one row (superseded)
 
 **Decision:** Video and SRT sections span the full width. Customize and the settings panel sit together in one row below them, stretched to the same height. The preview frame fits inside the Customize area (container query sizing), so the video's height is capped by the settings panel. The settings panel is no longer sticky. The rendered video stays full width below.
 

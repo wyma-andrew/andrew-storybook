@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Noto_Sans_Myanmar } from "next/font/google";
-import { ChevronDown, MoreHorizontal, RefreshCw, ChevronLeft, ClipboardPaste, Copy, LocateFixed, Pause, Play, SlidersHorizontal, Sparkles, Pencil, Download, Eye, Grip, Loader2, Plus, Trash2, Upload } from "lucide-react";
-import { ConfirmDialog, Dialog, Drawer, Input, Menu, MenuItem, MenuTrigger, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import { ChevronDown, MoreHorizontal, RefreshCw, ChevronLeft, ClipboardPaste, Copy, LocateFixed, Pause, Play, SlidersHorizontal, Sparkles, Pencil, Download, X, Eye, Grip, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { ConfirmDialog, Dialog, Drawer, Input, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LinkButton, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
 import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatBytes, formatDuration } from "@/lib/movie-recap";
-import { applyCueEdit, buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, mergeSrtBlocks, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
+import { applyCueEdit, buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, formatTimecode, frameIndex, frameTime, mergeSrtBlocks, nearestFrameRate, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
 import { replaceTranslateVideo, uploadTranslateVideo } from "@/lib/translate-upload";
 import { toTranslateBundle, translateBundleFileName } from "@/lib/translate-transfer";
+import { TranslateTimeline } from "@/components/translate/TranslateTimeline";
 import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS } from "@/lib/constants/movie-recap";
 
 // Same face and metrics libass burns in (see lib/translate-render.ts); a system Burmese
@@ -126,7 +127,10 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   const [selectedBlur, setSelectedBlur] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [fps, setFps] = useState(30);
+  const [fpsMeasured, setFpsMeasured] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPopover, setSettingsPopover] = useState(false);
   const [renderMode, setRenderMode] = useState<"full" | "range">("full");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -194,6 +198,45 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     if (!list || !row) return;
     list.scrollTo({ top: row.offsetTop - (list.clientHeight - row.offsetHeight) / 2, behavior: "smooth" });
   }, [activeCueIndex]);
+  const sourceUrl = project?.sourceUrl;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !sourceUrl || !("requestVideoFrameCallback" in video)) return;
+    let first: { frames: number; time: number } | null = null;
+    let last = 0;
+    let handle = 0;
+    const onFrame: VideoFrameRequestCallback = (_now, frame) => {
+      if (!first || frame.mediaTime < last || frame.mediaTime - last > 0.25) first = { frames: frame.presentedFrames, time: frame.mediaTime };
+      last = frame.mediaTime;
+      if (frame.mediaTime - first.time >= 2) {
+        setFps(nearestFrameRate((frame.presentedFrames - first.frames) / (frame.mediaTime - first.time)));
+        setFpsMeasured(true);
+        return;
+      }
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => video.cancelVideoFrameCallback(handle);
+  }, [sourceUrl]);
+  const sourceDuration = project?.sourceDurationSeconds ?? 0;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=slider]")) return;
+      event.preventDefault();
+      const video = videoRef.current;
+      if (!video) return;
+      const frames = (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? Math.round(fps) : 1);
+      const seconds = Math.min(sourceDuration, frameTime(frameIndex(video.currentTime, fps) + frames, fps));
+      video.pause();
+      video.currentTime = seconds;
+      setCurrentTime(seconds);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fps, sourceDuration]);
   const subtitleSample = activeCue?.text ?? (project?.srtText ? null : "ဒီနေရာမှာ စာသားပေါ်ပါမယ်");
 
   function change(patch: Partial<TranslateProject>) {
@@ -417,6 +460,14 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     setCurrentTime(seconds);
   }
 
+  async function retimeTranslatedCue(index: number, start: number, end: number) {
+    if (!project?.translatedSrtText) return false;
+    const translated = parseSrtBlocks(project.translatedSrtText).sort((a, b) => a.start - b.start);
+    const result = applyCueEdit(translated, index, { ...translated[index], start, end });
+    if (result.error) { toast.error(result.error); return false; }
+    return !!await saveSettings({ ...project, translatedSrtText: srtBlocksToText(result.cues) });
+  }
+
   function editTranslatedCue(index: number) {
     if (!project?.translatedSrtText) return;
     const current = project;
@@ -536,22 +587,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     <TopBar><LinkButton variant="ghost" href="/translate"><ChevronLeft size={16} /> Translate</LinkButton><span className="text-fg-3">/</span><span className="min-w-0 truncate font-medium">{project.name}</span><Button className="ml-auto shrink-0" onClick={exportProject}><Download size={15} /> <span className="hidden sm:inline">Export</span></Button></TopBar>
     <Body><Wrap wide>
       <div className="space-y-5">
-      {sourceReady ? <section>
-        <div className="flex items-center gap-3">
-          <h2 className="min-w-0 flex-1 truncate font-semibold" title={`${formatBytes(project.sourceSizeBytes)} · ${formatDuration(project.sourceDurationSeconds)} · ${project.sourceWidth} × ${project.sourceHeight}`}>{project.sourceFileName}</h2>
-          <div className="hidden shrink-0 gap-2 sm:flex">
-            <Button className="shrink-0" disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><Upload size={15} /> Replace video</Button>
-            {project.srtText && <LoadingButton variant="primary" className="shrink-0" loading={aligning} disabled={rendering || saving} onClick={() => void autoAlign()}><RefreshCw size={15} /> Auto Sync</LoadingButton>}
-          </div>
-          <Menu className="shrink-0 sm:hidden" placement="bottom-end" menuClassName="min-w-[180px] bg-panel">
-            <MenuTrigger>{({ toggleMenu }) => <Button className="!h-9 !w-9 !p-0" aria-label="Video actions" onClick={toggleMenu}>{aligning ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}</Button>}</MenuTrigger>
-            <MenuItem disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><span className="flex items-center gap-2"><Upload size={15} /> Replace video</span></MenuItem>
-            {project.srtText && <MenuItem disabled={aligning || rendering || saving} onClick={() => void autoAlign()}><span className="flex items-center gap-2"><RefreshCw size={15} /> Auto Sync</span></MenuItem>}
-          </Menu>
-        </div>
-        {project.sourceReplacement && !uploading && <p className="mt-1 text-xs text-fg-3">A replacement upload is pending. The current video remains available; select the same file to resume.</p>}
-        {uploading && <div className="mt-2 flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-panel-2"><div className="h-full bg-accent" style={{ width: `${uploadPercent}%` }} /></div><span className="text-xs tabular-nums text-fg-2">{uploadPercent}%</span></div>}
-      </section> : <section className="rounded-xl border border-line bg-panel p-4">
+      {!sourceReady && <section className="rounded-xl border border-line bg-panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -565,10 +601,29 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
         {uploading && <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel-2"><div className="h-full bg-accent" style={{ width: `${uploadPercent}%` }} /></div>}
       </section>}
 
-      <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_320px]">
-        {sourceReady && <section className="flex min-w-0 flex-col rounded-xl border border-line bg-panel p-4">
-          <div className="mb-3"><h2 className="font-semibold">3. Customize</h2><p className="mt-1 text-xs text-fg-3">Move and resize blur areas. Use the slider to set subtitle height.</p></div>
-          <div className="h-[min(60vh,560px)] shrink-0" style={{ containerType: "size" }}>
+      {sourceReady && <section className="flex min-w-0 flex-col md:rounded-xl md:border md:border-line md:bg-panel md:p-4">
+          <div className="relative mb-3 flex items-center gap-2">
+            <h2 className="min-w-0 max-w-[220px] truncate font-semibold sm:max-w-[320px]" title={`${project.sourceFileName}\n${formatBytes(project.sourceSizeBytes)} · ${formatDuration(project.sourceDurationSeconds)} · ${project.sourceWidth} × ${project.sourceHeight}`}>{project.sourceFileName}</h2>
+            <div className="ml-auto hidden shrink-0 gap-2 sm:flex">
+              <Button className="shrink-0" disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><Upload size={15} /> Replace video</Button>
+              {project.srtText && <LoadingButton className="shrink-0" loading={aligning} disabled={rendering || saving} onClick={() => void autoAlign()}><RefreshCw size={15} /> Auto Sync</LoadingButton>}
+            </div>
+            <Menu className="ml-auto shrink-0 sm:hidden" placement="bottom-end" menuClassName="min-w-[180px] bg-panel">
+              <MenuTrigger>{({ toggleMenu }) => <Button className="!h-9 !w-9 !p-0" aria-label="Video actions" onClick={toggleMenu}>{aligning ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}</Button>}</MenuTrigger>
+              <MenuItem disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><span className="flex items-center gap-2"><Upload size={15} /> Replace video</span></MenuItem>
+              {project.srtText && <MenuItem disabled={aligning || rendering || saving} onClick={() => void autoAlign()}><span className="flex items-center gap-2"><RefreshCw size={15} /> Auto Sync</span></MenuItem>}
+            </Menu>
+            <Button variant={settingsPopover ? "primary" : "secondary"} className="shrink-0 max-sm:!h-9 max-sm:!w-9 max-sm:!p-0" aria-label="Settings" aria-expanded={settingsPopover || settingsOpen}
+              onClick={() => { if (window.matchMedia("(min-width: 768px)").matches) setSettingsPopover((open) => !open); else setSettingsOpen(true); }}><SlidersHorizontal size={15} /> <span className="max-sm:hidden">Settings</span></Button>
+            {/* Stays open on outside clicks: blur areas are dragged on the video while it is open. */}
+            {settingsPopover && <div role="region" aria-label="Settings" className="absolute top-full right-0 z-40 mt-2 hidden max-h-[70vh] w-[340px] space-y-5 overflow-y-auto rounded-xl border border-line bg-panel p-4 shadow-xl md:block">
+              <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Settings</h3><Button variant="ghost" className="!h-7 !w-7 !p-0" aria-label="Close settings" onClick={() => setSettingsPopover(false)}><X size={15} /></Button></div>
+              {settingsPanel}
+            </div>}
+          </div>
+          {project.sourceReplacement && !uploading && <p className="-mt-1 mb-3 text-xs text-fg-3">A replacement upload is pending. The current video remains available; select the same file to resume.</p>}
+          {uploading && <div className="-mt-1 mb-3 flex items-center gap-2"><div className="h-2 flex-1 overflow-hidden rounded-full bg-panel-2"><div className="h-full bg-accent" style={{ width: `${uploadPercent}%` }} /></div><span className="text-xs tabular-nums text-fg-2">{uploadPercent}%</span></div>}
+          <div className="h-[min(45vh,420px)] shrink-0" style={{ containerType: "size" }}>
             <div ref={frameRef} className="relative mx-auto overflow-hidden rounded-lg bg-sunken" style={{ aspectRatio: `${project.sourceWidth} / ${project.sourceHeight}`, width: `min(100cqw, ${(100 * project.sourceWidth / project.sourceHeight).toFixed(3)}cqh)` }}>
               <video ref={videoRef} src={project.sourceUrl ?? undefined} preload="metadata" playsInline className="block h-full w-full cursor-pointer object-contain" onClick={() => { setSelectedBlur(null); togglePlay(); }} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)} />
               {project.blurRegions.map((rect, index) => <div key={index} className={`absolute touch-none border-2 ${selectedBlur === index ? "border-accent" : "cursor-pointer border-transparent"}`} style={{ left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.width}%`, height: `${rect.height}%`, backdropFilter: `blur(${translateBlurCssPx(rect, project.sourceWidth, project.sourceHeight, frameSize.width).toFixed(2)}px)` }} onPointerDown={(event) => { setSelectedBlur(index); startDrag(event, "move", index); }} onPointerMove={moveDrag} onPointerUp={() => { dragRef.current = null; }}>
@@ -578,17 +633,23 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
               {subtitleSample && <div className={`pointer-events-none absolute z-20 w-[88%] whitespace-pre-line text-center ${subtitleFont.className}`} style={{ left: "50%", top: `${project.subtitleY}%`, fontSize: `${subtitlePx.toFixed(2)}px`, lineHeight: MOVIE_RECAP_SUBTITLE_LINE_EM, color: subtitleStyle.color, fontWeight: subtitleStyle.weight, WebkitTextStrokeWidth: `${subtitleOutlinePx.toFixed(2)}px`, WebkitTextStrokeColor: subtitleStyle.outlineColor, paintOrder: "stroke fill", transform: "translate(-50%, -100%)" }}>{subtitleSample}</div>}
             </div>
           </div>
-          <div className="mt-3 flex shrink-0 items-center gap-3">
-            <Button className="!h-8 !w-8 shrink-0 !rounded-full !p-0" aria-label={playing ? "Pause preview" : "Play preview"} onClick={togglePlay}>{playing ? <Pause size={14} /> : <Play size={14} />}</Button>
-            <Input type="range" aria-label="Seek preview" min={0} max={project.sourceDurationSeconds} step={0.05} value={Math.min(currentTime, project.sourceDurationSeconds)} onChange={(event) => seekTo(Number(event.target.value))} className="!min-h-0 flex-1 !border-0 !p-0" inputClassName="w-full accent-accent" />
-            <span className="shrink-0 font-mono text-xs tabular-nums text-fg-3">{formatCueTime(currentTime)} / {formatCueTime(project.sourceDurationSeconds)}</span>
-          </div>
-          {cues.length > 0 && <div ref={cueListRef} className="relative mt-3 mb-4 max-h-20 shrink-0 space-y-1 overflow-y-auto">{cues.map((cue, index) => <div key={`${index}-${cue.start}`} data-cue-index={index} className="group flex items-start gap-1">
-            <Button variant="ghost" className={`!h-auto min-w-0 !justify-start !px-2 !py-1 text-left text-xs ${index === activeCueIndex ? "!bg-hover" : ""}`} onClick={() => seekTo(cue.start)}><span className="mr-2 shrink-0 font-mono tabular-nums text-fg-3">{formatCueTime(cue.start)}–{formatCueTime(cue.end)}</span><span className="min-w-0 whitespace-normal">{cue.text}</span></Button>
-            {project.subtitleTimingMode === "translated" && <Button variant="ghost" className="!h-7 !w-7 shrink-0 !p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Edit subtitle ${index + 1}`} disabled={aligning || saving || rendering} onClick={() => editTranslatedCue(index)}><Pencil size={13} /></Button>}
+          <TranslateTimeline duration={project.sourceDurationSeconds} currentTime={currentTime} fps={fps} cues={cues} activeIndex={activeCueIndex}
+            editable={project.subtitleTimingMode === "translated" && !aligning && !saving && !rendering && !renderRunning}
+            onSeek={seekTo} onRetime={retimeTranslatedCue} onEdit={editTranslatedCue}
+            toolbar={<>
+              <Button className="!h-8 !w-8 shrink-0 !rounded-full !p-0" aria-label={playing ? "Pause preview" : "Play preview"} onClick={togglePlay}>{playing ? <Pause size={14} /> : <Play size={14} />}</Button>
+              <span className="min-w-0 truncate font-mono text-xs tabular-nums text-fg-3" title={fpsMeasured ? `${fps} fps` : "Frame rate assumed 30 fps until the video plays"}>{formatTimecode(currentTime, fps)} / {formatTimecode(project.sourceDurationSeconds, fps)} <span className="hidden sm:inline">· {fpsMeasured ? "" : "~"}{fps} fps</span></span>
+            </>} />
+          {cues.length > 0 && <div ref={cueListRef} className="relative mt-3 mb-4 max-h-20 shrink-0 space-y-1 overflow-y-auto">{cues.map((cue, index) => <div key={`${index}-${cue.start}`} data-cue-index={index} className="group flex items-center gap-1">
+            <Button variant="ghost" className={`!h-auto min-w-0 flex-1 !justify-start !px-2 !py-1 text-left text-xs ${index === activeCueIndex ? "!bg-hover" : ""}`} onClick={() => seekTo(cue.start)}><span className="mr-2 shrink-0 font-mono tabular-nums text-fg-3">{formatCueTime(cue.start)}–{formatCueTime(cue.end)}</span><span className="min-w-0 truncate">{cue.text}</span></Button>
+            {project.subtitleTimingMode === "translated" && <Button variant="ghost" className="!h-7 !w-7 shrink-0 !p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100" aria-label={`Edit subtitle ${index + 1}`} disabled={aligning || saving || rendering} onClick={() => editTranslatedCue(index)}><Pencil size={13} /></Button>}
           </div>)}</div>}
           {sourceReady && project.srtText && <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
-            <MiniButton aria-label="View" onClick={() => showTiming(project.subtitleTimingMode)}><Eye size={13} /> <span className="hidden sm:inline">View</span></MiniButton>
+            <Select value={tab} onChange={(kind) => void selectTiming(kind)} disabled={aligning || saving || rendering}
+              wrapperClassName="w-[170px] shrink-0" className="!min-h-8 !py-1 text-xs" aria-label="Subtitle timing">
+              {(["original", "aligned", "translated"] as const).map((kind) => <SelectOption key={kind} value={kind} label={timingLabels[kind]} />)}
+            </Select>
+            {tab === project.subtitleTimingMode && <>
             {project.subtitleTimingMode === "aligned" && project.subtitleCues && <>
               <Menu placement="bottom-start" menuClassName="max-h-72 min-w-[180px] overflow-y-auto bg-panel">
                 <MenuTrigger>{({ toggleMenu }) => <MiniButton aria-label="Copy prompt" onClick={toggleMenu}><Copy size={13} /> <span className="hidden sm:inline">Prompt</span> <ChevronDown size={12} /></MiniButton>}</MenuTrigger>
@@ -600,19 +661,21 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
             </>}
             {project.subtitleTimingMode === "translated" && <>
               {SHOW_AI_TRANSLATE && <MiniButton disabled={aligning || saving || rendering || generating || !project.subtitleCues} aria-label="Generate with AI" onClick={confirmGenerateTranslation}>{generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} <span className="hidden sm:inline">Generate with AI</span></MiniButton>}
-              <MiniButton disabled={aligning || saving || rendering} aria-label="Paste SRT" onClick={pasteTranslatedSrt}><ClipboardPaste size={13} /> <span className="hidden sm:inline">Paste</span></MiniButton>
             </>}
             <Menu placement="bottom-start" menuClassName="min-w-[180px] bg-panel">
               <MenuTrigger>{({ toggleMenu }) => <MiniButton className="!px-1.5" aria-label="More subtitle actions" onClick={toggleMenu}><MoreHorizontal size={14} /></MiniButton>}</MenuTrigger>
+              <MenuItem onClick={() => showTiming(project.subtitleTimingMode)}><span className="flex items-center gap-2"><Eye size={15} /> View</span></MenuItem>
+              {project.subtitleTimingMode === "translated" && <MenuItem disabled={aligning || saving || rendering} onClick={pasteTranslatedSrt}><span className="flex items-center gap-2"><ClipboardPaste size={15} /> Paste SRT</span></MenuItem>}
               <MenuItem onClick={() => downloadSrt(project.subtitleTimingMode)}><span className="flex items-center gap-2"><Download size={15} /> Download</span></MenuItem>
               {project.subtitleTimingMode === "original" && <MenuItem disabled={aligning || saving || rendering} onClick={() => chooseSrt({ multiple: false })}><span className="flex items-center gap-2"><Upload size={15} /> Replace SRT</span></MenuItem>}
               {project.subtitleTimingMode === "translated" && <MenuItem disabled={aligning || saving || rendering} onClick={() => chooseTranslatedSrt({ multiple: false })}><span className="flex items-center gap-2"><Upload size={15} /> Replace translated SRT</span></MenuItem>}
               {project.subtitleTimingMode === "aligned" && <MenuItem disabled={aligning || saving || rendering} onClick={confirmDeleteSyncedTiming}><span className="flex items-center gap-2 text-danger"><Trash2 size={15} /> Delete synced timing</span></MenuItem>}
             </Menu>
-            <span className="ml-auto min-w-0 truncate text-[11px] text-fg-3">{project.subtitleTimingMode === "translated" && <span className="hidden sm:inline">{project.translatedSrtFileName} · </span>}{cues.length} {project.subtitleTimingMode === "aligned" ? "parts" : "subtitles"}</span>
+            <span className="w-full min-w-0 truncate text-[11px] text-fg-3">{project.subtitleTimingMode === "translated" && <span className="hidden sm:inline">{project.translatedSrtFileName} · </span>}{cues.length} {project.subtitleTimingMode === "aligned" ? "parts" : "subtitles"}</span>
             {project.subtitleTimingMode === "aligned" && unchangedSyncedCues > 0 && <p className="w-full text-[11px] text-fg-2">{unchangedSyncedCues} of {originalSrtCues.length} SRT cues still use their original timing.</p>}
+            </>}
           </div>}
-          <div className="mt-4 shrink-0">
+          <div className="mt-4 shrink-0 empty:hidden">
             {!project.srtText && <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="min-w-0 truncate text-xs text-fg-3">Upload the video&apos;s original-language SRT.</p>
               <Button className="shrink-0" onClick={() => chooseSrt({ multiple: false })}><Upload size={15} /> Choose SRT</Button>
@@ -621,19 +684,8 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
               <p className="mb-2 text-xs text-fg-2">Transcribing speech and aligning subtitles…</p>
               <div className="h-2 overflow-hidden rounded-full bg-panel-2"><div className="h-full w-1/3 animate-pulse rounded-full bg-accent" /></div>
             </div>}
-            {project.srtText && <div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div role="tablist" aria-label="Subtitle timing" className="inline-flex min-w-0 gap-1 overflow-x-auto rounded-full border border-line bg-panel-2 p-1">
-                  {(["original", "aligned", "translated"] as const).map((kind) => <Button key={kind} role="tab" aria-selected={tab === kind}
-                    variant={tab === kind ? "primary" : "ghost"} className="!h-8 shrink-0 !rounded-full !px-3 text-xs"
-                    disabled={aligning || saving || rendering} onClick={() => void selectTiming(kind)}>
-                    {timingLabels[kind]}
-                  </Button>)}
-                </div>
-              </div>
-              <div className="mt-3 empty:hidden">
-                {tab === "aligned" && !project.subtitleCues && <p className="text-xs text-fg-3">Run Auto Sync to create synced timing.</p>}
-                {tab === "translated" && !project.translatedSrtText && <div ref={translatedDropzoneRef} className={`flex w-full flex-col items-center gap-3 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${draggingTranslatedSrt ? "border-accent bg-accent-dim" : "border-line-2 bg-panel-2"}`}>
+                {project.srtText && tab === "aligned" && !project.subtitleCues && <p className="text-xs text-fg-3">Run Auto Sync to create synced timing.</p>}
+                {project.srtText && tab === "translated" && !project.translatedSrtText && <div ref={translatedDropzoneRef} className={`flex w-full flex-col items-center gap-3 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${draggingTranslatedSrt ? "border-accent bg-accent-dim" : "border-line-2 bg-panel-2"}`}>
                   <Upload size={22} className="text-fg-3" />
                   <div>
                     <p className="text-sm font-medium">Drop the translated SRT here</p>
@@ -645,25 +697,15 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
                 {SHOW_AI_TRANSLATE && <LoadingButton variant="primary" loading={generating} disabled={aligning || saving || rendering || !project.subtitleCues} onClick={confirmGenerateTranslation}><Sparkles size={15} /> Generate with AI</LoadingButton>}
                   </div>
                 </div>}
-              </div>
-            </div>}
           </div>
         </section>}
-        <aside className="relative col-start-2 hidden min-h-[320px] min-w-0 md:block">
-          <div className="absolute inset-0 space-y-5 overflow-y-auto rounded-xl border border-line bg-panel p-4">{settingsPanel}</div>
-        </aside>
-      </div>
 
-      <div className="sticky bottom-0 z-30 -mx-4 -mb-5 mt-5 flex gap-2 border-t border-line bg-panel px-4 py-3 md:hidden">
-        <Button className="flex-1" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={15} /> Settings</Button>
-        <LoadingButton variant="primary" className="flex-1" loading={rendering} disabled={!sourceReady || !cues.length || renderRunning || aligning || (renderMode === "range" && !rangeValid)} onClick={() => void startRender()}>Render</LoadingButton>
-      </div>
       <Drawer open={settingsOpen} handleClose={() => setSettingsOpen(false)} placement="bottom"
         className="max-h-[75vh] space-y-5 overflow-y-auto rounded-t-[14px] border-t border-line bg-panel p-4 md:hidden" backdropClassName="md:hidden">
         {settingsPanel}
       </Drawer>
 
-      {project.renderOutputUrl && <section className="rounded-xl border border-line bg-panel p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{project.renderStatus === "idle" ? "Previous rendered video" : "Rendered video"}</h2><Button onClick={() => void download()}><Download size={15} /> Download MP4</Button></div><video src={project.renderOutputUrl} preload="metadata" controls className="max-h-[560px] w-full rounded-lg bg-sunken" /></section>}
+      {project.renderOutputUrl && <section className="md:rounded-xl md:border md:border-line md:bg-panel md:p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{project.renderStatus === "idle" ? "Previous rendered video" : "Rendered video"}</h2><Button onClick={() => void download()}><Download size={15} /> Download MP4</Button></div><video src={project.renderOutputUrl} preload="metadata" controls className="max-h-[560px] w-full rounded-lg bg-sunken" /></section>}
       </div>
     </Wrap></Body>
   </>;

@@ -293,3 +293,32 @@ export function applyCueEdit<T extends TranslateCue>(cues: T[], index: number, e
     : i === index + 1 && nextStart !== null ? { ...cue, start: nextStart } : cue);
   return { cues: result, previousEnd, nextStart, error };
 }
+
+const COMMON_FRAME_RATES = [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60];
+
+export function nearestFrameRate(measured: number) {
+  return COMMON_FRAME_RATES.reduce((best, rate) => Math.abs(rate - measured) < Math.abs(best - measured) ? rate : best);
+}
+
+export function frameIndex(seconds: number, fps: number) {
+  return Math.floor(seconds * fps + 1e-3);
+}
+
+// Seeking to a frame's exact start can land on the previous frame after float rounding.
+export function frameTime(frame: number, fps: number) {
+  return Math.max(0, frame) / fps + 0.001;
+}
+
+export function formatTimecode(seconds: number, fps: number) {
+  const whole = Math.floor(Math.max(0, seconds) + 1e-6);
+  const frames = Math.min(Math.ceil(fps) - 1, Math.floor((seconds - whole) * fps + 1e-3));
+  const hours = Math.floor(whole / 3600);
+  const clock = `${String(Math.floor(whole / 60) % 60).padStart(hours ? 2 : 1, "0")}:${String(whole % 60).padStart(2, "0")}:${String(Math.max(0, frames)).padStart(2, "0")}`;
+  return hours ? `${hours}:${clock}` : clock;
+}
+
+export function timelineTickStep(pixelsPerSecond: number, fps: number, minSpacingPx = 72) {
+  const steps = [1, 2, 5, 10].map((frames) => frames / fps)
+    .concat([0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]).sort((a, b) => a - b);
+  return steps.find((step) => step * pixelsPerSecond >= minSpacingPx) ?? steps[steps.length - 1];
+}
