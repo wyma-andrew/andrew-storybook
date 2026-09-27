@@ -4,6 +4,14 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-27 — Route time limit capped at 300 s for Vercel Hobby
+
+**Decision:** Render, align, and generate set `maxDuration = 300` (was 3600).
+
+**Why:** Vercel Hobby rejects the deploy when any function asks for more than 300 s.
+
+**Consequence:** On Vercel, a render, Auto Sync, or AI translation that runs past 5 minutes is killed; the project can be left `running` until the 2-hour stale check. These routes also have no ffmpeg on Vercel (see `history/movie-recap.md`). Raise the limit again only on a host or plan that allows it.
+
 ## 2026-09-27 — Export and import a project as JSON, without the video
 
 **Decision:** The editor's Export button downloads `<name>-<date>.translate.json` (`lib/translate-transfer.ts`) with the name, original SRT, synced cues, translated SRT, timing mode, blur areas, and subtitle placement, built client-side from the loaded project (unsaved edits included). Import is optional on New project: choose the file, then choose the video; the project is created from the video, the bundle is applied through the normal PATCH, then the video uploads. The list page's Import button opens New project.
