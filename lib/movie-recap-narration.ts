@@ -3,12 +3,11 @@ import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ffprobeFor } from "./movie-recap-captions";
 import { mapConcurrent } from "./map-concurrent";
 import { getObjectBytes, movieRecapNarrationKey, movieRecapNarrationTimingKey, putObject } from "./r2";
 import { synthesize } from "./tts/synthesize";
 import type { Voice } from "./tts/types";
-import { FFMPEG, run } from "./movie-recap-ffmpeg";
+import { FFMPEG, FFPROBE, run } from "./movie-recap-ffmpeg";
 import {
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_NARRATION_SAMPLE_RATE,
@@ -47,7 +46,7 @@ const SPEECH_MARGIN_S = 0.06;
 // short of its slot. Unreadable duration means "do not compensate".
 export async function probeDurationS(file: string, signal?: AbortSignal) {
   const { stdout } = await execFileAsync(
-    ffprobeFor(FFMPEG),
+    FFPROBE,
     ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file],
     { maxBuffer: 1024 * 1024, signal }
   );
@@ -59,7 +58,7 @@ export async function probeDurationS(file: string, signal?: AbortSignal) {
 // H.264 has one packet per frame here, so packet count is the exact timeline.
 export async function probeVideoFrameCount(file: string, signal?: AbortSignal) {
   const { stdout } = await execFileAsync(
-    ffprobeFor(FFMPEG),
+    FFPROBE,
     [
       "-v", "error", "-select_streams", "v:0", "-count_packets",
       "-show_entries", "stream=nb_read_packets", "-of", "default=nw=1:nk=1", file,

@@ -7,6 +7,14 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-27 — Static ffmpeg/ffprobe for beat audio preview on Vercel
+
+**Decision:** When `FFMPEG_PATH` is unset, ffmpeg and ffprobe come from the `ffmpeg-static` and `ffprobe-static` packages. Only the beat preview route (`script/beat/preview`) traces the linux binaries into its function; other platforms' ffprobe builds are excluded from tracing.
+
+**Why:** Vercel has no system ffmpeg, so preview failed with `spawn ffprobe ENOENT`. The user only needs audio preview on Vercel.
+
+**Consequence:** Render, transcript, and Translate routes still have no ffmpeg on Vercel, and renders there would also lack the Noto Sans Myanmar subtitle font and hit function time limits. `FFMPEG_PATH` must not be set in Vercel's environment (a local macOS path would override the static build).
+
 ## 2026-09-25 — Export timeline mismatches with a warning (supersedes)
 
 **Decision:** a concat frame mismatch no longer aborts a render. Extra frames
