@@ -105,7 +105,7 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
     ConfirmDialog.show({
       title: `Delete ${user.email}?`,
       content:
-        "The account and everything it owns is removed — stories, chapters, recap projects, and the uploaded video and rendered files behind them. This cannot be undone.",
+        "The account and everything it owns is removed — stories, chapters, recap and Translate projects, and the uploaded video and rendered files behind them. This cannot be undone.",
       confirmButtonLabel: "Delete account",
       cancelButtonLabel: "Cancel",
       onConfirm: async ({ dismiss }) => {

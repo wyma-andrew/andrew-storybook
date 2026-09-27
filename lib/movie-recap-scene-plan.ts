@@ -1,5 +1,5 @@
 import {
-  MOVIE_RECAP_MIN_PLAYBACK_SPEED,
+  MOVIE_RECAP_MAX_PLAYBACK_SPEED,
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_TINY_FREEZE_S,
   MOVIE_RECAP_RIBBON_DRIFT_CAP_S,
@@ -377,10 +377,10 @@ export function buildMovieRecapSceneTimingPlan({
     const gapS = group.targetS - baselineVideoS;
     const requiredSpeed = sourceS > 0 ? sourceS / group.targetS : 0;
     const selectedSpeed =
-      gapS > MOVIE_RECAP_TINY_FREEZE_S && requiredSpeed >= MOVIE_RECAP_MIN_PLAYBACK_SPEED
-        ? requiredSpeed
-        : gapS > MOVIE_RECAP_TINY_FREEZE_S
-          ? MOVIE_RECAP_MIN_PLAYBACK_SPEED
+      gapS > 1e-9 && sourceS > 0
+        ? sourceS / (group.targetS + 1 / targetFps)
+        : -gapS > MOVIE_RECAP_TINY_FREEZE_S
+          ? Math.min(requiredSpeed, MOVIE_RECAP_MAX_PLAYBACK_SPEED)
           : videoSpeed;
     if (selectedSpeed !== videoSpeed) {
       group.clips = retainedMovieRecapTimeline(

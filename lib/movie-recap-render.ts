@@ -21,6 +21,7 @@ import {
   type SourceWindow,
 } from "./movie-recap-shots";
 import { buildMovieRecapSceneTimingPlan } from "./movie-recap-scene-plan";
+import { selectMovieRecapBeatRange } from "./movie-recap-range";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
@@ -35,8 +36,9 @@ import {
   movieRecapPacing,
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
+  MOVIE_RECAP_NARRATION_SAMPLE_RATE,
   MOVIE_RECAP_TARGET_FPS,
-  MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT,
+  MOVIE_RECAP_TIMELINE_WARNING_FRAME_THRESHOLD,
 } from "./constants/movie-recap";
 import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
@@ -59,7 +61,7 @@ const SUBTITLE_FONT = process.env.MOVIE_RECAP_SUBTITLE_FONT || "Noto Sans Myanma
 const SUBTITLE_FONT_MEDIUM = process.env.MOVIE_RECAP_SUBTITLE_FONT_MEDIUM || "Noto Sans Myanmar Med";
 const SUBTITLE_FONT_SEMIBOLD = process.env.MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD || "Noto Sans Myanmar SemBd";
 
-function subtitleFace(weight: number) {
+export function subtitleFace(weight: number) {
   if (weight >= 700) return { name: SUBTITLE_FONT, bold: -1 };
   if (weight >= 600) return { name: SUBTITLE_FONT_SEMIBOLD, bold: 0 };
   if (weight >= 500) return { name: SUBTITLE_FONT_MEDIUM, bold: 0 };
@@ -72,7 +74,7 @@ function subtitleFace(weight: number) {
 // FreeType and 540px through libass. Multiply by the ratio so the percentage
 // the wizard shows means the same thing in the preview and in the export.
 // For another font: (hhea ascender - descender) / unitsPerEm.
-const ASS_FONT_SIZE_RATIO = Number(process.env.MOVIE_RECAP_SUBTITLE_FONT_RATIO) || 2.184;
+export const ASS_FONT_SIZE_RATIO = Number(process.env.MOVIE_RECAP_SUBTITLE_FONT_RATIO) || 2.184;
 
 // Nothing holds a single shot longer than this, however long its line — beyond
 // it the beat drags whatever the text says. Cues are compressed to fit, but
@@ -92,8 +94,8 @@ const ABS_MAX_CUE_CHARS_PER_SECOND = 26;
 // than this, and never faster than MAX_CUE_CHARS_PER_SECOND.
 const MIN_CUE_S = 1;
 const MAX_CUE_CHARS_PER_SECOND = 22;
-// Beyond this the mismatch is really a "needs re-cut" case (out of scope for
-// this phase — see history) — freeze/trim still applies, just logged as a warning.
+// Beyond this ratio a re-cut may look better; the planner still fits available
+// footage to narration and logs the mismatch.
 const EXTREME_RATIO_MIN = 0.33;
 const EXTREME_RATIO_MAX = 3;
 
@@ -340,7 +342,7 @@ function movieRecapWatermarkText(project: MovieRecapProject) {
 
 // ASS colors are &HAABBGGRR — byte-reversed from CSS hex, and the alpha byte
 // is INVERTED (00 = fully opaque, FF = fully transparent).
-function toAssColor(hex: string, opacityPercent = 100) {
+export function toAssColor(hex: string, opacityPercent = 100) {
   const value = hex.replace("#", "");
   const alpha = Math.round(255 - (Math.min(100, Math.max(0, opacityPercent)) / 100) * 255);
   const rr = value.slice(0, 2);
@@ -525,14 +527,40 @@ async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieReca
 export async function runMovieRecapRender(
   db: Db,
   project: MovieRecapProject,
-  { mock = false, silentTiming = false }: { mock?: boolean; silentTiming?: boolean } = {}
+  { mock = false, silentTiming = false, range }: {
+    mock?: boolean;
+    silentTiming?: boolean;
+    range?: { id: string; startBeat: number; endBeat: number };
+  } = {}
 ) {
   const controller = new AbortController();
   activeRenders.set(project.id, controller);
   const signal = controller.signal;
   const workDir = await mkdtemp(path.join(tmpdir(), "movie-recap-"));
-  const markFailed = (error: string) =>
-    db
+  const previousRenderState = {
+    render_status: project.renderStatus,
+    render_is_mock: project.renderIsMock,
+    render_error: project.renderError,
+    render_stage: project.renderStage,
+    render_progress_current: project.renderProgressCurrent,
+    render_progress_total: project.renderProgressTotal,
+    render_started_at: project.renderStartedAt,
+    render_completed_at: project.renderCompletedAt,
+  };
+  let rangeOutputKey: string | null = null;
+  let timelineWarning: string | null = null;
+  const markFailed = async (error: string) => {
+    if (range) {
+      await db.from("movie_recap_range_renders").update({
+        status: "failed", error: trimFailureMessage(error), warning: null,
+        output_object_key: null, output_url: null, duration_seconds: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", range.id);
+      await db.from("movie_recap_projects").update(previousRenderState).eq("id", project.id);
+      if (rangeOutputKey) await deleteObject(rangeOutputKey).catch(() => undefined);
+      return;
+    }
+    await db
       .from("movie_recap_projects")
       .update({
         render_status: "failed",
@@ -547,6 +575,7 @@ export async function runMovieRecapRender(
         render_completed_at: new Date().toISOString(),
       })
       .eq("id", project.id);
+  };
 
   try {
     // The aspect ratio IS the format: 9:16 cuts fast for TikTok and Facebook,
@@ -583,6 +612,7 @@ export async function runMovieRecapRender(
         .update({
           render_status: "done",
           render_error: null,
+          render_warning: null,
           render_output_url: outputUrl,
           render_output_object_key: outputKey,
           render_audio_url: null,
@@ -704,6 +734,18 @@ export async function runMovieRecapRender(
         }));
         await db.from("movie_recap_projects").update({ render_script: narration }).eq("id", project.id);
       }
+      if (range) {
+        const selected = selectMovieRecapBeatRange(narration, master.timings, range.startBeat, range.endBeat);
+        const rangePath = path.join(workDir, "range-narration.wav");
+        await run(FFMPEG, [
+          "-y", "-i", master.path,
+          "-af", `atrim=start=${selected.startS.toFixed(6)}:end=${selected.endS.toFixed(6)},asetpts=PTS-STARTPTS`,
+          "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", rangePath,
+        ], signal);
+        narrationPath = rangePath;
+        narrationTimings = selected.timings;
+        narration = selected.narration;
+      }
       await setProgress(db, project.id, "synthesizing_narration", narration.length, narration.length);
       console.log(
         `[MovieRecapRender] project=${project.id} narration.wav ready for ${narration.length} beat(s) ` +
@@ -734,7 +776,7 @@ export async function runMovieRecapRender(
     const shotLog: MovieRecapRenderShot[] = [];
     let lastSourceEndS: number | null = null;
     let cursor = 0;
-    let videoFrameCursor = 0;
+    let encodedFrameBudget = 0;
     let plannedVideoDurationS: number | null = null;
 
     const sceneForBeat = new Map<number, {
@@ -813,14 +855,18 @@ export async function runMovieRecapRender(
             return slot;
           });
         }
-        // Allocate one global frame grid across all scene slots. Rounding each
-        // encoded segment independently lets half-frame errors accumulate at
-        // concat time, which is the visible long-run drift this plan avoids.
-        slots = slots.map((value) => {
-          const endFrame = Math.round((videoFrameCursor + value) * MOVIE_RECAP_TARGET_FPS);
-          const slot = Math.max(0, endFrame / MOVIE_RECAP_TARGET_FPS - videoFrameCursor);
-          videoFrameCursor += slot;
-          return slot;
+        // The last shot takes the rounding remainder so this scene cannot drift past its narration boundary.
+        const sceneFrames = Math.round(scene.targetS * MOVIE_RECAP_TARGET_FPS);
+        let elapsedS = 0;
+        let allocatedFrames = 0;
+        slots = slots.map((value, index) => {
+          elapsedS += value;
+          const endFrame = index === slots.length - 1
+            ? sceneFrames
+            : Math.min(sceneFrames, Math.max(allocatedFrames, Math.round(elapsedS * MOVIE_RECAP_TARGET_FPS)));
+          const slotFrames = endFrame - allocatedFrames;
+          allocatedFrames = endFrame;
+          return slotFrames / MOVIE_RECAP_TARGET_FPS;
         });
       }
       const shotCount = shots.length;
@@ -849,11 +895,12 @@ export async function runMovieRecapRender(
 
         if (ratio < EXTREME_RATIO_MIN || ratio > EXTREME_RATIO_MAX) {
           console.warn(
-            `[MovieRecapRender] project=${project.id} beat=${i + 1} shot=${shotIndex + 1} extreme duration mismatch (ratio=${ratio.toFixed(2)}) — a real re-cut would fit better than freeze/trim, but re-cut is out of scope for this phase.`
+            `[MovieRecapRender] project=${project.id} beat=${i + 1} shot=${shotIndex + 1} extreme duration mismatch (ratio=${ratio.toFixed(2)}) — a re-cut may look better.`
           );
         }
 
         const segPath = path.join(workDir, `seg-${i}-${shotIndex}.mp4`);
+        const slotFrames = Math.max(1, Math.round(slotS * MOVIE_RECAP_TARGET_FPS));
 
         // Both branches use the resolved speed for this beat so its clips stay consistent,
         // so the only question is whether the scene is long enough to fill the
@@ -892,13 +939,14 @@ export async function runMovieRecapRender(
         await run(
           FFMPEG,
           ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", usedS.toFixed(3), "-i", sourceForClips, "-an",
-           "-vf", filters, "-frames:v", String(Math.max(1, Math.round(slotS * MOVIE_RECAP_TARGET_FPS))),
+           "-vf", filters, "-frames:v", String(slotFrames),
            "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
           signal
         );
+        encodedFrameBudget += slotFrames;
         segmentPaths.push(segPath);
         shotLog.push({
-          beat: i + 1,
+          beat: range ? range.startBeat + i : i + 1,
           shot: shotIndex + 1,
           slotS: round2(slotS),
           sourceStartS: round2(shot.sourceStartS),
@@ -946,23 +994,25 @@ export async function runMovieRecapRender(
     let timelineRepairFrames = 0;
     if (plannedVideoDurationS !== null) {
       const expectedFrames = Math.round(plannedVideoDurationS * MOVIE_RECAP_TARGET_FPS);
-      const concatFrames = await probeVideoFrameCount(concatPath, signal);
+      const concatFrames = await probeVideoFrameCount(concatPath, signal).catch((error) => {
+        if (signal.aborted) throw error;
+        return null;
+      });
       const frameDifference = concatFrames === null ? null : expectedFrames - concatFrames;
-      if (frameDifference === null || Math.abs(frameDifference) > MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT) {
-        const concatDurationS = await probeDurationS(concatPath, signal);
-        const segmentDurations = await Promise.all(segmentPaths.map((segmentPath) => probeDurationS(segmentPath, signal)));
-        const encodedSegmentsS = segmentDurations.reduce<number>((total, durationS) => total + (durationS ?? 0), 0);
-        const segmentSummary = shotLog
-          .map((shot, index) => `b${shot.beat}.${shot.shot} ${shot.slotS.toFixed(3)}>${segmentDurations[index]?.toFixed(3) ?? "?"}`)
-          .join(", ");
-        throw new Error(
-          `Video timeline ended at ${concatDurationS?.toFixed(3) ?? "unknown"}s; ` +
-            `narration requires ${plannedVideoDurationS.toFixed(3)}s ` +
-            `(${concatFrames ?? "unknown"}/${expectedFrames} frames; ` +
-            `${segmentPaths.length} encoded segments total ${encodedSegmentsS.toFixed(3)}s). ${segmentSummary}`
+      if (frameDifference === null) {
+        timelineWarning = "The video frame count could not be verified. Review its timing before using this export.";
+        console.warn(`[MovieRecapRender] project=${project.id} video frame count unavailable after concat.`);
+      } else if (Math.abs(frameDifference) > MOVIE_RECAP_TIMELINE_WARNING_FRAME_THRESHOLD) {
+        const differenceS = (Math.abs(frameDifference) / MOVIE_RECAP_TARGET_FPS).toFixed(2);
+        timelineWarning = frameDifference > 0
+          ? `The video was ${frameDifference} frames (${differenceS}s) shorter than the narration. The final frame was held to keep the audio complete. Review the timing before using this export.`
+          : `The video was ${-frameDifference} frames (${differenceS}s) longer than the narration. Extra end frames were trimmed. Review the timing before using this export.`;
+        console.warn(
+          `[MovieRecapRender] project=${project.id} timeline mismatch: ${concatFrames}/${expectedFrames} frames, ` +
+            `${encodedFrameBudget} requested across ${segmentPaths.length} segments.`
         );
       }
-      timelineRepairFrames = Math.max(0, frameDifference);
+      timelineRepairFrames = Math.max(0, frameDifference ?? 0);
     }
 
     // Burn captions/logo into the footage-only artifact first. The combined
@@ -1009,46 +1059,55 @@ export async function runMovieRecapRender(
 
     await setProgress(db, project.id, "uploading");
     const outputDurationS = await probeDurationS(outputPath, signal);
-    const [outputBuffer, footageBuffer] = await Promise.all([readFile(outputPath), readFile(footagePath)]);
-    const outputKey = movieRecapObjectKey(project.id, "render", `recap-${project.id}.mp4`);
-    const footageKey = movieRecapObjectKey(project.id, "render", `footage-${project.id}.mp4`);
-    const [outputUrl, footageUrl] = await Promise.all([
-      putObject(outputKey, outputBuffer, "video/mp4"),
-      putObject(footageKey, footageBuffer, "video/mp4"),
-    ]);
-    const audioUrl = narrationAudioKey ? publicUrlFor(narrationAudioKey) : null;
+    if (range) {
+      rangeOutputKey = movieRecapObjectKey(project.id, "render", `beats-${range.startBeat}-${range.endBeat}-${range.id}.mp4`);
+      const outputUrl = await putObject(rangeOutputKey, await readFile(outputPath), "video/mp4");
+      const { error: saveRangeError } = await db.from("movie_recap_range_renders").update({
+        status: "done",
+        error: null,
+        warning: timelineWarning,
+        output_object_key: rangeOutputKey,
+        output_url: outputUrl,
+        duration_seconds: outputDurationS ?? plannedVideoDurationS,
+        updated_at: new Date().toISOString(),
+      }).eq("id", range.id);
+      if (saveRangeError) throw new Error(saveRangeError.message);
+      const { error: restoreError } = await db.from("movie_recap_projects")
+        .update(previousRenderState).eq("id", project.id);
+      if (restoreError) throw new Error(restoreError.message);
+    } else {
+      const [outputBuffer, footageBuffer] = await Promise.all([readFile(outputPath), readFile(footagePath)]);
+      const outputKey = movieRecapObjectKey(project.id, "render", `recap-${project.id}.mp4`);
+      const footageKey = movieRecapObjectKey(project.id, "render", `footage-${project.id}.mp4`);
+      const [outputUrl, footageUrl] = await Promise.all([
+        putObject(outputKey, outputBuffer, "video/mp4"),
+        putObject(footageKey, footageBuffer, "video/mp4"),
+      ]);
+      const audioUrl = narrationAudioKey ? publicUrlFor(narrationAudioKey) : null;
 
-    const { error: saveError } = await db
-      .from("movie_recap_projects")
-      .update({
-        render_status: "done",
-        render_error: null,
-        // Nothing reads the source for meaning any more, so no render produces
-        // a transcript to store. The column keeps whatever an older run left.
-        ...(mock ? { render_transcript: null } : {}),
-        // `render_script` is NOT written here. It belongs to the script run, and
-        // only a resync replaces it (the user's rule, history/movie-recap.md).
-        // A real render reads it back unchanged so writing it was a no-op — but
-        // a MOCK render's narration is canned lines, and this line overwrote an
-        // measured script with them.
-        render_output_url: outputUrl,
-        render_output_object_key: outputKey,
-        render_audio_url: audioUrl,
-        render_audio_object_key: narrationAudioKey,
-        render_footage_url: footageUrl,
-        render_footage_object_key: footageKey,
-        render_stage: null,
-        render_progress_current: null,
-        render_progress_total: null,
-        render_completed_at: new Date().toISOString(),
-      })
-      .eq("id", project.id);
-    if (saveError) throw new Error(saveError.message);
-    if (
-      project.renderAudioObjectKey &&
-      project.renderAudioObjectKey !== narrationAudioKey
-    ) {
-      await deleteObject(project.renderAudioObjectKey).catch(() => undefined);
+      const { error: saveError } = await db
+        .from("movie_recap_projects")
+        .update({
+          render_status: "done",
+          render_error: null,
+          render_warning: timelineWarning,
+          ...(mock ? { render_transcript: null } : {}),
+          render_output_url: outputUrl,
+          render_output_object_key: outputKey,
+          render_audio_url: audioUrl,
+          render_audio_object_key: narrationAudioKey,
+          render_footage_url: footageUrl,
+          render_footage_object_key: footageKey,
+          render_stage: null,
+          render_progress_current: null,
+          render_progress_total: null,
+          render_completed_at: new Date().toISOString(),
+        })
+        .eq("id", project.id);
+      if (saveError) throw new Error(saveError.message);
+      if (project.renderAudioObjectKey && project.renderAudioObjectKey !== narrationAudioKey) {
+        await deleteObject(project.renderAudioObjectKey).catch(() => undefined);
+      }
     }
     return {
       createdAt: new Date().toISOString(),

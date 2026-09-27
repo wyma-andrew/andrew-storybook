@@ -3,9 +3,145 @@
 Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `app/api/(movie-recap)/movie-recaps/**`, `components/movie-recap/**`,
 `lib/constants/movie-recap.ts`, `lib/movie-recap.ts`,
-`lib/movie-recap-render.ts`, `lib/prompts/movie-recap-narration.ts`,
+`lib/movie-recap-render.ts`, `lib/movie-recap-range.ts`, `lib/prompts/movie-recap-narration.ts`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
-migrations.
+and `movie_recap_range_renders` migrations.
+
+## 2026-09-25 — Export timeline mismatches with a warning (supersedes)
+
+**Decision:** a concat frame mismatch no longer aborts a render. Extra frames
+are trimmed to the narration length; missing frames are filled by holding the
+last frame so the narration remains complete. If the mismatch exceeds two
+frames, or its frame count cannot be measured, save a warning with the full or
+range output and show it in Review as well as a completion toast.
+
+**Why:** the earlier three-frame overrun discarded a 315-segment range render
+after encoding was complete. The user prefers an export they can inspect over
+losing the video at this final check.
+
+**Supersedes:** the two-frame abort threshold retained in the frame-budget
+decision below and the 2026-09-21 decision to fail a larger final mismatch.
+Their frame-count diagnostics and exact scene budgets remain in place.
+
+**Consequence:** a substantial shortfall can leave a visible held final frame
+or imperfect sync. The saved warning identifies that output for review.
+
+## 2026-09-25 — Keep each scene on its exact frame budget
+
+**Decision:** divide each scene's narration-derived frame count among its shots
+and assign any rounding remainder to the final shot. The two-frame failure
+threshold retained here was superseded by the warning policy above. Timeline
+diagnostics report requested versus actual frame counts without listing every
+segment's MP4 duration.
+
+**Why:** a 315-segment range render reached concat three frames longer than its
+29,795-frame narration plan. Rounding shot boundaries independently can add
+frames across a long render even though each scene has an exact target. The
+per-scene budget preserves the narration wall and prevents this accumulation;
+short diagnostics make any remaining encoder mismatch identifiable.
+
+## 2026-09-25 — Remember the Review render mode per project
+
+**Decision:** save the last Full/Range selection in browser localStorage under
+the project ID and restore it when Review opens. Default to Full if no saved
+selection is available.
+
+**Why:** switching steps or reopening a project should return to the same video
+section without requiring another selection. Storage failure does not prevent
+manual selection.
+
+## 2026-09-25 — Show three recent render records
+
+**Decision:** Review displays the three newest browser-local render history
+records. Older records remain stored and Clear still removes the full history.
+
+**Why:** the table stays compact while showing the recent runs useful for
+comparison.
+
+## 2026-09-25 — Refresh range results on user actions
+
+**Decision:** load range results when Review opens and refresh them after a
+range render or deletion finishes. Do not force a refresh from a Review effect
+that depends on the Spoosh trigger.
+
+**Why:** the trigger can change identity across renders. Including it in the
+effect dependencies caused repeated refreshes and a React maximum update depth
+error. The render and delete actions already know when results need refreshing.
+
+## 2026-09-25 — Review can render an inclusive beat range separately
+
+**Decision:** Review offers a Full/Range selector. Full keeps the existing
+complete render action; Range shows start and end beat selectors and renders
+those beats into a separate saved MP4. Mock Preview stays outside this selector
+and keeps its existing behavior. Its button sits beside the current render
+action in both modes. Range controls use spacing without a top separator line.
+The start and end beat selectors appear directly below the mode selector.
+Mock Preview uses a muted violet outline to distinguish it from the primary
+video render action.
+The full or mock render player sits in its own card below the render controls,
+matching the separate Range videos section.
+Only the selected mode's video section is visible. Both sections stay mounted
+when the mode changes, and playback in the hidden section pauses.
+The full or mock video frame is centered within its card.
+Range videos are displayed by ascending start beat, then end beat; repeated
+spans show the newest render first.
+
+**Why:** a user can inspect and download a small section with current video
+customization without waiting for a complete render. The full output remains
+available while the selected section is rendered and afterward.
+
+**Consequences:** range renders reuse the stored script and cached narration
+master, trim the audio to the selected beat timings, and rebase captions to the
+new clip's zero point. Their output and beat span live in
+`movie_recap_range_renders`, with the video under the project's R2 prefix.
+Full and range renders share the project's one-at-a-time render claim and
+progress/cancel controls. Deleting a range render removes its R2 object.
+
+## 2026-09-24 — Reuse cached beat audio at 1.05x
+
+**Decision:** assemble the narration master from existing beat audio at
+`1.05x`. Keep Azure's synthesis rate unchanged, so the content-addressed beat
+audio cache remains reusable; the changed master rate gets a distinct master
+cache key and rebuilds the combined WAV and timing map.
+
+**Why:** the user asked for a small narration speed increase and explicitly
+chose reuse of existing beat audio over re-synthesis.
+
+**Supersedes:** the 2026-09-24 decision to keep post-synthesis playback at
+`1.0x` and, if needed, raise Azure's synthesis rate instead. That choice was
+intended to avoid post-processing artifacts, but the user prefers the existing
+cached audio to be sped up slightly.
+
+## 2026-09-24 — Slow footage only as far as narration coverage needs
+
+**Decision:** when a timestamped narration block is longer than its usable
+footage at the baseline rate, calculate one slower speed for that block so its
+footage covers the narration. Do not enforce a minimum speed or freeze-pad a
+block that has positive usable footage. Keep a one-frame coverage margin for
+frame rounding; the render trims to the narration duration.
+
+**Why:** the user wants the footage to keep moving throughout the narrative,
+with slow motion only where and to the degree the footage is short.
+
+**Supersedes:** the 2026-09-24 `0.60x` shortage floor and its accepted freeze
+consequence, and the earlier policy that stopped slowing and held frames when
+a block's narration exceeded its footage.
+
+**Consequence:** some blocks may play below `0.60x`; the slowdown is calculated
+once per block, so the footage within that block keeps a consistent rate.
+
+## 2026-09-24 — Recap project duplication removed (supersedes)
+
+**Decision:** recap projects cannot be duplicated. The attempted duplicate
+action and API were removed after the user reported that duplication failed.
+
+**Why:** the feature did not work reliably enough to keep available.
+
+**Supersedes:** the initial proposal to create an independent draft by copying
+the source and optional logo into new project-scoped R2 objects, retaining
+configuration and editable transcript/script content, and resetting processing
+and render artifacts. That proposal aimed to prevent a copy's deletion or edits
+from affecting the original, but the implementation failed in use.
 
 ## 2026-09-22 — Normalize pasted source transcript lines
 
@@ -6104,3 +6240,57 @@ the same 90 MB take 121s.
 **Accepted consequence:** the file is copied byte-for-byte rather than remuxed
 by ffmpeg, so it keeps whatever container it was uploaded in; every consumer
 opens it with ffmpeg, which probes content rather than the `source.mp4` name.
+
+## 2026-09-24 — Surplus beats speed up to 1.1x before trimming
+
+**Decision, confirmed by the user:** the mirror of the shortage rule. When a
+beat's retained footage at 0.75x runs longer than its narration by more than
+`MOVIE_RECAP_TINY_FREEZE_S`, the planner solves one speed for the beat, up to
+`MOVIE_RECAP_MAX_PLAYBACK_SPEED` (1.1x), and trims only what is still left over.
+Before, surplus stayed at 0.75x and the end of the beat's window was cut.
+
+**Why:** the trimmed tail is often the part of the scene that matters (the
+payoff or reaction). The cap started at 1.0x and was raised to 1.1x the same
+day: 10% over real time does not read as fast-forward, and it sits inside the
+0.85-1.15 speed-ramp range accepted earlier. Past ~1.15x it starts to show. The speed is
+still resolved once per beat and footage is still never borrowed from another
+beat, so the 2026-09-21 no-borrowing rule stands.
+
+**Consequence:** Scene timing plan rows and render logs can now show speeds
+above 0.75x; that is this rule, not drift.
+
+## 2026-09-24 — Post-synthesis narration rate 1.2x -> 1.0x (Azure rate only)
+
+**Decision, confirmed by the user:** `MOVIE_RECAP_NARRATION_PLAYBACK_RATE` is
+1.0, so narration plays exactly as Azure synthesizes it at `+20%`. The effective
+speed drops from ~1.44x to ~1.2x of Azure's default. Azure's rate and raw beat
+caches are unchanged, so no speech is re-synthesized.
+
+**Why:** stacking ffmpeg `atempo` on audio Azure has already sped up risks a
+processed, echo-like sound; this tests whether the provider's own rate alone
+reads well. If it is too slow, the next step considered is raising Azure's rate
+(which re-synthesizes every beat) rather than bringing `atempo` back.
+
+**Consequence:** existing 1.2x masters no longer match; the first beat Re Build
+or render rebuilds the master from raw caches. Beats get longer, so scene plans
+move toward slow-down/freeze rather than trim.
+
+**Supersedes:** "Narration playback returns to 1.2x after the 0.8x test".
+
+## 2026-09-24 — Shortage slow-down floor 0.65x -> 0.60x
+
+**Decision, confirmed by the user:** `MOVIE_RECAP_MIN_PLAYBACK_SPEED` is 0.60.
+With per-beat speeds now solved in both directions (0.60x-1.1x), the 0.75x
+baseline only applies to sub-0.15s gaps, so this floor — not the baseline —
+decides when a beat freezes. Lowering it lets 3s of retained footage stretch to
+5.0s instead of 4.62s before any held frame.
+
+**Why now:** the post-synthesis narration rate dropped to 1.0x the same day,
+lengthening beats and turning more of them into shortage beats.
+
+**Rejected:** lowering the 0.75x baseline instead. It would contradict the
+fixed-baseline decision and barely change freezes, for the reason above.
+
+**Accepted consequence:** at 0.60x, slow motion is closer to visible; the earlier
+note that conditional slow-downs past ~0.87x read as deliberate still applies.
+Go below 0.60 only after judging a render.

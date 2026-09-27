@@ -13,7 +13,7 @@ import type { MovieRecapProject } from "@/lib/api/types";
 export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject }) {
   return (
     <div className="mt-4 space-y-4">
-      <div className="w-fit max-w-full overflow-hidden rounded-lg border border-line-2 bg-black">
+      <div className="mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-line-2 bg-black">
         {/* Not muted: the export carries the synthesized narration now, and a
             muted-by-default player would hide the half of the render that is
             hardest to check. */}

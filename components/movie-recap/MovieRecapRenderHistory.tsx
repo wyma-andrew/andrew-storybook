@@ -16,7 +16,7 @@ function fixed(value: unknown, suffix = "") {
 }
 
 /**
- * What every generation actually cut, newest first, kept in this browser only.
+ * What recent generations actually cut, newest first, kept in this browser only.
  *
  * The point of it is comparison: shot lengths against the last run, how much of
  * the source each cut skipped, and above all `held` — seconds with no footage
@@ -68,7 +68,7 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
         )}
       </div>
       <p className="mb-4 text-xs text-fg-2">
-        Every generation from this browser, newest first. <span className="font-medium text-fg">Held</span> is seconds
+        Latest three generations from this browser, newest first. <span className="font-medium text-fg">Held</span> is seconds
         with no footage behind them, filled by repeating a frame — it should be zero. Stored locally, so it does not
         follow you to another machine.
       </p>
@@ -95,7 +95,7 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry) => {
+            {entries.slice(0, 3).map((entry) => {
               const open = openId === entry.id;
               const shotCount = Array.isArray(entry.shots) ? entry.shots.length : 0;
               const avgS = shotCount && Number.isFinite(entry.durationS) ? entry.durationS / shotCount : null;

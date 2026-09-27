@@ -4,8 +4,8 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
 import Image from "next/image";
-import { Captions, Check, ChevronLeft, ChevronRight, Crop, Droplet, Pencil, Plus, RectangleHorizontal, RectangleVertical, Square, Stamp, Trash2, Upload, X } from "lucide-react";
-import { ConfirmDialog, Dialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
+import { Captions, Check, ChevronLeft, ChevronRight, Clapperboard, Crop, Droplet, Pencil, Plus, RectangleHorizontal, RectangleVertical, Scissors, Square, Stamp, Trash2, Upload, X } from "lucide-react";
+import { Alert, ConfirmDialog, Dialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
@@ -20,9 +20,9 @@ import {
   effectiveMovieRecapZoom,
   MOVIE_RECAP_SUBTITLE_POSITIONS,
 } from "@/lib/constants/movie-recap";
-import { clampBlurRect, formatBytes } from "@/lib/movie-recap";
+import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
-import { useRead, useWrite } from "@/lib/spoosh";
+import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapScript } from "./MovieRecapScript";
@@ -196,6 +196,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: updateLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").PATCH());
   const { trigger: deleteLogoTemplate, loading: deletingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
+  const { trigger: renderRange, loading: renderingRange } = useWrite((api) => api("movie-recaps/:id/render/ranges").POST());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
   const { trigger: rebuildBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
@@ -401,13 +402,34 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     // this response is the only time the browser ever sees it.
     if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
     if (result.data.renderStatus === "done") {
-      toast.success(
+      if (result.data.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
+      else toast.success(
         mock
           ? "Mock preview rendered — no AI calls were made."
           : "Rendered from the saved narration timeline — the source was not analyzed again."
       );
     }
     else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
+  }
+
+  async function renderRecapRange(startBeat: number, endBeat: number) {
+    if (!project) return;
+    const id = project.id;
+    merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
+    const result = await renderRange({
+      params: { id },
+      body: { startBeat, endBeat },
+      invalidate: [`movie-recaps/${id}/render/ranges`, `movie-recaps/${id}`],
+    });
+    if (result.data) {
+      setProject(result.data.project);
+      if (result.data.range.warning) toast.warning(`Beats ${startBeat}–${endBeat} rendered with a timeline warning.`);
+      else toast.success(`Beats ${startBeat}–${endBeat} rendered.`);
+    } else {
+      const refreshed = await pollProject({ params: { id }, force: true });
+      if (refreshed.data) setProject(refreshed.data);
+      toast.error(result.error?.error ?? "Could not render the selected beats.");
+    }
   }
 
   async function cancelRecapRender() {
@@ -963,6 +985,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               project={project}
               onRenderPreview={renderRecapPreview}
               rendering={rendering}
+              onRenderRange={renderRecapRange}
+              renderingRange={renderingRange}
               onCancelRender={cancelRecapRender}
               cancelling={cancelling}
             />
@@ -1010,15 +1034,82 @@ function Review({
   project,
   onRenderPreview,
   rendering,
+  onRenderRange,
+  renderingRange,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
+  onRenderRange: (startBeat: number, endBeat: number) => Promise<void>;
+  renderingRange: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
 }) {
+  const [renderMode, setRenderMode] = useState<"full" | "range">("full");
+  const [startBeat, setStartBeat] = useState("1");
+  const [endBeat, setEndBeat] = useState("1");
+  const fullVideoSection = useRef<HTMLDivElement>(null);
+  const rangeVideosSection = useRef<HTMLDivElement>(null);
+  const beatCount = project.renderScript?.length ?? 0;
+  const { data: ranges, trigger: refreshRanges } = useRead((api) => api("movie-recaps/:id/render/ranges").GET({ params: { id: project.id } }));
+  const { trigger: deleteRange } = useWrite((api) => api("movie-recaps/:id/render/ranges/:rangeId").DELETE());
+  const sortedRanges = [...(ranges ?? [])].sort((a, b) =>
+    a.startBeat - b.startBeat || a.endBeat - b.endBeat || b.createdAt.localeCompare(a.createdAt)
+  );
+  const activeRange = ranges?.find((range) => range.status === "running");
+
+  useEffect(() => {
+    try {
+      const savedMode = window.localStorage.getItem(`movie-recap:render-mode:${project.id}`);
+      if (savedMode === "full" || savedMode === "range") setRenderMode(savedMode);
+    } catch {
+      // The selector still works when browser storage is unavailable.
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    const hiddenSection = renderMode === "full" ? rangeVideosSection.current : fullVideoSection.current;
+    hiddenSection?.querySelectorAll("video").forEach((video) => video.pause());
+  }, [renderMode]);
+
+  function chooseRenderMode(value: string) {
+    if (value !== "full" && value !== "range") return;
+    setRenderMode(value);
+    try {
+      window.localStorage.setItem(`movie-recap:render-mode:${project.id}`, value);
+    } catch {
+      // The selector still works when browser storage is unavailable.
+    }
+  }
+
+  function confirmDeleteRange(rangeId: string, start: number, end: number) {
+    ConfirmDialog.show({
+      title: "Delete range render?",
+      content: `The video for beats ${start}–${end} will be permanently deleted.`,
+      confirmButtonLabel: "Delete video",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        const result = await deleteRange({ params: { id: project.id, rangeId }, invalidate: [`movie-recaps/${project.id}/render/ranges`] });
+        if (result.error) toast.error(result.error.error);
+        else {
+          dismiss();
+          await refreshRanges({ params: { id: project.id }, force: true });
+          toast.success("Range render deleted.");
+        }
+      },
+    });
+  }
+
+  async function downloadRange(rangeId: string) {
+    const result = await apiClient("movie-recaps/:id/render/ranges/:rangeId/download").GET({
+      params: { id: project.id, rangeId },
+    });
+    if (result.data) window.location.assign(result.data.url);
+    else toast.error(result.error?.error ?? "Could not download the range video.");
+  }
+
   const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";
   const stageLabel = project.renderStage
     ? {
@@ -1038,16 +1129,14 @@ function Review({
       }[project.renderStage]
     : null;
   const mockTag = project.renderIsMock && project.renderStatus !== "idle" ? " (mock)" : "";
-  const statusLabel = project.renderStatus === "running" ? stageLabel ?? "Starting…" : { idle: "Not rendered yet", running: "Rendering…", done: "Done", failed: "Failed" }[project.renderStatus];
+  const statusLabel = project.renderStatus === "running" ? `${activeRange ? "Range: " : ""}${stageLabel ?? "Starting…"}` : { idle: "Not rendered yet", running: "Rendering…", done: "Done", failed: "Failed" }[project.renderStatus];
   return <div>
     <div className="rounded-xl border border-line bg-panel-2 p-4">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-sm font-medium">Render preview</span>
         <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}{mockTag}</span>
       </div>
-      <p className="mb-4 text-xs text-fg-2">
-        <span className="font-medium text-fg">Mock</span> uses canned text and the shared timing planner over the source — no TTS or API cost — for checking framing, logo, and subtitle design. <span className="font-medium text-fg">Preview</span> uses the saved narration.wav and the same planner used by the final render. Mock stays silent. Styled subtitles are burned after mirroring, so captions and logos remain readable.
-      </p>
+      <p className="mb-4 text-xs text-fg-2">Render the complete story or just the beats you want to check. Choose a mode to review its videos below.</p>
       {/* The stepper replaces watching one line of text change for minutes.
           It is hidden while idle, where seven grey dots would say nothing the
           "Not rendered yet" label does not already say. */}
@@ -1057,13 +1146,57 @@ function Review({
         </div>
       )}
       {project.renderStatus === "failed" && project.renderError && <p className="mb-4 text-sm text-danger">{project.renderError}</p>}
-      <div className="flex flex-wrap items-center gap-3">
-        <LoadingButton loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
-        <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !project.renderScript?.length} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>
-        {!project.renderScript?.length && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
-        {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
+      <div className="rounded-lg border border-line bg-panel p-4">
+        <div className="mb-3 flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">Video render</span></div>
+        <div className="max-w-xs">
+          <div className="mb-1.5 text-xs font-medium text-fg-2">Render selection</div>
+          <Select value={renderMode} onChange={chooseRenderMode}>
+            <SelectOption value="full" label="Full" />
+            <SelectOption value="range" label="Range" />
+          </Select>
+        </div>
+        {renderMode === "range" && (
+          <div className="mt-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><div className="mb-1.5 text-xs font-medium text-fg-2">Start beat</div><Select value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text.slice(0, 42)}`} />)}</Select></div>
+              <div><div className="mb-1.5 text-xs font-medium text-fg-2">End beat</div><Select value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text.slice(0, 42)}`} />)}</Select></div>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {renderMode === "full" ? (
+            <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>
+          ) : (
+            <LoadingButton variant="primary" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Selected Beats</LoadingButton>
+          )}
+          <LoadingButton className="!border-mock-preview !text-mock-preview hover:!bg-mock-preview-hover" loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
+          {renderMode === "full" && !beatCount && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
+          {renderMode === "range" && <span className="text-xs text-fg-3">Beats {startBeat}–{endBeat}</span>}
+          {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
+        </div>
       </div>
-      {project.renderStatus === "done" && project.renderOutputUrl && <MovieRecapRenderPlayer project={project} />}
+    </div>
+
+    <div ref={fullVideoSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "full" ? "" : "hidden"}`}>
+      <div className="flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">{project.renderIsMock ? "Mock preview" : "Full video"}</span></div>
+      {project.renderOutputUrl && project.renderWarning && <Alert variant="warning" condensed title="Timeline warning" description={project.renderWarning} className="mt-4" />}
+      {project.renderOutputUrl ? <MovieRecapRenderPlayer project={project} /> : <p className="mt-4 rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No full video yet.</p>}
+    </div>
+
+    <div ref={rangeVideosSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "range" ? "" : "hidden"}`}>
+      <div className="mb-1 flex items-center gap-2"><Scissors size={16} className="text-accent" /><span className="text-sm font-medium">Range videos</span><span className="ml-auto text-xs text-fg-3">{ranges?.length ?? 0}</span></div>
+      <p className="mb-4 text-xs text-fg-2">Selected beat renders stay here for review and download.</p>
+      {!ranges?.length ? <p className="rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No range videos yet.</p> : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {sortedRanges.map((range) => <div key={range.id} className="rounded-lg border border-line bg-panel p-3">
+            <div className="mb-2 flex items-start gap-2"><div className="min-w-0 flex-1"><div className="text-sm font-medium">Beats {range.startBeat}–{range.endBeat}</div><div className="text-xs text-fg-3">{new Date(range.createdAt).toLocaleString()} {range.durationSeconds ? `· ${formatDuration(range.durationSeconds)}` : ""}</div></div><span className={`text-xs ${range.status === "failed" ? "text-danger" : range.status === "done" ? "text-ok" : "text-fg-3"}`}>{range.status === "running" ? "Rendering…" : range.status === "done" ? "Ready" : "Failed"}</span></div>
+            {range.error && <p className="mb-2 text-xs text-danger">{range.error}</p>}
+            {range.warning && <Alert variant="warning" condensed title="Timeline warning" description={range.warning} className="mb-3" />}
+            {range.outputUrl && <video controls preload="metadata" src={range.outputUrl} className="mb-3 w-full rounded-md bg-panel-2" />}
+            <div className="flex gap-2">{range.outputUrl && <Button className="!h-8 !px-2 text-xs" onClick={() => void downloadRange(range.id)}>Download</Button>}<Button variant="ghost" className="!h-8 !px-2 text-xs" disabled={range.status === "running"} onClick={() => confirmDeleteRange(range.id, range.startBeat, range.endBeat)}><Trash2 size={14} /> Delete</Button></div>
+          </div>)}
+        </div>
+      )}
     </div>
 
     <MovieRecapRenderHistory projectId={project.id} />

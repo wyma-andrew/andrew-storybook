@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/api/auth-guard";
 import { featuresFromProfile } from "@/lib/api/features";
 import { FEATURE_KEYS, type FeatureKey } from "@/lib/constants/features";
-import { chapterPrefix, deletePrefix, movieRecapProjectPrefix } from "@/lib/r2";
+import { chapterPrefix, deletePrefix, movieRecapProjectPrefix, translateProjectPrefix } from "@/lib/r2";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import type { AdminUser } from "@/lib/api/types";
 
@@ -70,6 +70,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { data: recaps } = await db.from("movie_recap_projects").select("id").eq("owner_id", id);
     for (const recap of recaps ?? []) await deletePrefix(movieRecapProjectPrefix(recap.id));
+
+    const { data: translations, error: translationsError } = await db.from("translate_projects").select("id").eq("owner_id", id);
+    if (translationsError) throw translationsError;
+    for (const project of translations ?? []) await deletePrefix(translateProjectPrefix(project.id));
 
     const { data: stories } = await db.from("stories").select("id").eq("owner_id", id);
     const storyIds = (stories ?? []).map((story) => story.id);

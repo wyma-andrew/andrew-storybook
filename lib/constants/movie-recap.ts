@@ -145,11 +145,12 @@ export const MOVIE_RECAP_EDIT = {
 } as const;
 
 export const MOVIE_RECAP_PLAYBACK_SPEED = MOVIE_RECAP_EDIT.playbackSpeed;
-// A shortage beat may slow below the baseline so it stays moving instead of
-// freezing immediately. These are policy limits, not per-render guesses.
-export const MOVIE_RECAP_MIN_PLAYBACK_SPEED = 0.65;
+// The mirror case: a beat with footage to spare speeds up to at most this before
+// the rest is trimmed, so more of the scene is seen. 10% over real time does not
+// read as fast-forward; past ~1.15x it starts to.
+export const MOVIE_RECAP_MAX_PLAYBACK_SPEED = 1.1;
 export const MOVIE_RECAP_TINY_FREEZE_S = 0.15;
-export const MOVIE_RECAP_TIMELINE_FRAME_REPAIR_LIMIT = 2;
+export const MOVIE_RECAP_TIMELINE_WARNING_FRAME_THRESHOLD = 2;
 
 // All cached narration masters use this format. Keeping it beside the edit
 // policy makes the audio timeline just as configurable as the picture timeline.
@@ -159,7 +160,7 @@ export const MOVIE_RECAP_NARRATION_SAMPLE_RATE = 24_000;
 // narration length owns the timeline, and picture is trimmed, slowed or frozen
 // per beat to match it. Individual TTS caches stay at the provider output rate,
 // so tuning this rebuilds narration.wav without synthesizing unchanged speech.
-export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.2;
+export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.05;
 
 // While one beat preview plays, prepare this many following beats so sequential
 // playback normally advances without waiting on R2 or ffmpeg.
@@ -534,9 +535,9 @@ export const MOVIE_RECAP_KEYFRAMES_PER_SCENE = 3;
 // One rate for the whole recap is what a person hears as a reading. `min`/`max`
 // multiply the voice's own rate, so 1.15 on a +15% voice reads at +32%.
 //
-// Past `max` the fit stops: the recap simply runs longer than its source, the
-// last block holds a frame, and the Transcript step says which block has too
-// much text for its timestamps. A line read at +70% is not a recap, it is an
+// Past `max` the voice is no longer accelerated to fit. Short blocks use the
+// footage planner's required slowdown to keep moving instead; extreme ratios
+// may make slow motion visible. A line read at +70% is not a recap, it is an
 // auctioneer.
 //
 // `tolerance` is the band inside which nothing is re-synthesized — a second TTS

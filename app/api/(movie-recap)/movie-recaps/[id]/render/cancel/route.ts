@@ -7,11 +7,26 @@ export const runtime = "nodejs";
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await supabaseRoute();
-  const { data, error } = await db.from("movie_recap_projects").select("id, render_status").eq("id", id).single();
+  const { data, error } = await db.from("movie_recap_projects").select("id, render_status, render_output_url").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
 
   const cancelled = cancelMovieRecapRender(data.id);
   if (!cancelled && data.render_status === "running") {
+    const { data: range } = await db.from("movie_recap_range_renders").select("id")
+      .eq("project_id", id).eq("status", "running").maybeSingle();
+    if (range) {
+      await db.from("movie_recap_range_renders").update({
+        status: "failed", error: "Cancelled.", updated_at: new Date().toISOString(),
+      }).eq("id", range.id);
+      await db.from("movie_recap_projects").update({
+        render_status: data.render_output_url ? "done" : "idle",
+        render_error: null,
+        render_stage: null,
+        render_progress_current: null,
+        render_progress_total: null,
+      }).eq("id", id);
+      return NextResponse.json({ cancelled: true });
+    }
     // No live AbortController for this id — a process restart wipes the map
     // without ever reaching the pipeline's own catch block, orphaning the row at
     // "running" forever. Resetting it here is what unsticks that.

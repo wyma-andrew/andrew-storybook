@@ -47,7 +47,8 @@ app/
     bible-entries/             Edit shared story-bible entries and images
     shots/                     Store/clear user prompt overrides
     voice-overs/               Edit narration text overrides and shot ranges
-    (movie-recap)/movie-recaps/ Recap CRUD, multipart source upload, logo upload
+    (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
+    (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
     labs/voice/                Authenticated proxy to the self-hosted TTS lab worker
   (app)/                       Shared layout.tsx: renders MobileNavProvider, Sidebar and the
                                rounded panel once, so they survive client-side navigation here
@@ -55,6 +56,8 @@ app/
       stories/                 Story list/detail and three-step chapter UI (URL: /stories)
     (movie-recap)/
       movie-recap/             Recap project list + five-step editor (URL: /movie-recap)
+    (translate)/
+      translate/               Translate project list, upload and editor (URL: /translate)
     account/                   Email display and password change
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
@@ -64,7 +67,7 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Translate, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -121,10 +124,10 @@ return normal API authentication errors.
 
 ### Feature access
 
-Stories, Movie Recap, and Voice Lab are granted per user. The flags live on
+Stories, Movie Recap, Translate, and Voice Lab are granted per user. The flags live on
 `profiles` (one row per auth user, created by trigger) and are enforced by the
 `has_feature()` SQL function, applied as a restrictive policy on every gated
-table — `movie_recap_projects`, and `stories` with each story-scoped child.
+table — `movie_recap_projects`, `translate_projects`, and `stories` with each story-scoped child.
 `requireFeature()` in `lib/api/auth-guard.ts` adds a 403 that names the feature,
 and is the only boundary for Voice Lab, which owns no table. A
 `layout.tsx` per feature route group redirects to `/no-access`, and the sidebar
@@ -202,10 +205,10 @@ Building that script is its own run (`lib/movie-recap-script.ts`,
 `POST movie-recaps/:id/script`), and it stops before anything is cut. It speaks
 every beat through `lib/tts/` (Azure Speech), caches each content-addressed beat,
 then stores a combined `narration.wav` and JSON beat boundaries in R2. Narration
-is the master audio timeline. Every beat uses the fixed 1.2x narration rate;
+is the master audio timeline. Every beat uses the fixed 1.0x post-synthesis narration rate;
 source duration never changes it. Picture follows each resulting beat duration:
-it uses a 0.75x baseline, slows shortage beats to the configured minimum, then
-trims excess footage or freezes the final frame. Editing and choosing **Re Build
+it uses a 0.75x baseline, slows shortage beats to the configured minimum and
+speeds surplus beats up to 1.1x, then trims or freezes whatever is left. Editing and choosing **Re Build
 this beat** re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`),
 replaces its section in the existing master, and shifts later timing boundaries
 by the duration delta. A missing, incompatible, or invalid master falls back to
@@ -223,7 +226,8 @@ are prepared concurrently and kept as browser object URLs for smooth handoff.
 The render (`lib/movie-recap-render.ts`) is then ffmpeg. The shared timeline
 planner samples each narration beat in a configurable 3 source seconds retained
 / 1 source second skipped cadence. It uses 0.75x as the picture baseline, may
-slow a shortage beat to the configured minimum, then trims or freezes only that
+slow a shortage beat to the configured minimum or speed a surplus beat up to
+1.1x, then trims or freezes only that
 beat to its narration duration. Footage is never borrowed across beats.
 Captions follow the cached narration beat timings, and the final MP4 is built
 from the same beat-fitted footage-only frames plus the narration track.
@@ -243,6 +247,14 @@ WAV. Review displays the combined video plus a full-width audio player and
 separate authenticated download links for footage and narration. Download GETs
 validate project access through RLS, then redirect to short-lived R2 URLs with
 attachment filenames; large media bytes do not pass through the Next server.
+
+Review can also render an inclusive start/end beat range as a standalone MP4.
+It reuses the saved narration master, trims audio at the selected beat
+boundaries, and renders only those beats with captions rebased to zero. These
+outputs live in `movie_recap_range_renders` and R2, separate from the full
+render columns. Full and range renders share one project render claim, progress,
+and cancellation. Timeline mismatches continue to export and persist a warning
+with the output for Review. Mock Preview remains independent of the Full/Range selector.
 
 The Review step also has a **Render Silent Timing Test** diagnostic. It bypasses
 the script and processes the complete original source as one continuous cadence:
@@ -281,6 +293,29 @@ the planner derived from the source — spare scenes, cuts, motion — in R2
 the split pass and transcription, and runs TTS and ffmpeg on the words as
 written. Only the text is patchable — the shots under a beat are already the
 finished cut.
+
+### Translate
+
+- UI: `app/(app)/(translate)/translate/` and `components/translate/`
+- API: `app/api/(translate)/translate-projects/`
+- Storage: `translate_projects` and project-scoped Cloudflare R2 objects
+
+Each user owns Translate projects under their own per-user feature gate.
+A project stores the original video in R2 through resumable multipart upload,
+the supplied original-language SRT in Postgres, optional speech-aligned subtitle parts,
+an optional imported translated SRT, the active timing mode (original, synced, or translated), and up to eight normalized blur regions plus subtitle
+vertical position and size. Video replacement uploads to a separate R2 object
+and switches the source only after completion; saved subtitle work is retained.
+The Customize preview follows the uploaded video's dimensions. Users drag or
+resize blur areas and adjust subtitle height with a slider; subtitles stay
+centered. Auto sync transcribes source audio with word timestamps, splits
+original-language SRT cues into sentences or short clauses, and matches each part
+to nearby transcript words even when the supplied cue is early or late. A local
+pause and punctuation fallback can time a cue when text matching fails. The timed
+speech transcript is cached in project-scoped R2 per source video; unmatched cues retain
+their original timing. Users can switch between original and synced timing without
+discarding either; an explicit delete removes synced timing. The server downloads the original video, burns the blur
+and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 
 ### Burmese Voice Lab
 
@@ -445,6 +480,8 @@ auth.users
 
 auth.users
   -> movie_recap_projects.owner_id
+       -> movie_recap_range_renders.project_id
+  -> translate_projects.owner_id
 
 chapter_assets.bible_entry_id -> bible_entries.id (nullable)
 voice_over_segments.start_shot_id / end_shot_id -> shots.id
@@ -464,6 +501,8 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `shots` | Ordered prompts, overrides, references, beat, framing scale, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
+| `movie_recap_range_renders` | Saved output and beat bounds for standalone range renders |
+| `translate_projects` | Owned source upload, SRT, blur/subtitle settings, and rendered MP4 |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;
 normal story deletion is soft deletion through `stories.deleted_at`, while the
@@ -490,12 +529,16 @@ storyboard shot ranges as a separate narration overlay. The UI ships a dark and 
 light theme, chosen by the user in the account menu (dark by default, OS
 preference deliberately ignored).
 
-Movie Recap phase one is implemented as owner-scoped projects with resumable
-R2 source upload, playable preview, persisted settings/customization, and a
-ready-for-generation handoff. Recap processing and output are not implemented.
+Movie Recap projects support resumable source upload, playable preview,
+persisted settings/customization, transcript/script/render processing, full
+and saved beat-range video outputs, and output history.
+
+Translate projects persist a replaceable source video, original-language SRT, selectable
+original, speech-aligned, or imported translated timing, editable blur and subtitle placement, and a
+rendered MP4.
 
 Accounts are created and deleted by an administrator at `/admin`, which also
-grants each account its Stories, Movie Recap, and Voice Lab access; deleting an
+grants each account its Stories, Movie Recap, Translate, and Voice Lab access; deleting an
 account removes its R2 objects before the account itself. Admin is
 `profiles.is_admin`, granted from the same page; `ADMIN_EMAILS` remains as a
 break-glass override.
@@ -521,6 +564,7 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Shot prompts holding the location reference | `history/shot-location-consistency.md` |
 | Chapter image gallery and R2 uploads | `history/chapter-images.md` |
 | Movie Recap phase-one projects and uploads | `history/movie-recap.md` |
+| Translated SRT projects and rendering | `history/translate.md` |
 | Per-user feature access and the admin user manager | `history/admin-users.md` |
 | Story export/import bundle format | `history/story-transfer.md` |
 | Burmese self-hosted narration experiments | `history/voice-lab.md` |

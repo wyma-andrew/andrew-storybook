@@ -5,13 +5,58 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
+import type { TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
 
 export type ApiSchema = {
+  "translate-projects": {
+    GET: { data: TranslateProjectListItem[] };
+    POST: { data: TranslateProject; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "translate-projects/:id": {
+    GET: { data: TranslateProject };
+    PATCH: { data: TranslateProject; body: TranslateProjectPatch };
+    DELETE: { data: null };
+  };
+  "translate-projects/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: TranslateProject };
+  };
+  "translate-projects/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "translate-projects/:id/source/multipart/complete": {
+    POST: { data: TranslateProject; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "translate-projects/:id/source/replacement": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: TranslateProject; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "translate-projects/:id/source/replacement/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "translate-projects/:id/source/replacement/complete": {
+    POST: { data: TranslateProject; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "translate-projects/:id/render": {
+    POST: { data: TranslateProject };
+  };
+  "translate-projects/:id/align": {
+    POST: { data: TranslateProject };
+  };
+  "translate-projects/:id/render/download": {
+    GET: { data: { url: string } };
+  };
   "labs/voice/health": {
     GET: {
       data: {
@@ -177,6 +222,19 @@ export type ApiSchema = {
       data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null };
       body: { mock?: boolean };
     };
+  };
+  "movie-recaps/:id/render/ranges": {
+    GET: { data: MovieRecapRangeRender[] };
+    POST: {
+      data: { project: MovieRecapProject; range: MovieRecapRangeRender; renderLog: MovieRecapRenderLog | null };
+      body: { startBeat: number; endBeat: number };
+    };
+  };
+  "movie-recaps/:id/render/ranges/:rangeId": {
+    DELETE: { data: null };
+  };
+  "movie-recaps/:id/render/ranges/:rangeId/download": {
+    GET: { data: { url: string } };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

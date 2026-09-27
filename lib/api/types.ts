@@ -51,6 +51,19 @@ export type MovieRecapRenderLog = {
   narrationRate?: number;
 };
 
+export type MovieRecapRangeRender = {
+  id: string;
+  projectId: string;
+  startBeat: number;
+  endBeat: number;
+  status: "running" | "done" | "failed";
+  error: string | null;
+  warning: string | null;
+  outputUrl: string | null;
+  durationSeconds: number | null;
+  createdAt: string;
+};
+
 export type MovieRecapProject = {
   id: string;
   name: string;
@@ -135,6 +148,7 @@ export type MovieRecapProject = {
   renderStatus: "idle" | "running" | "done" | "failed";
   renderIsMock: boolean;
   renderError: string | null;
+  renderWarning: string | null;
   renderStage: MovieRecapRenderStage | null;
   renderProgressCurrent: number | null;
   renderProgressTotal: number | null;

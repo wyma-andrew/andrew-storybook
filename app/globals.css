@@ -36,6 +36,9 @@
   --color-accent: var(--c-accent);
   --color-accent-dim: var(--c-accent-dim);
   --color-on-accent: var(--c-on-accent);
+  --color-video-subtitle: var(--c-video-subtitle);
+  --color-mock-preview: var(--c-mock-preview);
+  --color-mock-preview-hover: var(--c-mock-preview-hover);
   --color-ok: var(--c-ok);
   --color-warn: var(--c-warn);
   --color-rednote: var(--c-rednote);
@@ -96,6 +99,9 @@ html.dark {
   --c-accent: #7aa2d8;
   --c-accent-dim: #141c28;
   --c-on-accent: #0a0f18;
+  --c-video-subtitle: #ffffff;
+  --c-mock-preview: #b39ddb;
+  --c-mock-preview-hover: #221b32;
   --c-ok: #5f8f6a;
   --c-warn: #8f7a4a;
   --c-rednote: #ff2e4d;
@@ -209,6 +215,9 @@ html.light {
   --c-accent: #1e3a6b;
   --c-accent-dim: #e6ecf6;
   --c-on-accent: #ffffff;
+  --c-video-subtitle: #ffffff;
+  --c-mock-preview: #6b4fa3;
+  --c-mock-preview-hover: #f1ebf8;
   --c-ok: #3f7a4f;
   --c-warn: #8a6a25;
   --c-rednote: #ff2e4d;

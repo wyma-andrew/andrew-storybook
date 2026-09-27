@@ -102,6 +102,14 @@ export function movieRecapProjectPrefix(projectId: string) {
   return `movie-recaps/${projectId}/`;
 }
 
+export function translateProjectPrefix(projectId: string) {
+  return `translate-projects/${projectId}/`;
+}
+
+export function translateObjectKey(projectId: string, kind: "source" | "render", fileName: string) {
+  return `${translateProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+}
+
 export function movieRecapAssetPrefix(projectId: string, kind: "source" | "narration" | "render" | "subtitle" | "analysis") {
   return `${movieRecapProjectPrefix(projectId)}${kind}/`;
 }
@@ -211,11 +219,60 @@ export async function deleteObject(objectKey: string) {
   await r2().send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
 }
 
+export async function objectExists(objectKey: string) {
+  try {
+    await r2().send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: objectKey }));
+    return true;
+  } catch (error) {
+    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return false;
+    throw error;
+  }
+}
+
 // Server-generated files (render output, subtitles) never come from a browser
 // upload, so the server writes them directly — no presigned URL involved.
 export async function putObject(objectKey: string, body: Buffer, contentType: string) {
   await r2().send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: objectKey, Body: body, ContentType: contentType }));
   return publicUrlFor(objectKey);
+}
+
+export async function uploadFileToR2(objectKey: string, filePath: string, contentType: string) {
+  const file = await open(filePath, "r");
+  let uploadId: string | null = null;
+  try {
+    const size = (await file.stat()).size;
+    if (size < 16 * 1024 * 1024) {
+      const bytes = Buffer.allocUnsafe(size);
+      let read = 0;
+      while (read < size) {
+        const result = await file.read(bytes, read, size - read, read);
+        if (!result.bytesRead) throw new Error("Render output ended before upload completed.");
+        read += result.bytesRead;
+      }
+      return putObject(objectKey, bytes, contentType);
+    }
+    const chunkSize = Math.max(16 * 1024 * 1024, Math.ceil(size / 10_000 / (1024 * 1024)) * 1024 * 1024);
+    uploadId = await createMultipartUpload(objectKey, contentType);
+    const parts: { partNumber: number; etag: string }[] = [];
+    for (let offset = 0, partNumber = 1; offset < size; offset += chunkSize, partNumber++) {
+      const bytes = Buffer.allocUnsafe(Math.min(chunkSize, size - offset));
+      let read = 0;
+      while (read < bytes.length) {
+        const result = await file.read(bytes, read, bytes.length - read, offset + read);
+        if (!result.bytesRead) throw new Error("Render output ended before upload completed.");
+        read += result.bytesRead;
+      }
+      const uploaded = await r2().send(new UploadPartCommand({ Bucket: R2_BUCKET, Key: objectKey, UploadId: uploadId, PartNumber: partNumber, Body: bytes }));
+      if (!uploaded.ETag) throw new Error("R2 did not return an upload part ETag.");
+      parts.push({ partNumber, etag: uploaded.ETag });
+    }
+    await completeMultipartUpload(objectKey, uploadId, parts);
+    uploadId = null;
+    return publicUrlFor(objectKey);
+  } finally {
+    if (uploadId) await abortMultipartUpload(objectKey, uploadId).catch(() => undefined);
+    await file.close();
+  }
 }
 
 // Reads a server-written object back as text. Only used for the render

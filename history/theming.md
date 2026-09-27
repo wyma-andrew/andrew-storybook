@@ -5,6 +5,19 @@ palettes), `lib/theme.ts`, `components/ThemeProvider.tsx`, the theme item in
 `components/AccountMenu.tsx`, `app/layout.tsx`, the `--scene-*` variables read by
 `lib/constants/scene-colors.ts`.
 
+## 2026-09-26 — Video subtitles stay white in both themes
+
+**Decision:** the Translate subtitle preview uses a dedicated `video-subtitle`
+token set to white in both palettes. It previews text burned over footage,
+whose color does not change with the app theme; the JSX still uses a semantic
+token as required by the palette rule.
+
+## 2026-09-25 — Muted violet for Mock Preview
+
+**Decision:** the Movie Recap Mock Preview outline uses dedicated violet text,
+border, and hover tokens in both palettes. It distinguishes the preview action
+from the primary blue render button without making it a competing filled action.
+
 ## 2026-09-12 — Theme is a user choice, dark is the default; no OS following
 
 **Decision: `<html>` always carries `dark` or `light`. The default is `dark` for

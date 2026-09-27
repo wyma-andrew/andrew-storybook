@@ -1,5 +1,17 @@
 Covers: app/(app)/admin/**, app/(app)/no-access/**, app/api/admin/**, app/api/auth/me/route.ts, lib/api/auth-guard.ts, lib/api/features.ts, lib/api/feature-page.ts, lib/constants/features.ts, components/Sidebar.tsx (feature filtering), supabase/migrations/20260918100000_user_feature_access.sql
 
+## 2026-09-26 — Translate is independently granted
+
+**Decision:** add `can_use_translate` to profiles and expose it through the
+existing admin switches and `has_feature()` function. It defaults to false
+for new and existing users. The Translate table uses a restrictive policy,
+and deleting an account clears its Translate R2 prefix before removing the
+auth user.
+
+**Why:** Translate is an independent top-level feature with its own projects.
+The existing feature model grants each surface explicitly; sharing Movie Recap
+access would give users Translate without an admin choice.
+
 ## 2026-09-18 — Per-user feature access and an admin user manager
 
 **Decision:** a `profiles` table, one row per `auth.users` row created by

@@ -10,6 +10,7 @@ import type {
   Shot,
   VoiceOverSegment,
   MovieRecapProject,
+  MovieRecapRangeRender,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
@@ -19,6 +20,21 @@ import { isShotScale } from "@/lib/constants/shot-scales";
 import { normalizeMovieRecapNarrationManifest } from "../movie-recap-manifest";
 
 type Row = Record<string, unknown>;
+
+export function mapMovieRecapRangeRender(r: Row): MovieRecapRangeRender {
+  return {
+    id: r.id as string,
+    projectId: r.project_id as string,
+    startBeat: Number(r.start_beat),
+    endBeat: Number(r.end_beat),
+    status: r.status as MovieRecapRangeRender["status"],
+    error: (r.error as string) ?? null,
+    warning: (r.warning as string) ?? null,
+    outputUrl: (r.output_url as string) ?? null,
+    durationSeconds: r.duration_seconds == null ? null : Number(r.duration_seconds),
+    createdAt: r.created_at as string,
+  };
+}
 
 export function mapMovieRecapProject(r: Row): MovieRecapProject {
   return {
@@ -75,6 +91,7 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     renderStatus: r.render_status as MovieRecapProject["renderStatus"],
     renderIsMock: Boolean(r.render_is_mock),
     renderError: (r.render_error as string) ?? null,
+    renderWarning: (r.render_warning as string) ?? null,
     renderStage: (r.render_stage as MovieRecapProject["renderStage"]) ?? null,
     renderProgressCurrent: r.render_progress_current == null ? null : Number(r.render_progress_current),
     renderProgressTotal: r.render_progress_total == null ? null : Number(r.render_progress_total),
