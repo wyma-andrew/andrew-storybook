@@ -51,10 +51,10 @@ export function MovieRecapPreview({
 }: {
   project: MovieRecapProject;
   videoUrl: string | null;
-  /** Which blur region the drag handles belong to; -1 for none. */
-  selectedBlur?: number;
+  /** Which blur region the drag handles belong to; null for none. */
+  selectedBlur?: number | null;
   onBlurChange?: (index: number, rect: BlurRect) => void;
-  onBlurSelect?: (index: number) => void;
+  onBlurSelect?: (index: number | null) => void;
   // The project's zoom, drawn as a CSS scale so the preview shows what the
   // render will burn. Passed in rather than read from the project here because
   // the caller already resolves "unset means the recommendation for this fit
@@ -75,21 +75,42 @@ export function MovieRecapPreview({
   const backfillBlurPx = movieRecapBackfillBlurCssPx(frameWidth, project.aspectRatio);
   const mirrored = project.mirrorEnabled && MOVIE_RECAP_LOOK.mirrorAspectRatios.includes(project.aspectRatio);
   const colorFilter = `contrast(${MOVIE_RECAP_LOOK.contrast}) saturate(${MOVIE_RECAP_LOOK.saturation})`;
-  const dragRef = useRef<
-    { pointerId: number; clientX: number; clientY: number; x: number; y: number; index: number } | null
-  >(null);
+  const dragRef = useRef<{
+    kind: "move" | "resize";
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    rect: BlurRect;
+    index: number;
+  } | null>(null);
+
+  function startDrag(event: React.PointerEvent<HTMLDivElement>, kind: "move" | "resize", index: number) {
+    const rect = project.blurRegions[index];
+    if (!rect) return;
+    onBlurSelect?.(index);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    dragRef.current = { kind, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, rect, index };
+  }
 
   function move(event: React.PointerEvent<HTMLDivElement>) {
     const start = dragRef.current;
     const frame = frameRef.current;
-    const region = start ? project.blurRegions[start.index] : undefined;
-    if (!start || !frame || !region || start.pointerId !== event.pointerId) return;
+    if (!start || !frame || start.pointerId !== event.pointerId) return;
     const bounds = frame.getBoundingClientRect();
-    onBlurChange?.(start.index, clampBlurRect({
-      ...region,
-      x: start.x + ((event.clientX - start.clientX) / bounds.width) * 100,
-      y: start.y + ((event.clientY - start.clientY) / bounds.height) * 100,
-    }));
+    const dx = ((event.clientX - start.clientX) / bounds.width) * 100;
+    const dy = ((event.clientY - start.clientY) / bounds.height) * 100;
+    const rect = start.kind === "resize"
+      ? { ...start.rect,
+          width: Math.min(100 - start.rect.x, Math.max(5, start.rect.width + dx)),
+          height: Math.min(100 - start.rect.y, Math.max(5, start.rect.height + dy)) }
+      : { ...start.rect, x: start.rect.x + dx, y: start.rect.y + dy };
+    onBlurChange?.(start.index, clampBlurRect(rect));
+  }
+
+  function endDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
   }
 
   function nudge(event: React.KeyboardEvent<HTMLDivElement>, index: number) {
@@ -110,6 +131,10 @@ export function MovieRecapPreview({
         <div className={project.aspectRatio === "9:16" ? "w-auto" : "w-full max-w-[620px]"}>
           <div
             ref={frameRef}
+            data-blur-frame
+            onPointerDown={(event) => {
+              if (event.target instanceof Element && !event.target.closest("[data-blur-region]")) onBlurSelect?.(null);
+            }}
             className={`relative overflow-hidden rounded-lg border border-line-2 bg-bg shadow-xl ${
               project.aspectRatio === "9:16" ? "h-[480px] w-auto" : "w-full max-w-[620px] h-auto"
             }`}
@@ -222,11 +247,12 @@ export function MovieRecapPreview({
               return (
                 <div
                   key={index}
+                  data-blur-region
                   role="button"
                   tabIndex={0}
                   aria-label={`Blur area ${index + 1}. Use arrow keys for one percent steps and Shift for five percent steps.`}
-                  className={`absolute z-20 grid touch-none place-items-center overflow-hidden rounded-md text-fg focus:outline-none focus:ring-2 focus:ring-accent ${
-                    selected ? "cursor-move border border-accent" : "cursor-pointer border border-line-2"
+                  className={`absolute z-20 touch-none rounded-md border-2 text-fg focus:outline-none focus:ring-2 focus:ring-accent ${
+                    selected ? "cursor-move border-accent" : "cursor-pointer border-transparent"
                   }`}
                   style={{
                     left: `${region.x}%`,
@@ -236,27 +262,23 @@ export function MovieRecapPreview({
                     backdropFilter: `blur(${blurPx.toFixed(2)}px)`,
                     WebkitBackdropFilter: `blur(${blurPx.toFixed(2)}px)`,
                   }}
-                  onPointerDown={(event) => {
-                    onBlurSelect?.(index);
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    dragRef.current = {
-                      pointerId: event.pointerId,
-                      clientX: event.clientX,
-                      clientY: event.clientY,
-                      x: region.x,
-                      y: region.y,
-                      index,
-                    };
-                  }}
+                  onPointerDown={(event) => startDrag(event, "move", index)}
                   onPointerMove={move}
-                  onPointerUp={(event) => {
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                    dragRef.current = null;
-                  }}
+                  onPointerUp={endDrag}
                   onPointerCancel={() => { dragRef.current = null; }}
                   onKeyDown={(event) => nudge(event, index)}
                 >
-                  {selected && <Grip size={18} />}
+                  {selected && <>
+                    <span className="pointer-events-none absolute top-1 left-1 rounded bg-panel/80 p-0.5 text-accent"><Grip size={13} /></span>
+                    <div
+                      className="absolute -right-1 -bottom-1 h-4 w-4 cursor-nwse-resize rounded-sm border-2 border-accent bg-panel"
+                      aria-hidden="true"
+                      onPointerDown={(event) => { event.stopPropagation(); startDrag(event, "resize", index); }}
+                      onPointerMove={(event) => { event.stopPropagation(); move(event); }}
+                      onPointerUp={(event) => { event.stopPropagation(); endDrag(event); }}
+                      onPointerCancel={(event) => { event.stopPropagation(); dragRef.current = null; }}
+                    />
+                  </>}
                 </div>
               );
             })}

@@ -171,7 +171,8 @@ its visual prompt to improve image-model recognition without changing that key.
 Users create resumable recap projects, upload one browser-playable source, read
 paste its transcript and Burmese story at the Transcript step,
 choose a Burmese narration voice from the shared TTS catalog, and preview
-aspect, subtitle, logo, and movable blur configuration. Every shot gets the
+aspect, subtitle, logo, and blur configuration. Blur areas can be added,
+removed, moved, resized, and set by percentage coordinates in Customize. Every shot gets the
 house look from `lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a
 blurred fill behind letterbox bars (`MOVIE_RECAP_LOOK`); there is no toggle, and
 no per-shot speed. Subtitle appearance is a two-option preset (yellow or
@@ -219,7 +220,9 @@ absent from both audio cache keys. Each saved beat has an inline playable previe
 `POST movie-recaps/:id/script/beat/preview`; it reuses the raw beat cache and
 applies the same configured overall narration rate as the master. There is no
 manual whole-master rebuild: a beat Re Build splices or fully rebuilds the
-master, and render materializes it if missing. **Resync with Main Script** alone
+master, and render materializes it if missing. Multiple beat Re Build clicks
+queue in the browser and run one at a time so each write uses the latest saved
+script and narration master. **Resync with Main Script** alone
 replaces beats from the Transcript story. Starting one beat preview continues through
 the following saved beats; while one plays, the next three configured-speed WAVs
 are prepared concurrently and kept as browser object URLs for smooth handoff.

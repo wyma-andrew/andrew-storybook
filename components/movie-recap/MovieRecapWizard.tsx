@@ -22,7 +22,7 @@ import {
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
-import { apiClient, useRead, useWrite } from "@/lib/spoosh";
+import { apiClient, useQueue, useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapScript } from "./MovieRecapScript";
@@ -98,6 +98,27 @@ function ChoiceButton({ selected, children, onClick, showSelectedIndicator = tru
       {selected && showSelectedIndicator && <span className="absolute top-2 right-2 grid h-5 w-5 place-items-center rounded-full bg-accent text-on-accent"><Check size={12} /></span>}
     </Button>
   );
+}
+
+function BlurNumberField({ label, value, min, onCommit }: { label: string; value: number; min: number; onCommit: (value: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  return <Input
+    type="number"
+    aria-label={label}
+    min={min}
+    max={100}
+    step={0.1}
+    value={editing ? text : String(Number(value.toFixed(1)))}
+    onFocus={() => { setText(String(Number(value.toFixed(1)))); setEditing(true); }}
+    onChange={(event) => setText(event.target.value)}
+    onBlur={() => {
+      const next = Number(text);
+      if (text.trim() && Number.isFinite(next)) onCommit(Math.min(100, Math.max(min, next)));
+      setEditing(false);
+    }}
+    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+  />;
 }
 
 type LogoTemplateDialogValues = {
@@ -198,7 +219,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
   const { trigger: renderRange, loading: renderingRange } = useWrite((api) => api("movie-recaps/:id/render/ranges").POST());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
-  const { trigger: rebuildBeat } = useWrite((api) => api("movie-recaps/:id/script/beat").POST());
+  const { trigger: rebuildBeat, tasks: beatRebuilds, removeSettled: removeSettledBeatRebuilds } = useQueue(
+    (api) => api("movie-recaps/:id/script/beat").POST(),
+    { concurrency: 1 },
+  );
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
@@ -219,7 +243,15 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // unmounts. Leaving the step is the one moment that can throw them away
   // without the user having asked for anything, so it asks.
   const [dirtyBeats, setDirtyBeats] = useState(0);
+  const pendingBeatIndexes = useRef(new Set<number>());
+  const savingBeats = new Set(pendingBeatIndexes.current);
+  const runningBeat = beatRebuilds.find((task) => task.status === "running");
+  const checkingBeat = (runningBeat?.input?.body as { index?: number } | undefined)?.index ?? null;
   const setStep = (target: StepNumber) => {
+    if (pendingBeatIndexes.current.size > 0 && target !== step) {
+      toast.error("Wait for the queued beat rebuilds to finish.");
+      return;
+    }
     if (step === 3 && target !== 3 && dirtyBeats > 0) {
       return new Promise<void>((resolve) => {
         ConfirmDialog.show({
@@ -248,9 +280,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
   const [logoAction, setLogoAction] = useState<"unchanged" | "template" | "custom" | "clear">("unchanged");
   const pendingLogoPreviewUrl = useRef<string | null>(null);
-  // Which beat is being re-spoken, so only that row shows a spinner.
-  const [checkingBeat, setCheckingBeat] = useState<number | null>(null);
-
   useEffect(() => () => {
     if (pendingLogoPreviewUrl.current) URL.revokeObjectURL(pendingLogoPreviewUrl.current);
   }, []);
@@ -286,6 +315,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
   async function saveAndGo(target: StepNumber) {
     if (!project) return;
+    if (pendingBeatIndexes.current.size > 0) {
+      toast.error("Wait for the queued beat rebuilds to finish.");
+      return;
+    }
     const body: MovieRecapProjectPatch = { currentStep: target };
     // Transcript fields edit the project draft and this writes them together,
     // including the voice Build Script will read in the next step.
@@ -352,7 +385,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // The paste half of the copyable prompt. Returns how many beats actually
   // changed so the component can say so rather than claiming a silent success.
   async function applyScriptBeats(edits: { index: number; text: string }[]) {
-    if (!project) return 0;
+    if (!project || pendingBeatIndexes.current.size > 0) return 0;
     const result = await applyBeats({ params: { id: project.id }, body: { edits } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not apply those beats.");
@@ -368,14 +401,16 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   async function saveScriptBeat(index: number, text: string) {
-    if (!project) return;
-    setCheckingBeat(index);
+    if (!project || pendingBeatIndexes.current.has(index)) return;
+    pendingBeatIndexes.current.add(index);
+    const projectId = project.id;
     try {
-      const result = await rebuildBeat({ params: { id: project.id }, body: { index, text, measure: true } });
+      const result = await rebuildBeat({ params: { id: projectId }, body: { index, text, measure: true } });
       if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
       else setProject(result.data);
     } finally {
-      setCheckingBeat(null);
+      pendingBeatIndexes.current.delete(index);
+      removeSettledBeatRebuilds();
     }
   }
 
@@ -712,7 +747,19 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
   // Which blur box the preview's drag handles belong to. Per visit, like any
   // other selection — it is not part of the project.
-  const [selectedBlur, setSelectedBlur] = useState(0);
+  const [selectedBlur, setSelectedBlur] = useState<number | null>(null);
+  const selectedBlurRegion = selectedBlur === null ? null : project?.blurRegions[selectedBlur] ?? null;
+
+  useEffect(() => {
+    if (selectedBlur === null) return;
+    const deselect = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && (target.closest("[data-blur-frame]") || target.closest("[data-blur-panel]"))) return;
+      setSelectedBlur(null);
+    };
+    document.addEventListener("pointerdown", deselect);
+    return () => document.removeEventListener("pointerdown", deselect);
+  }, [selectedBlur]);
 
   function updateBlur(index: number, patch: Partial<{ x: number; y: number; width: number; height: number }>) {
     if (!project) return;
@@ -734,7 +781,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               const active = step === number;
               const available = number <= maxStep;
               return (
-                <Button key={name} disabled={!available} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
+                <Button key={name} disabled={!available || (savingBeats.size > 0 && !active)} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
                   <span className={`mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
                   <span className="truncate text-xs sm:text-sm">{name}</span>
                 </Button>
@@ -765,6 +812,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                 applyingBeats={applyingBeats}
                 building={buildingScript}
                 checking={checkingBeat}
+                savingBeats={savingBeats}
                 cancelling={cancellingScript}
               />
             </div>
@@ -881,7 +929,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                       <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Logo opacity</span><span>{project.logoOpacity}%</span></span><input aria-label="Logo opacity" type="range" min={0} max={100} value={project.logoOpacity} onChange={(event) => merge({ logoOpacity: Number(event.target.value) })} className="w-full accent-accent" /></label>
                     </div>}
                   </div>}
-                  {tab === "blur" && <div>
+                  {tab === "blur" && <div data-blur-panel>
                     <label className="mb-5 flex items-center justify-between gap-3">
                       <span><span className="block text-sm font-medium">Dynamic background blur</span><span className="text-xs text-fg-3">Use a moving blurred copy behind the video in Contain mode.</span></span>
                       <Switch checked={project.dynamicBackgroundBlurEnabled} onChange={(checked) => merge({ dynamicBackgroundBlurEnabled: checked })} />
@@ -910,70 +958,43 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
                     <div className="space-y-2">
                       {project.blurRegions.map((region, index) => (
-                        <div
-                          key={index}
-                          className={`rounded-lg border p-3 ${index === selectedBlur ? "border-accent bg-panel" : "border-line bg-panel-2"}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedBlur(index)}
-                              className="flex-1 text-left text-xs font-medium"
-                            >
-                              Area {index + 1}
-                              <span className="ml-2 font-normal text-fg-3 tabular-nums">
-                                {Math.round(region.width)}% × {Math.round(region.height)}% at {Math.round(region.x)}%,{" "}
-                                {Math.round(region.y)}%
-                              </span>
-                            </button>
-                            <Button
-                              className="!h-7 !w-7 !px-0"
-                              aria-label={`Remove blur area ${index + 1}`}
-                              onClick={() => {
-                                merge({ blurRegions: project.blurRegions.filter((_, i) => i !== index) });
-                                setSelectedBlur((current) => (current >= index ? Math.max(0, current - 1) : current));
-                              }}
-                            >
-                              <Trash2 size={13} />
-                            </Button>
-                          </div>
-                          {index === selectedBlur && (
-                            <div className="mt-3 space-y-4">
-                              <label className="block">
-                                <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
-                                  <span>Width</span>
-                                  <span>{Math.round(region.width)}%</span>
-                                </span>
-                                <input
-                                  aria-label={`Blur area ${index + 1} width`}
-                                  type="range"
-                                  min={5}
-                                  max={100}
-                                  value={region.width}
-                                  onChange={(event) => updateBlur(index, { width: Number(event.target.value) })}
-                                  className="w-full accent-accent"
-                                />
-                              </label>
-                              <label className="block">
-                                <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
-                                  <span>Height</span>
-                                  <span>{Math.round(region.height)}%</span>
-                                </span>
-                                <input
-                                  aria-label={`Blur area ${index + 1} height`}
-                                  type="range"
-                                  min={5}
-                                  max={100}
-                                  value={region.height}
-                                  onChange={(event) => updateBlur(index, { height: Number(event.target.value) })}
-                                  className="w-full accent-accent"
-                                />
-                              </label>
-                            </div>
-                          )}
+                        <div key={index} className="flex items-center gap-2">
+                          <Button
+                            variant={index === selectedBlur ? "primary" : "secondary"}
+                            className="!h-8 flex-1 !justify-start !px-2 text-xs"
+                            onClick={() => setSelectedBlur(index)}
+                          >
+                            Area {index + 1} · {Math.round(region.width)} × {Math.round(region.height)}%
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="!h-8 !px-2"
+                            aria-label={`Remove blur area ${index + 1}`}
+                            onClick={() => {
+                              merge({ blurRegions: project.blurRegions.filter((_, i) => i !== index) });
+                              setSelectedBlur(null);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
                         </div>
                       ))}
                     </div>
+                    {selectedBlurRegion && selectedBlur !== null && (
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        {(["x", "y", "width", "height"] as const).map((field) => (
+                          <label key={`${selectedBlur}:${field}`} className="text-xs text-fg-2">
+                            <span className="mb-1 block capitalize">{field} %</span>
+                            <BlurNumberField
+                              label={`Blur area ${selectedBlur + 1} ${field}`}
+                              min={field === "width" || field === "height" ? 5 : 0}
+                              value={selectedBlurRegion[field]}
+                              onCommit={(value) => updateBlur(selectedBlur, { [field]: value })}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>}
                 </div>
               </div>
@@ -1004,7 +1025,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                 <LoadingButton variant="primary" disabled={!project?.transcriptStory?.trim()} loading={saving} onClick={() => saveAndGo(3)}>Continue <ChevronRight size={16} /></LoadingButton>
               </div>
             )}
-            {step === 3 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(4)}>Continue <ChevronRight size={16} /></LoadingButton>}
+            {step === 3 && <LoadingButton variant="primary" loading={saving} disabled={savingBeats.size > 0} onClick={() => saveAndGo(4)}>Continue <ChevronRight size={16} /></LoadingButton>}
             {step === 4 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(5)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
           </div>
         </Wrap>

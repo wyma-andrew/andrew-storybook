@@ -27,6 +27,7 @@ export function MovieRecapScript({
   applyingBeats,
   building,
   checking,
+  savingBeats,
   cancelling,
 }: {
   project: MovieRecapProject;
@@ -43,6 +44,7 @@ export function MovieRecapScript({
   building: boolean;
   /** Index of the beat being re-spoken, or null. */
   checking: number | null;
+  savingBeats: ReadonlySet<number>;
   cancelling: boolean;
 }) {
   const script = project.renderScript ?? [];
@@ -269,7 +271,7 @@ export function MovieRecapScript({
           </div>
           <div className="flex items-center gap-2">
             {restorableAll.length > 0 && (
-              <LoadingButton loading={applyingBeats} disabled={busy} onClick={() => void onApplyBeats(restorableAll)}>
+              <LoadingButton loading={applyingBeats} disabled={busy || savingBeats.size > 0} onClick={() => void onApplyBeats(restorableAll)}>
                 <Undo2 size={14} /> Restore {restorableAll.length} original
                 {restorableAll.length === 1 ? "" : "s"}
               </LoadingButton>
@@ -280,7 +282,7 @@ export function MovieRecapScript({
                   {({ toggleMenu }) => (
                     <Button
                       className="!h-8 !w-8 !px-0"
-                      disabled={busy || building}
+                      disabled={busy || building || savingBeats.size > 0}
                       onClick={toggleMenu}
                     >
                       <MoreHorizontal size={16} />
@@ -288,7 +290,7 @@ export function MovieRecapScript({
                   )}
                 </MenuTrigger>
                 <MenuItem
-                  disabled={busy || !project.transcriptStory?.trim()}
+                  disabled={busy || savingBeats.size > 0 || !project.transcriptStory?.trim()}
                   onClick={() => confirmResync(onBuild, dirtyCount)}
                 >
                   <span className="text-danger">Resync with Main Script</span>
@@ -406,7 +408,7 @@ export function MovieRecapScript({
                     </span>
                     <Button
                       className="!h-7 !w-7 !px-0"
-                      disabled={busy || changed || Boolean(beat.audioStale) || previewingBeat !== null}
+                      disabled={busy || savingBeats.has(index) || changed || Boolean(beat.audioStale) || previewingBeat !== null}
                       aria-label={playingBeat === index ? `Pause beat ${index + 1}` : `Play beat ${index + 1} at configured speed`}
                       title={changed || beat.audioStale ? "Re Build this beat before previewing it" : "Play at configured narration speed"}
                       onClick={() => void toggleBeatPreview(index)}
@@ -425,14 +427,14 @@ export function MovieRecapScript({
                   <Textarea
                     rows={2}
                     value={texts[index] ?? ""}
-                    disabled={busy}
+                    disabled={busy || savingBeats.has(index)}
                     onChange={(event) => setTexts(texts.map((text, i) => (i === index ? event.target.value : text)))}
                   />
                   {(changed || restorable || beat.audioStale) && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {changed && (
                         <Button
-                          disabled={checking !== null}
+                          disabled={savingBeats.has(index)}
                           onClick={() =>
                             setTexts(texts.map((text, i) => (i === index ? serverTexts[index] : text)))
                           }
@@ -445,6 +447,7 @@ export function MovieRecapScript({
                         // restore is reviewed and then saved like any other edit,
                         // so it costs nothing until it is wanted.
                         <Button
+                          disabled={savingBeats.has(index)}
                           onClick={() => setTexts(texts.map((text, i) => (i === index ? beat.originalText! : text)))}
                         >
                           <Undo2 size={14} /> Restore original
@@ -453,8 +456,9 @@ export function MovieRecapScript({
                       {(changed || beat.audioStale) && (
                         <LoadingButton
                           variant="primary"
-                          loading={checking === index}
-                          disabled={busy || !texts[index]?.trim() || checking !== null}
+                          loading={savingBeats.has(index)}
+                          loadingText={checking === index ? "Rebuilding…" : "Queued…"}
+                          disabled={busy || !texts[index]?.trim() || savingBeats.has(index)}
                           onClick={() => onSave(index, texts[index])}
                         >
                           <RefreshCw size={14} /> Re Build this beat

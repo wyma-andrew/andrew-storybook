@@ -6349,3 +6349,62 @@ and reserve model calls for generating new narration.
 
 **Consequence:** preview playback is immediate and always the original sample;
 it does not demonstrate how the model will pronounce arbitrary narrative text.
+
+## 2026-09-28 — Queue beat rebuilds from the Narrative Script step
+
+**Decision:** allow Re Build on another edited beat while one is in progress.
+Queued requests run one at a time through Spoosh, with per-beat progress and
+drafts for other beats left editable. The active or queued beat cannot be edited
+again until its request completes. Resync, bulk restore, and leaving the step
+wait for the queue to drain.
+
+**Why:** each rebuild reads and replaces the shared `render_script` row and
+narration master. Parallel requests could overwrite another beat's text or
+splice against an outdated master. Serializing requests preserves both writes
+while letting the user submit the next beat immediately.
+
+**Consequence:** queued beats start generating after earlier requests finish;
+their buttons show a queued state during that wait.
+
+## 2026-09-28 — Match Translate's blur-area editing controls
+
+**Decision:** the Movie Recap Customize Blur tab keeps its existing list of up
+to eight output-frame percentage rectangles and adds the interaction already
+used in Translate: a drag handle to resize the selected rectangle, numeric
+X/Y/width/height fields, and deselection outside the preview and blur panel.
+Only the selected area shows editing chrome; all areas remain blurred in the
+preview and export.
+
+**Why:** the earlier Movie Recap controls moved rectangles on the preview but
+required separate width and height sliders, with no numeric position control.
+The shared interaction makes covering logos and subtitles more precise.
+
+**Consequence:** blur geometry and render settings are unchanged. The preview
+still uses Movie Recap's output frame, which can differ from the source-frame
+geometry used by Translate.
+
+## 2026-09-28 — Accept shared voice profiles in project storage
+
+**Decision:** allow `narrator` (Wai Yan) and `narrator-female` (Yuzana) in the
+Movie Recap project's voice-profile constraint alongside the two Azure IDs.
+Keep the existing default and saved selections.
+
+**Why:** the shared catalog already offered both profiles, but the earlier
+Azure-only database constraint rejected them when advancing from Transcript.
+
+**Consequence:** new shared voice selections save successfully; previously
+saved Azure selections retain their current voices.
+
+## 2026-09-28 — Allow natural Burmese breaks across adjacent timestamps
+
+**Decision, approved by the user:** the copied translation prompt keeps every
+source timestamp and one narration line per timestamp, but may move a dangling
+word or phrase into the immediately following line. The event order and beat
+timing stay aligned.
+
+**Why:** strictly ending each line at the source boundary can leave a Burmese
+subject or connected phrase stranded, making the narration sound unnatural.
+
+**Supersedes:** the 2026-09-22 prompt requirement for exact source-line text
+alignment. Timestamp preservation, line count, and text beside every timestamp
+remain required.

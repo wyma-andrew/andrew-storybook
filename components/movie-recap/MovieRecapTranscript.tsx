@@ -54,9 +54,10 @@ Do not change a technical code, model number, coordinate, or other identifier wh
 **TIMESTAMP & LINE MATCHING RULES:**
 
 1. **Strict 1-to-1 Preservation:** Keep EVERY single timestamp line from the source text. Do NOT merge, skip, drop, or omit any timestamp under any circumstances.
-2. **Line-by-Line Alignment:** Each timestamp in the output MUST correspond directly to the exact source text line and beat timing it belongs to.
+2. **Line-by-Line Alignment:** Each timestamp in the output MUST correspond to the source beat timing it belongs to. You may move a dangling word or phrase into the immediately following timestamp line when needed for natural Burmese phrasing; keep all events in their original order.
 3. **Flow Across Line Breaks:** Maintain a natural, continuous spoken narrative flow, but place a line break before every new timestamp to keep each visual beat synchronized. Do not combine text into longer paragraphs if it bypasses an existing timestamp beat.
 4. **No Standalone Timestamps:** Never output a timestamp on a line by itself without narration text next to it. Every timestamp must be immediately followed by its translated narration fragment.
+5. **Natural Line Breaks:** Do not end a line with a dangling word that grammatically belongs to the next line (e.g., a lone subject like "သူ" or a split phrase like "အဲဒီ / အချိန်ကျမှ"). Move that word to the start of the next timestamp line so each line reads as a natural spoken chunk.
 
 IMPORTANT:
 
