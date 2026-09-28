@@ -1,6 +1,5 @@
-// The surfaces that offer a voice. A voice can be available in the lab while
-// staying out of Movie Recap's Settings tab — the lab exists to evaluate
-// providers that are not production choices yet (see history/voice-lab.md).
+// The surfaces that offer a voice. Profiles can be shared across the lab and
+// production flows while retaining one provider configuration in the catalog.
 export type TtsSurface = "movie-recap" | "voice-lab";
 
 export type AzureVoiceParams = {
@@ -14,18 +13,18 @@ export type AzureVoiceParams = {
 export type VoxcpmVoiceParams = {
   stylePrompt: string;
   seed: number;
+  referenceAudioId?: "waiyan" | "yuzana";
+  referenceAudioHash?: string;
+  referenceText?: string;
 };
 
 type VoiceBase = {
   id: string;
   name: string;
   description: string;
-  // Burmese line shown next to the voice in the picker, and spoken by its
-  // preview clip when one exists.
+  // Burmese text used when this profile synthesizes new audio.
   sampleText: string;
-  // A pregenerated clip in `public/`, or null when no sample has been recorded
-  // for this voice yet — the picker hides its play button rather than playing
-  // some other voice's clip.
+  // Static audio played by the profile preview button, or null if unavailable.
   previewUrl: string | null;
   surfaces: readonly TtsSurface[];
 };

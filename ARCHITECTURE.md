@@ -49,7 +49,7 @@ app/
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
     (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
-    labs/voice/                Authenticated proxy to the self-hosted TTS lab worker
+    labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
   (app)/                       Shared layout.tsx: renders MobileNavProvider, Sidebar and the
                                rounded panel once, so they survive client-side navigation here
     (story)/
@@ -170,9 +170,9 @@ its visual prompt to improve image-model recognition without changing that key.
 
 Users create resumable recap projects, upload one browser-playable source, read
 paste its transcript and Burmese story at the Transcript step,
-choose the Burmese Narrator profile, and preview aspect, subtitle, logo, and
-movable blur configuration. Every shot gets the house look from
-`lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a
+choose a Burmese narration voice from the shared TTS catalog, and preview
+aspect, subtitle, logo, and movable blur configuration. Every shot gets the
+house look from `lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a
 blurred fill behind letterbox bars (`MOVIE_RECAP_LOOK`); there is no toggle, and
 no per-shot speed. Subtitle appearance is a two-option preset (yellow or
 white text, black shadow, no background box) whose size follows the aspect ratio;
@@ -203,9 +203,10 @@ or spare-footage planning.
 
 Building that script is its own run (`lib/movie-recap-script.ts`,
 `POST movie-recaps/:id/script`), and it stops before anything is cut. It speaks
-every beat through `lib/tts/` (Azure Speech), caches each content-addressed beat,
-then stores a combined `narration.wav` and JSON beat boundaries in R2. Narration
-is the master audio timeline. Every beat uses the fixed 1.0x post-synthesis narration rate;
+every beat through the selected provider in `lib/tts/`, caches each
+content-addressed beat, then stores a combined `narration.wav` and JSON beat
+boundaries in R2. Narration is the master audio timeline. Every beat uses the
+fixed 1.0x post-synthesis narration rate;
 source duration never changes it. Picture follows each resulting beat duration:
 it uses a 0.75x baseline, slows shortage beats to the configured minimum and
 speeds surplus beats up to 1.1x, then trims or freezes whatever is left. Editing and choosing **Re Build
@@ -321,7 +322,7 @@ and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 
 - UI: `app/(app)/labs/voice/`
 - API proxy: `app/api/labs/voice/`
-- Worker: `workers/voice-lab/`
+- Worker: `workers/voice-lab/` (deployed to Modal scale-to-zero GPU via `modal_app.py`)
 
 The authenticated lab sends bounded Burmese test text through Spoosh to a
 Next.js route, which hands it to the TTS layer (`lib/tts/`). The lab lists every
@@ -332,12 +333,16 @@ and audio are deliberately not stored in Supabase or R2. `TTS_AZURE_KEY` and
 `VOICE_LAB_WORKER_URL` stay server-only; an optional shared bearer token
 protects the worker connection.
 
+Wai Yan and Yuzana use fixed 16 kHz reference WAVs bundled only into the worker
+runtime. The server sends a profile ID and reference transcript; the worker
+maps that ID to its local WAV path.
+
 ### Text to speech
 
 - Contract and voice catalog: `lib/tts/types.ts`, `lib/tts/voices.ts`
-- Voice previews: committed MP3s in `public/movie-recap/voices/`, generated from
-  the catalog by `scripts/generate-voice-previews.ts`. `app/api/voices/preview/`
-  is the fallback for a voice with no file
+- Voice previews: static audio in `public/movie-recap/voices/`; Azure MP3s are
+  generated from the catalog, while Wai Yan and Yuzana play their supplied WAVs.
+  `app/api/voices/preview/` remains the fallback when a profile has no file
 - Providers: `lib/tts/providers/azure.ts`, `lib/tts/providers/voxcpm.ts`
 - Entry point: `lib/tts/synthesize.ts`
 
@@ -346,8 +351,8 @@ provider's own parameters (Azure voice name and SSML prosody, or VoxCPM2 style
 prompt and seed). `synthesize()` picks the provider off the voice, so callers —
 the lab route and the render pipeline — never name a service. A voice's `id` is
 what the database stores, so moving a voice between providers is a code edit.
-`surfaces` decides where a voice is offered: Movie Recap lists the Azure voices,
-the lab lists all of them.
+`surfaces` decides where a voice is offered: Movie Recap and the lab both list
+the Azure and VoxCPM2 Burmese voices.
 
 ### Script
 

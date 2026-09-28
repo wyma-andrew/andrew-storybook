@@ -100,7 +100,7 @@ render skips this step entirely.
 ## Burmese Voice Lab
 
 The authenticated `/labs/voice` page generates short Burmese WAV samples
-through a separately running, self-hosted VoxCPM2 worker. It does not persist
+through a separately running VoxCPM2 worker (local or Modal). It does not persist
 text or audio. Configure the Next.js server with:
 
 ```dotenv

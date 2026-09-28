@@ -1,9 +1,7 @@
 import type { TtsSurface, Voice } from "./types";
 
-// One catalog for every surface. An Azure voice's `previewUrl` points at a file
-// generated from its own `sampleText` by scripts/generate-voice-previews.ts —
-// change the line or the voice params and regenerate, or the button plays the
-// old reading.
+// One catalog for every surface. `previewUrl` is the fixed audio played by the
+// profile's preview button; generated samples live alongside supplied refs.
 // A voice's id is what lands in the database
 // (`movie_recap_projects.voice_profile_id`); the provider behind it is a code
 // decision, so moving a voice to a different service later is an edit here and
@@ -51,33 +49,38 @@ export const VOICES: readonly Voice[] = [
     providerId: "azure",
     params: { voiceName: "my-MM-NilarNeural", rate: AZURE_NARRATION_RATE },
   },
-  // Self-hosted, lab-only: kept out of Movie Recap while CPU inference takes
-  // tens of seconds per clip (see history/voice-lab.md). Flip `surfaces` to add
-  // either one back to the Transcript step.
+  // Shared across the lab and Movie Recap; provider-specific settings remain
+  // here so both surfaces synthesize the same profile.
   {
     id: "narrator",
     name: "Wai Yan",
-    description: "Self-hosted VoxCPM2 voice with steady cinematic pacing.",
+    description: "VoxCPM2 voice based on Wai Yan's reference recording.",
     sampleText: "ဒီဇာတ်လမ်းရဲ့ နောက်ကွယ်က အကြောင်းအရာတွေကို အတူတူ လေ့လာကြရအောင်။",
-    previewUrl: null,
-    surfaces: ["voice-lab"],
+    previewUrl: "/movie-recap/voices/waiyan-reference.wav",
+    surfaces: ["voice-lab", "movie-recap"],
     providerId: "voxcpm",
     params: {
       stylePrompt: "A calm cinematic narrator with a clear mature voice and steady storytelling pace",
       seed: 20260915,
+      referenceAudioId: "waiyan",
+      referenceAudioHash: "77fa241a844eca60cdbeaefd19a28871d0cbe4231c1f2a0b5c71c29f9ae20866",
+      referenceText: "မင်္ဂလာပါ ကိုအောင်ဇော်မျိုးခင်ဗျ ဘယ်တွေသွားနေတာပါလဲ",
     },
   },
   {
     id: "narrator-female",
-    name: "Yu Yu",
-    description: "Self-hosted VoxCPM2 voice with a female timbre and steady cinematic pacing.",
+    name: "Yuzana",
+    description: "VoxCPM2 voice based on Yuzana's reference recording.",
     sampleText: "ဒီဇာတ်လမ်းရဲ့ နောက်ကွယ်က အကြောင်းအရာတွေကို အတူတူ လေ့လာကြရအောင်။",
-    previewUrl: null,
-    surfaces: ["voice-lab"],
+    previewUrl: "/movie-recap/voices/yuzana-reference.wav",
+    surfaces: ["voice-lab", "movie-recap"],
     providerId: "voxcpm",
     params: {
       stylePrompt: "A calm cinematic female narrator with a clear mature voice and steady storytelling pace",
       seed: 20260916,
+      referenceAudioId: "yuzana",
+      referenceAudioHash: "59a06d1bac9788a5aeeb0e1101de45410b4f34340060aaeb9d7f095a6210892d",
+      referenceText: "မင်္ဂလာပါ ကျမ ယုဇနပါ",
     },
   },
 ] as const;
@@ -103,9 +106,7 @@ export function getVoice(id: unknown, surface: TtsSurface) {
   return listVoices(surface).find((voice) => voice.id === id) ?? null;
 }
 
-// Resolving a stored project value, which can predate the current catalog:
-// rows written before Azure carry `narrator`, a voice that is now lab-only.
-// Those render in the default voice rather than failing a render outright.
+// Unknown stored values fall back to the default so older projects still render.
 export function resolveMovieRecapVoice(id: unknown) {
   return getVoice(id, "movie-recap") ?? getVoice(DEFAULT_MOVIE_RECAP_VOICE_ID, "movie-recap")!;
 }

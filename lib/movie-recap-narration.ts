@@ -79,9 +79,12 @@ export async function probeVideoFrameCount(file: string, signal?: AbortSignal) {
 // speech off the picture for the rest of the video. Raising
 // AZURE_NARRATION_RATE therefore invalidates every clip, which is correct: they
 // are the wrong recordings now.
-export function narrationHash(voice: { providerId: string; id: string }, text: string, rate?: string | null) {
+export function narrationHash(voice: { providerId: string; id: string; params?: unknown }, text: string, rate?: string | null) {
   const suffix = rate ? `\n@${rate}` : "";
-  return createHash("sha256").update(`${voice.providerId}:${voice.id}\n${text}${suffix}`).digest("hex").slice(0, 32);
+  const voiceParams = voice.providerId === "voxcpm" && typeof voice.params === "object" && voice.params !== null && "referenceAudioHash" in voice.params
+    ? `\n@voice-params:${JSON.stringify(voice.params)}`
+    : "";
+  return createHash("sha256").update(`${voice.providerId}:${voice.id}\n${text}${voiceParams}${suffix}`).digest("hex").slice(0, 32);
 }
 
 // Cuts a synthesized clip back to the speech inside it. ffmpeg reports where the

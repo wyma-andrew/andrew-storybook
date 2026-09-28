@@ -6302,3 +6302,50 @@ fixed-baseline decision and barely change freezes, for the reason above.
 **Accepted consequence:** at 0.60x, slow motion is closer to visible; the earlier
 note that conditional slow-downs past ~0.87x read as deliberate still applies.
 Go below 0.60 only after judging a render.
+
+## 2026-09-28 — Reuse Voice Lab profiles in Movie Recap
+
+**Decision:** offer the shared catalog's Wai Yan and Yu Yu VoxCPM2 profiles in
+the Transcript voice picker alongside Thiha and Nilar. Preview, script, beat
+preview, and render continue to resolve the selected profile through
+`lib/tts/`; the profile settings remain defined once in `lib/tts/voices.ts`.
+
+**Why:** the worker now runs on Modal GPU, removing the CPU latency reason for
+keeping self-hosted voices out of recaps. Reusing the catalog keeps voice IDs,
+provider selection, and voice-design settings consistent between Voice Lab and
+Movie Recap.
+
+**Supersedes:** the 2026-09-16 decision to offer only Azure voices and the
+2026-09-22 decision that retained only Azure profile IDs.
+
+**Consequence:** an unmigrated project row with `voice_profile_id='narrator'`
+now resolves to Wai Yan rather than falling back to Thiha. The earlier Azure
+migration rewrites existing rows to `azure-thiha`; unknown voice IDs still fall
+back to the default.
+
+## 2026-09-28 — Use reference recordings for Wai Yan and Yuzana narration
+
+**Decision:** VoxCPM2 synthesis for the shared Wai Yan and Yuzana profiles uses
+their fixed reference WAV and matching transcript for beat generation.
+Reference audio identity and transcript are part of the beat/master cache
+fingerprint, so the existing project audio is re-synthesized on its next
+narration build instead of reusing voice-design-only clips.
+
+**Why:** the user wants narrative playback in Movie Recap to keep the selected
+profile's real reference voice consistent with Voice Lab.
+
+**Consequence:** a project uses the reference for whichever profile is saved in
+`voice_profile_id`; selecting another profile still changes the speaker.
+
+## 2026-09-28 — Play supplied voice files as static profile previews
+
+**Decision:** the Wai Yan and Yuzana profile Play buttons serve their supplied
+WAV files from `public/movie-recap/voices/` directly. They do not synthesize
+the preview line or call the VoxCPM2 worker. New narrative audio still uses
+VoxCPM2 with the selected profile's reference WAV and transcript.
+
+**Why:** the user wants the preview button to play the exact supplied recording
+and reserve model calls for generating new narration.
+
+**Consequence:** preview playback is immediate and always the original sample;
+it does not demonstrate how the model will pronounce arbitrary narrative text.

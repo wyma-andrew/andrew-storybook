@@ -1,9 +1,8 @@
 import { voiceWorkerHeaders, voiceWorkerSignal, voiceWorkerUrl } from "../../voice-worker";
 import { TtsError, type SynthesisRequest, type SynthesisResult, type TtsProvider } from "../types";
 
-// The self-hosted VoxCPM2 worker behind VOICE_LAB_WORKER_URL. It stays a
-// first-class provider even though Movie Recap ships Azure voices, because the
-// point of the lab is comparing our own service against the paid one.
+// The self-hosted VoxCPM2 worker behind VOICE_LAB_WORKER_URL, shared by the
+// Voice Lab and Movie Recap profiles that select this provider.
 export const voxcpmProvider: TtsProvider = {
   id: "voxcpm",
 
@@ -25,6 +24,8 @@ export const voxcpmProvider: TtsProvider = {
           text: text.trim(),
           stylePrompt: voice.params.stylePrompt,
           seed: voice.params.seed,
+          referenceAudioId: voice.params.referenceAudioId,
+          referenceText: voice.params.referenceText,
         }),
         cache: "no-store",
         signal: signal ?? voiceWorkerSignal(),

@@ -124,7 +124,7 @@ export function MovieRecapScript({
 
   function previewKey(index: number) {
     const beat = script[index];
-    return beat ? `${index}:${beat.text}` : null;
+    return beat ? `${project.voiceProfileId}:${index}:${beat.text}` : null;
   }
 
   async function loadBeatPreview(index: number, reportError: boolean) {

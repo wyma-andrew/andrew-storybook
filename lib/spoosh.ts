@@ -60,18 +60,6 @@ export type ApiSchema = {
   "translate-projects/:id/render/download": {
     GET: { data: { url: string } };
   };
-  "labs/voice/health": {
-    GET: {
-      data: {
-        configured: boolean;
-        reachable: boolean;
-        model?: string;
-        device?: string;
-        loaded?: boolean;
-        message: string;
-      };
-    };
-  };
   "labs/voice/generate": {
     POST: {
       data: {

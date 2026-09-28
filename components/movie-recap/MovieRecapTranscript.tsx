@@ -171,7 +171,10 @@ export function MovieRecapTranscript({
       return;
     }
 
-    let src = voice.previewUrl ?? previewUrls.current.get(voice.id) ?? null;
+    const cacheKey = voice.providerId === "voxcpm"
+      ? `${voice.id}:${voice.params.referenceAudioHash}:${voice.params.referenceText ?? ""}`
+      : voice.id;
+    let src = voice.previewUrl ?? previewUrls.current.get(cacheKey) ?? null;
     if (!src) {
       setPreviewLoading(voice.id);
       const result = await generateVoicePreview({ body: { voiceId: voice.id }, invalidate: false });
@@ -181,7 +184,7 @@ export function MovieRecapTranscript({
         return;
       }
       src = audioUrlFromBase64(result.data.audioBase64, result.data.contentType);
-      previewUrls.current.set(voice.id, src);
+      previewUrls.current.set(cacheKey, src);
     }
 
     audio.src = src;

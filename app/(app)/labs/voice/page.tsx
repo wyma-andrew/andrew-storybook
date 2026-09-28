@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Alert, Label, Textarea, toast } from "@geckoui/geckoui";
-import { Check, Download, RefreshCw, Sparkles, Volume2, WandSparkles } from "lucide-react";
+import { Label, Textarea, toast } from "@geckoui/geckoui";
+import { Check, Download, Sparkles, Volume2, WandSparkles } from "lucide-react";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
-import { useRead, useWrite } from "@/lib/spoosh";
+import { useWrite } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { VOICE_LAB_MAX_TEXT_LENGTH, VOICE_LAB_PROFILES, type VoiceLabProfileId } from "@/lib/voice-lab";
 
@@ -18,10 +18,6 @@ export default function VoiceLabPage() {
   const [voiceId, setVoiceId] = useState<VoiceLabProfileId>("narrator");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioMeta, setAudioMeta] = useState<{ durationSeconds: number; generationMs: number; sampleRate: number } | null>(null);
-  const { data: health, loading: healthLoading, trigger: checkHealth } = useRead(
-    (api) => api("labs/voice/health").GET(),
-    { staleTime: 0 },
-  );
   const { trigger: generate, loading: generating } = useWrite((api) => api("labs/voice/generate").POST());
   const profile = VOICE_LAB_PROFILES.find((item) => item.id === voiceId)!;
 
@@ -49,7 +45,6 @@ export default function VoiceLabPage() {
       sampleRate: result.data.sampleRate,
     });
     toast.success("Burmese narration generated.");
-    void checkHealth();
   }
 
   function handleDownload() {
@@ -155,49 +150,14 @@ export default function VoiceLabPage() {
                   className="mt-5 w-full justify-center"
                   loading={generating}
                   loadingText="Generating voice…"
-                  disabled={generating || text.trim().length === 0 || text.length > VOICE_LAB_MAX_TEXT_LENGTH || !health?.reachable}
+                  disabled={generating || text.trim().length === 0 || text.length > VOICE_LAB_MAX_TEXT_LENGTH}
                   onClick={handleGenerate}
                 >
                   <Sparkles size={16} /> Generate Burmese voice
                 </LoadingButton>
-                {!health?.reachable && !healthLoading && (
-                  <p className="mt-2 text-center text-xs text-fg-3">Connect the voice worker before generating.</p>
-                )}
               </section>
 
               <div className="space-y-5">
-                <section className="rounded-xl border border-line bg-panel-2 p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <h2 className="text-sm font-semibold">Worker status</h2>
-                    <Button
-                      variant="ghost"
-                      className="ml-auto !size-8 !p-0"
-                      title="Check worker again"
-                      disabled={healthLoading}
-                      onClick={() => void checkHealth()}
-                    >
-                      <RefreshCw size={14} className={healthLoading ? "animate-spin" : ""} />
-                    </Button>
-                  </div>
-                  {healthLoading && !health ? (
-                    <p className="text-xs text-fg-3">Checking voice worker…</p>
-                  ) : (
-                    <Alert
-                      condensed
-                      variant={health?.reachable ? "success" : health?.configured ? "error" : "warning"}
-                      title={health?.reachable ? "Connected" : health?.configured ? "Unavailable" : "Setup required"}
-                      description={health?.message ?? "Voice worker status is unavailable."}
-                    />
-                  )}
-                  {health?.reachable && (
-                    <dl className="mt-4 grid grid-cols-[70px_1fr] gap-x-3 gap-y-2 text-xs">
-                      <dt className="text-fg-3">Model</dt><dd className="truncate text-fg-2">{health.model}</dd>
-                      <dt className="text-fg-3">Device</dt><dd className="text-fg-2">{health.device}</dd>
-                      <dt className="text-fg-3">Loaded</dt><dd className="text-fg-2">{health.loaded ? "Yes" : "On first generation"}</dd>
-                    </dl>
-                  )}
-                </section>
-
                 <section className="rounded-xl border border-line bg-panel-2 p-4">
                   <h2 className="text-sm font-semibold">Generated audio</h2>
                   {audioUrl ? (
