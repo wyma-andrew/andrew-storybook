@@ -7,6 +7,17 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Center Transcript import beside helper links
+
+**Decision:** stack the YouTube and RedNote transcript links in one column and
+center the chevron and Import button beside that column.
+
+**Why:** both external helpers feed the same import action, so its position
+should apply equally to either link rather than align with only the first.
+
+**Rejected:** keeping the chevron and Import inline with the YouTube link.
+The import parsing and save behavior are unchanged.
+
 ## 2026-09-29 — Replace video uses one same-video action
 
 **Decision, approved by the user:** replace the two-item Replace video menu with

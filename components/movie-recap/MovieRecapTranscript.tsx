@@ -221,8 +221,8 @@ export function MovieRecapTranscript({
         reference and nothing downstream reads it.
       </p>
       <div className="mb-6">
-        <div className="flex flex-col items-start gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col items-start gap-2">
             <LinkButton
               href="https://www.youtube-transcript.io/"
               target="_blank"
@@ -233,27 +233,27 @@ export function MovieRecapTranscript({
               Get YouTube Transcript
               <ExternalLink size={15} aria-hidden="true" />
             </LinkButton>
-            <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
-            <AppButton
+            <LinkButton
+              href="https://captioner.io/en/rednote"
+              target="_blank"
+              rel="noreferrer"
               variant="secondary"
-              className="inline-flex items-center gap-2"
-              onClick={() => showTranscriptImport((imported) => {
-                onChange({ transcriptText: imported });
-              })}
+              className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
             >
-              Import
-            </AppButton>
+              Get RedNote Transcript
+              <ExternalLink size={15} aria-hidden="true" />
+            </LinkButton>
           </div>
-          <LinkButton
-            href="https://captioner.io/en/rednote"
-            target="_blank"
-            rel="noreferrer"
+          <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+          <AppButton
             variant="secondary"
-            className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
+            className="inline-flex items-center gap-2"
+            onClick={() => showTranscriptImport((imported) => {
+              onChange({ transcriptText: imported });
+            })}
           >
-            Get RedNote Transcript
-            <ExternalLink size={15} aria-hidden="true" />
-          </LinkButton>
+            Import
+          </AppButton>
         </div>
       </div>
 
