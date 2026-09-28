@@ -72,6 +72,7 @@ export type MovieRecapProject = {
   sourceFileName: string;
   sourceObjectKey: string;
   sourceUrl: string | null;
+  coverUrl: string | null;
   sourceContentType: string;
   sourceSizeBytes: number;
   sourceDurationSeconds: number;

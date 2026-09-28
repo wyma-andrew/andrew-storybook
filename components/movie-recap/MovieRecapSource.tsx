@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Film, Loader2, MoreHorizontal, RefreshCw, Trash2, Upload } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, toast, useFilePicker } from "@geckoui/geckoui";
@@ -62,6 +62,48 @@ function readVideo(file: File) {
   });
 }
 
+function captureVideoFrame(url: string, atSeconds = 0, remote = false) {
+  return new Promise<string | null>((resolve) => {
+    const video = document.createElement("video");
+    const seek = remote || atSeconds > 0;
+    video.preload = seek ? "metadata" : "auto";
+    video.muted = true;
+    if (remote) video.crossOrigin = "anonymous";
+    video.onloadedmetadata = () => {
+      if (seek) video.currentTime = Math.min(Math.max(atSeconds, 0.01), Math.max(video.duration - 0.01, video.duration / 2));
+    };
+    const timer = window.setTimeout(() => finish(null), remote ? 30000 : 12000);
+    function finish(image: string | null) {
+      window.clearTimeout(timer);
+      video.onloadeddata = null;
+      video.onloadedmetadata = null;
+      video.onseeked = null;
+      video.onerror = null;
+      video.removeAttribute("src");
+      video.load();
+      resolve(image);
+    }
+    const capture = () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) return finish(null);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.min(640, video.videoWidth);
+        canvas.height = Math.round(canvas.width * video.videoHeight / video.videoWidth);
+        const context = canvas.getContext("2d");
+        if (!context) return finish(null);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL("image/jpeg", 0.8).split(",")[1] ?? null);
+      } catch {
+        finish(null);
+      }
+    };
+    if (seek) video.onseeked = capture;
+    else video.onloadeddata = capture;
+    video.onerror = () => finish(null);
+    video.src = url;
+  });
+}
+
 function uploadPart(
   url: string,
   blob: Blob,
@@ -116,11 +158,42 @@ export function MovieRecapSource({
   const { trigger: startMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart").POST());
   const { trigger: signPart } = useWrite((api) => api("movie-recaps/:id/source/multipart/part").POST());
   const { trigger: completeMultipart } = useWrite((api) => api("movie-recaps/:id/source/multipart/complete").POST());
+  const { trigger: saveCover } = useWrite((api) => api("movie-recaps/:id/cover").POST());
   const { trigger: deleteProject, loading: deleting } = useWrite((api) => api("movie-recaps/:id").DELETE());
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [settingCover, setSettingCover] = useState(false);
+  const sourceVideoRef = useRef<HTMLVideoElement>(null);
+
+  async function setCover() {
+    if (!project?.sourceUrl || project.sourceUploadStatus !== "ready") return;
+    setSettingCover(true);
+    try {
+      const remote = !previewUrl;
+      const sourceUrl = remote ? new URL(project.sourceUrl) : null;
+      sourceUrl?.searchParams.set("cover", crypto.randomUUID());
+      const imageBase64 = await captureVideoFrame(
+        sourceUrl?.toString() ?? previewUrl!,
+        sourceVideoRef.current?.currentTime ?? 0,
+        remote,
+      );
+      if (!imageBase64) throw new Error("Could not capture the video frame at the current playhead.");
+      const result = await saveCover({
+        params: { id: project.id },
+        body: { sourceObjectKey: project.sourceObjectKey, imageBase64 },
+        invalidate: ["movie-recaps", `movie-recaps/${project.id}`],
+      });
+      if (result.error || !result.data) throw new Error(result.error?.error ?? "Could not save cover image.");
+      onProject(result.data, previewUrl ?? undefined);
+      toast.success("Cover set.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not set cover.");
+    } finally {
+      setSettingCover(false);
+    }
+  }
 
   async function begin(file: File, replacing: "same" | null = null) {
     uploadLog("file-selected", {
@@ -300,6 +373,19 @@ export function MovieRecapSource({
       setPercent(100);
       onProject(result.data, metadata.url);
       uploadLog("upload-complete", { projectId: active.id, completedParts: parts.length });
+      try {
+        const imageBase64 = await captureVideoFrame(metadata.url);
+        if (!imageBase64) throw new Error("Could not capture the first video frame.");
+        const cover = await saveCover({
+          params: { id: active.id },
+          body: { sourceObjectKey: active.sourceObjectKey, imageBase64 },
+          invalidate: ["movie-recaps", `movie-recaps/${active.id}`],
+        });
+        if (cover.error || !cover.data) throw new Error(cover.error?.error ?? "Could not save cover image.");
+        onProject(cover.data, metadata.url);
+      } catch (coverError) {
+        uploadError("cover-unavailable", coverError, { projectId: active.id });
+      }
       toast.success("Video upload complete.");
     } catch (error) {
       if (selectedPreviewUrl && !previewAdopted) URL.revokeObjectURL(selectedPreviewUrl);
@@ -393,14 +479,19 @@ export function MovieRecapSource({
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-panel-2 text-fg-2"><Film size={19} /></div>
-        <div><h2 className="text-lg font-semibold">Add Source</h2><p className="text-sm text-fg-2">Upload the movie you want to recap.</p></div>
+        <div className="min-w-0 flex-1"><h2 className="text-lg font-semibold">Add Source</h2><p className="text-sm text-fg-2">Upload the movie you want to recap.</p></div>
+        {ready && (
+          <LoadingButton className="ml-auto shrink-0" loading={settingCover} loadingText="Setting cover..." disabled={uploading} onClick={() => void setCover()}>
+            Set cover
+          </LoadingButton>
+        )}
       </div>
 
       {source ? (
         <div className="overflow-hidden rounded-xl border border-line bg-sunken">
-          <video className="max-h-[520px] w-full bg-sunken" src={source} controls preload="metadata" />
+          <video ref={sourceVideoRef} className="max-h-[520px] w-full bg-sunken" src={source} controls preload="metadata" />
         </div>
       ) : project ? (
         <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-line bg-sunken p-8 text-center">

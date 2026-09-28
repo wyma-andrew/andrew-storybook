@@ -137,6 +137,9 @@ export type ApiSchema = {
   "movie-recaps/:id/source/multipart/complete": {
     POST: { data: MovieRecapProject; body: { parts: { partNumber: number; etag: string }[] } };
   };
+  "movie-recaps/:id/cover": {
+    POST: { data: MovieRecapProject; body: { sourceObjectKey: string; imageBase64: string } };
+  };
   "movie-recaps/:id/logo/presign": {
     POST: {
       data: { fileName: string; objectKey: string; contentType: string; url: string; uploadUrl: string };

@@ -185,7 +185,13 @@ path for a better-quality copy of the same cut. It keeps the transcript,
 narrative script, narration, and Customize Video settings, while clearing the
 source crop, render artifacts, and browser render history; the next render
 re-measures the crop on the new file. Generate currently records
-`ready_for_generation` only. The wizard's step and its customize sub-tab are
+`ready_for_generation` only.
+After upload, the browser captures the source's first frame as a JPEG cover in
+R2 for the project-list card. Cards without a saved cover show the Clapperboard
+icon. Add Source's Set cover action saves the frame at the visible source
+player's current time and can replace an existing cover. Source replacement
+clears the prior cover.
+The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
 The project row stores `current_step` for the selected step and `max_step` for

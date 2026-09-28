@@ -8,6 +8,7 @@ import {
   isVideoContentType,
   movieRecapAssetPrefix,
   movieRecapObjectKey,
+  movieRecapProjectPrefix,
   r2Configured,
 } from "@/lib/r2";
 import { supabaseRoute } from "@/lib/supabase/route";
@@ -70,6 +71,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       source_last_modified: lastModified,
       source_upload_id: uploadId,
       source_upload_status: "uploading",
+      cover_object_key: null,
+      cover_url: null,
       ...(keepScript
         ? {}
         : {
@@ -122,6 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     deletePrefix(movieRecapAssetPrefix(id, "analysis")),
     deletePrefix(movieRecapAssetPrefix(id, "render")),
     deletePrefix(movieRecapAssetPrefix(id, "subtitle")),
+    deletePrefix(`${movieRecapProjectPrefix(id)}cover/`),
   ]);
   for (const result of cleanup) {
     if (result.status === "rejected") console.error("[MovieRecapSourceReplace] cleanup failed", result.reason);

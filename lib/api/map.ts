@@ -45,6 +45,7 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     sourceFileName: r.source_file_name as string,
     sourceObjectKey: r.source_object_key as string,
     sourceUrl: (r.source_url as string) ?? null,
+    coverUrl: (r.cover_url as string) ?? null,
     sourceContentType: r.source_content_type as string,
     sourceSizeBytes: Number(r.source_size_bytes),
     sourceDurationSeconds: Number(r.source_duration_seconds),

@@ -7,6 +7,77 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Show the whole project cover
+
+**Decision:** display saved project-card covers with `object-contain` inside
+the existing preview area.
+
+**Why:** covers come from the video's own frame and should stay fully visible
+even when their aspect ratio differs from the card. Cropping with `object-cover`
+could cut off the subject.
+
+**Rejected:** filling the card by cropping the cover. Empty space uses the
+card's existing background.
+
+## 2026-09-29 — Manual cover uses the Source playhead
+
+**Decision, approved by the user:** `Set cover` captures the Source player's
+current timeline frame. Keep the button available after a cover is saved so a
+user can choose another frame. Automatic capture after a new upload still uses
+the first frame.
+
+**Why:** the opening frame may be black or an intro; the visible player already
+lets the user choose the exact image they want for the project card.
+
+**Rejected:** making manual Set cover always capture the first frame and hiding
+the action after success, as recorded below. Remote sources seek to the chosen
+time for capture; the existing cover stays if capture or save fails.
+
+## 2026-09-29 — Cards without covers keep the icon
+
+**Decision, requested by the user:** show the Clapperboard icon when a project
+has no saved cover image. Do not mount its source video on the project list.
+
+**Why:** the fallback video requests source bytes each time the list opens,
+while the card only needs a lightweight placeholder until Set cover is used.
+
+**Rejected:** the source-video fallback from the cover decision below; that
+part of the earlier decision is superseded. Automatic cover capture and the
+manual Set cover action stay.
+
+## 2026-09-29 — Set covers for earlier uploads
+
+**Decision:** show `Set cover` at the right of the Add Source heading when a
+ready source has no saved cover. It captures the first frame from the existing
+R2 video in the browser and saves it through the same cover route as a new
+upload. The action disappears after success and stays available after failure.
+
+**Why:** projects uploaded before automatic cover capture have no local file
+available to the new-upload path; the fallback video on every list visit would
+continue requesting source bytes. A one-time action stores a small JPEG instead.
+
+**Rejected:** requiring the user to re-upload the movie just to create a cover.
+The remote capture needs CORS-enabled source reads; it cache-busts the URL so a
+previous non-CORS video response does not block canvas capture.
+
+## 2026-09-29 — Restore a source-frame cover for project cards
+
+**Decision, approved by the user:** after a source upload completes, capture
+its first decoded frame in the browser as a small JPEG, store it under the
+project's R2 prefix, and show it on the Movie Recap project card. Existing
+projects without a stored cover display the source video's first frame in the
+card. Replacing the source clears its old cover and saves a new one.
+
+**Why:** the project list's generic icon does not identify the uploaded video.
+Browser capture uses the selected local file, so Vercel does not need ffmpeg
+or a second download of the movie.
+
+**Rejected:** retaining the no-thumbnail decision from 2026-09-18. This cover
+serves only project cards; it does not revive the Review thumbnail shuffle or
+apply the render look. The first frame may be a black intro, as the old
+thumbnail decision warned. A capture failure leaves the completed upload
+usable and the card falls back to its source video frame.
+
 ## 2026-09-29 — Center Transcript import beside helper links
 
 **Decision:** stack the YouTube and RedNote transcript links in one column and
