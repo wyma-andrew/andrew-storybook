@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Clock3, FileJson, Film, Languages, Plus, Trash2 } from "lucide-react";
 import { ConfirmDialog, toast } from "@geckoui/geckoui";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -34,7 +35,9 @@ export default function TranslateProjectsPage() {
       {loading && !projects ? <p className="text-fg-3">Loading projects…</p> : <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
         {projects?.map((project) => <article key={project.id} className="overflow-hidden rounded-xl border border-line bg-panel-2">
           <Link href={`/translate/${project.id}`} className="block text-fg no-underline">
-            <div className="grid h-[130px] place-items-center border-b border-line bg-gradient-to-br from-thumb-from to-thumb-to"><Film className="text-fg-3" size={32} /></div>
+            <div className="relative grid h-[130px] place-items-center overflow-hidden border-b border-line bg-gradient-to-br from-thumb-from to-thumb-to">
+              {project.coverUrl ? <Image src={project.coverUrl} alt={`${project.name} cover`} fill sizes="(max-width: 640px) 100vw, 320px" unoptimized className="object-contain" /> : <Film className="text-fg-3" size={32} />}
+            </div>
             <div className="px-4 pt-3.5 pb-3"><div className="mb-1 flex items-start gap-2"><h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold">{project.name}</h2><span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[10px] text-fg-2">{project.renderStatus === "done" ? "Rendered" : project.sourceUploadStatus === "ready" ? project.srtFileName ? "Customize" : "Add SRT" : "Upload video"}</span></div><p className="mb-3 truncate text-xs text-fg-2">{project.sourceFileName}</p><div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-[11px] text-fg-3"><span className="flex items-center gap-1"><Film size={12} /> {formatBytes(project.sourceSizeBytes)} · {formatDuration(project.sourceDurationSeconds)}</span><span className="flex items-center gap-1"><Clock3 size={12} /> {new Date(project.updatedAt).toLocaleDateString()}</span></div></div>
           </Link>
           <div className="border-t border-line px-3 py-2"><Button variant="danger" className="!h-8 !px-2.5 text-xs" onClick={() => confirmDelete(project.id, project.name)}><Trash2 size={14} /> Delete</Button></div>

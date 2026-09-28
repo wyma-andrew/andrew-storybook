@@ -10,6 +10,7 @@ import { formatDuration } from "@/lib/movie-recap";
 import { useWrite } from "@/lib/spoosh";
 import type { TranslateProject } from "@/lib/translate";
 import { readTranslateVideo, uploadTranslateVideo } from "@/lib/translate-upload";
+import { captureFirstVideoCover } from "@/lib/video-cover";
 import { parseTranslateBundle, translateBundlePatches, type TranslateBundle } from "@/lib/translate-transfer";
 
 export default function NewTranslateProjectPage() {
@@ -21,6 +22,7 @@ export default function NewTranslateProjectPage() {
   const [bundleApplied, setBundleApplied] = useState(false);
   const { trigger: create } = useWrite((api) => api("translate-projects").POST());
   const { trigger: patch } = useWrite((api) => api("translate-projects/:id").PATCH());
+  const { trigger: saveCover } = useWrite((api) => api("translate-projects/:id/cover").POST());
 
   async function begin(file: File) {
     if (busy) return;
@@ -52,7 +54,15 @@ export default function NewTranslateProjectPage() {
         setActive(project);
         setBundleApplied(true);
       }
-      await uploadTranslateVideo(project, file, setPercent);
+      project = await uploadTranslateVideo(project, file, setPercent);
+      try {
+        const imageBase64 = await captureFirstVideoCover(file);
+        if (!imageBase64) throw new Error("Could not capture cover.");
+        const result = await saveCover({ params: { id: project.id }, body: { sourceObjectKey: project.sourceObjectKey, imageBase64 }, invalidate: ["translate-projects"] });
+        if (!result.data) throw new Error(result.error?.error ?? "Could not save cover.");
+      } catch {
+        toast.info("Video uploaded. You can set its cover from the editor.");
+      }
       router.push(`/translate/${project.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not upload video.");

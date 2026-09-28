@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { completeMultipartUpload, objectExists, publicUrlFor } from "@/lib/r2";
+import { completeMultipartUpload, deleteObject, objectExists, publicUrlFor } from "@/lib/r2";
 import { mapTranslateProject, type TranslateVideoReplacement } from "@/lib/translate";
 import { supabaseRoute } from "@/lib/supabase/route";
 
@@ -43,11 +43,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         source_width: replacement.width,
         source_height: replacement.height,
         source_replacement: null,
+        cover_object_key: null,
+        cover_url: null,
         render_status: "idle",
         updated_at: new Date().toISOString(),
       }).eq("id", id).eq("updated_at", latest.updated_at).select("*").maybeSingle();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      if (data) return NextResponse.json(mapTranslateProject(data));
+      if (data) {
+        if (latest.cover_object_key) await deleteObject(latest.cover_object_key).catch(() => undefined);
+        return NextResponse.json(mapTranslateProject(data));
+      }
     }
     return NextResponse.json({ error: "Project changed. Refresh and try again." }, { status: 409 });
   } catch (error) {

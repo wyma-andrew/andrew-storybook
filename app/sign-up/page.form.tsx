@@ -30,7 +30,7 @@ export default function SignUpPage() {
     if (data) {
       if (data.needsEmailConfirmation) setNeedsConfirmation(true);
       else {
-        router.push("/stories");
+        router.replace("/");
         router.refresh();
       }
     }

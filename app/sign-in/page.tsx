@@ -19,7 +19,7 @@ export default function SignInPage() {
     e.preventDefault();
     const { data } = await signIn({ body: { email, password } });
     if (data) {
-      router.push("/stories");
+      router.replace("/");
       router.refresh();
     }
   }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Noto_Sans_Myanmar } from "next/font/google";
-import { ChevronDown, MoreHorizontal, RefreshCw, ChevronLeft, ClipboardPaste, Copy, LocateFixed, Pause, Play, SlidersHorizontal, Sparkles, Pencil, Download, X, Eye, Grip, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { ChevronDown, MoreHorizontal, RefreshCw, ChevronLeft, ClipboardPaste, Copy, ImagePlus, LocateFixed, Pause, Play, SlidersHorizontal, Sparkles, Pencil, Download, X, Eye, Grip, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import { ConfirmDialog, Dialog, Drawer, Input, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LinkButton, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
@@ -10,6 +10,7 @@ import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatBytes, formatDuration } from "@/lib/movie-recap";
 import { applyCueEdit, buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, formatTimecode, frameIndex, frameTime, mergeSrtBlocks, nearestFrameRate, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
 import { replaceTranslateVideo, uploadTranslateVideo } from "@/lib/translate-upload";
+import { captureFirstVideoCover, captureVideoCover } from "@/lib/video-cover";
 import { toTranslateBundle, translateBundleFileName } from "@/lib/translate-transfer";
 import { TranslateTimeline } from "@/components/translate/TranslateTimeline";
 import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS } from "@/lib/constants/movie-recap";
@@ -124,6 +125,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   const { trigger: pollProject } = useRead((api) => api("translate-projects/:id").GET({ params: { id: projectId } }), { enabled: false });
   const { trigger: generate, loading: generating } = useWrite((api) => api("translate-projects/:id/generate").POST());
   const { trigger: align, loading: aligning } = useWrite((api) => api("translate-projects/:id/align").POST());
+  const { trigger: saveCover } = useWrite((api) => api("translate-projects/:id/cover").POST());
   const [draft, setProject] = useState<TranslateProject | null>(null);
   const project = draft ?? data ?? null;
   const [dirty, setDirty] = useState(false);
@@ -144,6 +146,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     && rangeEndValue <= ((draft ?? data)?.sourceDurationSeconds ?? 0) + 0.05;
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const [uploading, setUploading] = useState(false);
+  const [settingCover, setSettingCover] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [clock, setClock] = useState(0);
   const [timingTab, setTimingTab] = useState<TranslateProject["subtitleTimingMode"] | null>(null);
@@ -301,6 +304,29 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
     },
   });
 
+  async function setCoverFromPlayhead() {
+    if (!project?.sourceUrl || project.sourceUploadStatus !== "ready") return;
+    setSettingCover(true);
+    try {
+      const sourceUrl = new URL(project.sourceUrl, window.location.href);
+      sourceUrl.searchParams.set("cover", crypto.randomUUID());
+      const imageBase64 = await captureVideoCover(sourceUrl.toString(), videoRef.current?.currentTime ?? 0, true);
+      if (!imageBase64) throw new Error("Could not capture the video frame at the current playhead.");
+      const result = await saveCover({
+        params: { id: project.id },
+        body: { sourceObjectKey: project.sourceObjectKey, imageBase64 },
+        invalidate: ["translate-projects", `translate-projects/${project.id}`],
+      });
+      if (!result.data) throw new Error(result.error?.error ?? "Could not save cover image.");
+      setProject((current) => current ? { ...current, coverUrl: result.data!.coverUrl } : result.data);
+      toast.success("Cover set.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not set cover.");
+    } finally {
+      setSettingCover(false);
+    }
+  }
+
   const { openFilePicker: chooseVideo } = useFilePicker<HTMLDivElement>({
     accept: "video/*",
     onChange: (_files, files) => {
@@ -312,9 +338,18 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
         try {
           const saved = dirty ? await saveSettings() : project;
           if (!saved) return;
-          const updated = saved.sourceUploadStatus === "ready"
+          let updated = saved.sourceUploadStatus === "ready"
             ? await replaceTranslateVideo(saved, file, setUploadPercent)
             : await uploadTranslateVideo(saved, file, setUploadPercent);
+          try {
+            const imageBase64 = await captureFirstVideoCover(file);
+            if (!imageBase64) throw new Error("Could not capture cover.");
+            const result = await saveCover({ params: { id: updated.id }, body: { sourceObjectKey: updated.sourceObjectKey, imageBase64 }, invalidate: ["translate-projects", `translate-projects/${updated.id}`] });
+            if (!result.data) throw new Error(result.error?.error ?? "Could not save cover.");
+            updated = result.data;
+          } catch {
+            toast.info("Video uploaded. You can set its cover from the current frame.");
+          }
           setProject(updated);
           setCurrentTime(0);
           toast.success(saved.sourceUploadStatus === "ready" ? "Video replaced." : "Video upload complete.");
@@ -603,12 +638,14 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
           <div className="relative mb-3 flex items-center gap-2">
             <h2 className="min-w-0 max-w-[220px] truncate font-semibold sm:max-w-[320px]" title={`${project.sourceFileName}\n${formatBytes(project.sourceSizeBytes)} · ${formatDuration(project.sourceDurationSeconds)} · ${project.sourceWidth} × ${project.sourceHeight}`}>{project.sourceFileName}</h2>
             <div className="ml-auto hidden shrink-0 gap-2 sm:flex">
+              <LoadingButton className="shrink-0" loading={settingCover} disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => void setCoverFromPlayhead()}><ImagePlus size={15} /> Set cover</LoadingButton>
               <Button className="shrink-0" disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><Upload size={15} /> Replace video</Button>
               {project.srtText && <LoadingButton className="shrink-0" loading={aligning} disabled={rendering || saving} onClick={() => void autoAlign()}><RefreshCw size={15} /> Auto Sync</LoadingButton>}
             </div>
             <Menu className="ml-auto shrink-0 sm:hidden" placement="bottom-end" menuClassName="min-w-[180px] bg-panel">
               <MenuTrigger>{({ toggleMenu }) => <Button className="!h-9 !w-9 !p-0" aria-label="Video actions" onClick={toggleMenu}>{aligning ? <Loader2 size={16} className="animate-spin" /> : <MoreHorizontal size={18} />}</Button>}</MenuTrigger>
               <MenuItem disabled={uploading || rendering || aligning || saving || renderRunning} onClick={() => chooseVideo({ multiple: false })}><span className="flex items-center gap-2"><Upload size={15} /> Replace video</span></MenuItem>
+              <MenuItem disabled={settingCover || uploading || rendering || aligning || saving || renderRunning} onClick={() => void setCoverFromPlayhead()}><span className="flex items-center gap-2">{settingCover ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />} Set cover</span></MenuItem>
               {project.srtText && <MenuItem disabled={aligning || rendering || saving} onClick={() => void autoAlign()}><span className="flex items-center gap-2"><RefreshCw size={15} /> Auto Sync</span></MenuItem>}
             </Menu>
             <Button variant={settingsPopover ? "primary" : "secondary"} className="shrink-0 max-sm:!h-9 max-sm:!w-9 max-sm:!p-0" aria-label="Settings" aria-expanded={settingsPopover || settingsOpen}

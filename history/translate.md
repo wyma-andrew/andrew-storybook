@@ -4,6 +4,14 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-29 — Store a project cover from the source video
+
+**Decision:** After a successful source upload, capture the first frame in the browser as a small JPEG and store it in project-scoped R2. The project list displays that cover with `object-contain`; projects without a cover retain the Film icon. The editor's Set cover action captures the visible video's current playhead frame, including for videos uploaded before this feature, and remains available after a cover is set. A successful video replacement clears the previous cover and attempts to capture the replacement's first frame.
+
+**Why:** The list should load small images instead of fetching full source videos, while letting users select a more useful frame later.
+
+**Rejected:** Video elements on project cards or server-side frame extraction; both add unnecessary video transfer or processing to the list. Cover capture failure does not fail the completed video upload, and the editor can retry it.
+
 ## 2026-09-29 — Restore Hobby-compatible route limits
 
 **Decision:** set Translate align, generate, and render routes back to

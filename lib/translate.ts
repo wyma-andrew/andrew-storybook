@@ -18,6 +18,7 @@ export type TranslateProject = {
   name: string;
   sourceFileName: string;
   sourceUrl: string | null;
+  coverUrl: string | null;
   sourceObjectKey: string;
   sourceContentType: string;
   sourceSizeBytes: number;
@@ -50,7 +51,7 @@ export type TranslateProjectPatch = Partial<Pick<TranslateProject,
 
 export type TranslateProjectListItem = Pick<TranslateProject,
   "id" | "name" | "sourceFileName" | "sourceSizeBytes" | "sourceDurationSeconds" |
-  "sourceUploadStatus" | "srtFileName" | "renderStatus" | "updatedAt"
+  "sourceUploadStatus" | "srtFileName" | "renderStatus" | "updatedAt" | "coverUrl"
 >;
 
 export function mapTranslateProjectListItem(row: Record<string, unknown>): TranslateProjectListItem {
@@ -61,6 +62,7 @@ export function mapTranslateProjectListItem(row: Record<string, unknown>): Trans
     sourceSizeBytes: Number(row.source_size_bytes),
     sourceDurationSeconds: Number(row.source_duration_seconds),
     sourceUploadStatus: row.source_upload_status as TranslateProject["sourceUploadStatus"],
+    coverUrl: (row.cover_url as string) ?? null,
     srtFileName: (row.srt_file_name as string) ?? null,
     renderStatus: row.render_status as TranslateProject["renderStatus"],
     updatedAt: row.updated_at as string,
@@ -73,6 +75,7 @@ export function mapTranslateProject(row: Record<string, unknown>): TranslateProj
     name: row.name as string,
     sourceFileName: row.source_file_name as string,
     sourceUrl: (row.source_url as string) ?? null,
+    coverUrl: (row.cover_url as string) ?? null,
     sourceObjectKey: row.source_object_key as string,
     sourceContentType: row.source_content_type as string,
     sourceSizeBytes: Number(row.source_size_bytes),

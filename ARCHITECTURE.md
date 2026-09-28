@@ -121,6 +121,8 @@ rows therefore generally surface as not found or database errors.
 `proxy.ts` refreshes the Supabase session on every request. Signed-out page
 requests redirect to `/sign-in`; `/api/*` remains reachable so handlers can
 return normal API authentication errors.
+The root page sends signed-in users to their first enabled feature (or Admin
+when they have no feature), and sign-in returns there after authentication.
 
 ### Feature access
 
@@ -314,10 +316,12 @@ finished cut.
 
 Each user owns Translate projects under their own per-user feature gate.
 A project stores the original video in R2 through resumable multipart upload,
+a small JPEG cover captured from its first frame or the editor's current playhead frame,
 the supplied original-language SRT in Postgres, optional speech-aligned subtitle parts,
 an optional imported translated SRT, the active timing mode (original, synced, or translated), and up to eight normalized blur regions plus subtitle
 vertical position and size. Video replacement uploads to a separate R2 object
 and switches the source only after completion; saved subtitle work is retained.
+The cover is stored in project-scoped R2 and shown on list cards; cards without one show an icon.
 The Customize preview follows the uploaded video's dimensions. Users drag or
 resize blur areas and adjust subtitle height with a slider; subtitles stay
 centered. Auto sync transcribes source audio with word timestamps, splits

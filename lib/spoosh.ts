@@ -25,6 +25,9 @@ export type ApiSchema = {
     PATCH: { data: TranslateProject; body: TranslateProjectPatch };
     DELETE: { data: null };
   };
+  "translate-projects/:id/cover": {
+    POST: { data: TranslateProject; body: { sourceObjectKey: string; imageBase64: string } };
+  };
   "translate-projects/:id/source/multipart": {
     GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
     POST: { data: TranslateProject };
