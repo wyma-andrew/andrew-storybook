@@ -4,6 +4,18 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-29 — Restore Hobby-compatible route limits
+
+**Decision:** set Translate align, generate, and render routes back to
+`maxDuration = 300` after all three returned to `3600` in code.
+
+**Why:** Vercel Hobby rejects a deployment when any function requests more
+than 300 seconds. This restores the 2026-09-27 decision and avoids fixing only
+the first route named by the builder error.
+
+**Rejected:** changing only Auto Sync's align route; the other two routes would
+cause the same deployment failure.
+
 ## 2026-09-28 — Shorten the new-project action on mobile
 
 **Decision:** show “New” beside the plus icon in the Translate project-list
