@@ -366,7 +366,7 @@ function buildAss(project: MovieRecapProject, cues: { start: number; end: number
   const [w, h] = TARGET_DIMENSIONS[project.aspectRatio];
   const style = movieRecapSubtitleStyle(project);
   // The size the CSS preview uses, in output pixels — the shared meaning of the
-  // preset's `fontSizePct`. Everything else here is derived from it.
+  // resolved `fontSizePct`. Everything else here is derived from it.
   const cssPx = (style.fontSizePct / 100) * h;
   const fontSize = Math.round(cssPx * ASS_FONT_SIZE_RATIO);
   const alignment = project.subtitlePosition === "top" ? 8 : project.subtitlePosition === "middle" ? 5 : 2;

@@ -27,7 +27,7 @@ export default function TranslateProjectsPage() {
   }
 
   return <>
-    <TopBar><div className="flex items-center gap-2 text-[19px] font-medium"><Languages size={19} /> Translate</div><div className="ml-auto flex gap-2"><LinkButton href="/translate/new"><FileJson size={16} /> Import</LinkButton><LinkButton variant="primary" href="/translate/new"><Plus size={16} /> New project</LinkButton></div></TopBar>
+    <TopBar><div className="flex items-center gap-2 text-[19px] font-medium"><Languages size={19} /> Translate</div><div className="ml-auto flex gap-2"><LinkButton href="/translate/new"><FileJson size={16} /> Import</LinkButton><LinkButton variant="primary" href="/translate/new"><Plus size={16} /><span className="sm:hidden">New</span><span className="hidden sm:inline">New project</span></LinkButton></div></TopBar>
     <Body><Wrap wide>
       <div className="mb-5 flex items-baseline gap-2.5"><h1 className="text-xl font-semibold">Your Translate Projects</h1><span className="text-[13px] text-fg-3">{projects?.length ?? 0} projects</span></div>
       {error && <p className="text-danger">Could not load projects: {error.error}</p>}

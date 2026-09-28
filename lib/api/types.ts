@@ -89,6 +89,7 @@ export type MovieRecapProject = {
   // effectiveMovieRecapZoom().
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapSubtitlePreset;
+  subtitleSize: number | null;
   subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
@@ -110,6 +111,7 @@ export type MovieRecapProject = {
   // this is a list — empty means no blur at all.
   blurRegions: MovieRecapBlurRegion[];
   currentStep: 1 | 2 | 3 | 4 | 5;
+  maxStep: 1 | 2 | 3 | 4 | 5;
   status: "draft" | "ready_for_generation";
   // What the source says, read once at the Transcript step rather than inside
   // every render. `transcriptStory` is that dialogue retold in Burmese as one
@@ -285,6 +287,7 @@ export type MovieRecapProjectPatch = Partial<{
   mirrorEnabled: boolean;
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
+  subtitleSize: MovieRecapProject["subtitleSize"];
   subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;

@@ -175,20 +175,22 @@ aspect, subtitle, logo, and blur configuration. Blur areas can be added,
 removed, moved, resized, and set by percentage coordinates in Customize. Every shot gets the
 house look from `lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a
 blurred fill behind letterbox bars (`MOVIE_RECAP_LOOK`); there is no toggle, and
-no per-shot speed. Subtitle appearance is a two-option preset (yellow or
-white text, black shadow, no background box) whose size follows the aspect ratio;
-only position and edge distance stay adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
+no per-shot speed. Subtitle appearance uses two colour/outline presets, with
+an optional per-project font size in percent of frame height; an unset size
+follows the aspect ratio. Position and edge distance are also adjustable. The source's pixel dimensions are read in the browser and stored, and seed the
 aspect ratio and fit mode once at upload. Source bytes upload directly to R2 in parts; the
 database retains the multipart id so completed parts survive a reload after the
-same local file is reselected. An existing project's source can be replaced through
-the same multipart path, chosen from the Replace video menu. **Same video, better
-quality** keeps the narrative script and narration too, clearing only the source
-crop, render artifacts, and browser render history; the next render re-measures
-the crop on the new file. **Different video** also clears the narrative timeline.
-Transcript, narration caches, and Customize Video settings remain in both. Generate currently records
+same local file is reselected. The Replace video button uses the same multipart
+path for a better-quality copy of the same cut. It keeps the transcript,
+narrative script, narration, and Customize Video settings, while clearing the
+source crop, render artifacts, and browser render history; the next render
+re-measures the crop on the new file. Generate currently records
 `ready_for_generation` only. The wizard's step and its customize sub-tab are
 query-string state (`?step=`, `?tab=`) held by nuqs, so a step is linkable and
 survives a reload; `app/layout.tsx` mounts `NuqsAdapter` for the whole app.
+The project row stores `current_step` for the selected step and `max_step` for
+the furthest unlocked step, so returning to Narrative Script does not lock
+Customize or Review after a reload.
 The Customize Logo tab accepts either a reusable per-user template or a one-off
 project logo. Templates retain only the independent R2 logo asset and optional
 watermark text; placement and opacity remain project settings. Template
@@ -247,10 +249,10 @@ is not stored server-side.
 
 A completed render persists three R2 artifacts on `movie_recap_projects`: the
 combined MP4, the processed footage-only MP4, and the cached narration master
-WAV. Review displays the combined video plus a full-width audio player and
-separate authenticated download links for footage and narration. Download GETs
-validate project access through RLS, then redirect to short-lived R2 URLs with
-attachment filenames; large media bytes do not pass through the Next server.
+WAV. Review plays and downloads the combined MP4; the other artifacts remain
+internal. Download GETs validate project access through RLS, then return
+short-lived R2 URLs with attachment filenames; large media bytes do not pass
+through the Next server.
 
 Review can also render an inclusive start/end beat range as a standalone MP4.
 It reuses the saved narration master, trims audio at the selected beat

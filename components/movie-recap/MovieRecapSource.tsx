@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown, Film, Loader2, MoreHorizontal, RefreshCw, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Film, Loader2, MoreHorizontal, RefreshCw, Trash2, Upload } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -11,8 +11,6 @@ import { clearRenderHistory } from "@/lib/movie-recap-render-history";
 import { apiClient, useWrite } from "@/lib/spoosh";
 
 const UPLOAD_LOG = "[MovieRecapUpload]";
-
-type ReplaceMode = "same" | "different";
 
 // An R2 part PUT has been seen to send every byte and then never answer. With no
 // progress for this long the attempt is aborted so the retry loop can run.
@@ -124,9 +122,7 @@ export function MovieRecapSource({
   const [percent, setPercent] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const replaceMode = useRef<ReplaceMode>("same");
-
-  async function begin(file: File, replacing: ReplaceMode | null = null) {
+  async function begin(file: File, replacing: "same" | null = null) {
     uploadLog("file-selected", {
       fileName: file.name,
       contentType: file.type,
@@ -338,30 +334,22 @@ export function MovieRecapSource({
     });
   }
 
-  function confirmReplace(mode: ReplaceMode) {
+  function confirmReplace() {
     if (!project) return;
     ConfirmDialog.show({
-      title: mode === "same" ? "Replace with a better-quality copy?" : "Replace with a different video?",
-      content:
-        mode === "same"
-          ? "Use this for the same video in better quality. Your transcript, narrative script, narration, and Customize Video settings stay. Render outputs and render history are cleared, and the letterbox crop is measured again at the next render."
-          : "Your transcript and all Customize Video settings will stay. The narrative script, source analysis, render outputs, and render history made from the current video will be permanently cleared.",
+      title: "Replace with a better-quality copy?",
+      content: "Use this for the same video in better quality. Your transcript, narrative script, narration, and Customize Video settings stay. Render outputs and render history are cleared, and the letterbox crop is measured again at the next render.",
       confirmButtonLabel: "Choose replacement",
       cancelButtonLabel: "Cancel",
       onConfirm: ({ dismiss }) => {
         dismiss();
-        replaceMode.current = mode;
         void openReplacementPicker({ multiple: false });
       },
     });
   }
 
   async function replaceWith(file: File) {
-    const mode = replaceMode.current;
-    if (mode !== "same" || !project) {
-      void begin(file, mode);
-      return;
-    }
+    if (!project) return;
     const metadata = await readVideo(file).catch(() => null);
     if (metadata) URL.revokeObjectURL(metadata.url);
     const driftS = metadata ? Math.abs(metadata.duration - project.sourceDurationSeconds) : 0;
@@ -371,7 +359,7 @@ export function MovieRecapSource({
     }
     ConfirmDialog.show({
       title: "Durations do not match",
-      content: `The new file is ${formatDuration(metadata!.duration)} and the current one is ${formatDuration(project.sourceDurationSeconds)}. If this is a different cut, the kept beats will point at the wrong footage. Use Different video to rebuild the script instead.`,
+      content: `The new file is ${formatDuration(metadata!.duration)} and the current one is ${formatDuration(project.sourceDurationSeconds)}. The existing narration timings will be kept, so continue only if this is the same cut.`,
       confirmButtonLabel: "Keep script anyway",
       cancelButtonLabel: "Cancel",
       onConfirm: ({ dismiss }) => {
@@ -440,17 +428,9 @@ export function MovieRecapSource({
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
             <p className="text-xs text-fg-3">Replace the source and keep your settings, or delete the entire project.</p>
             <div className="flex items-center gap-2">
-              <Menu menuClassName="min-w-[240px] p-0" placement="bottom-end">
-                <MenuTrigger>
-                  {({ toggleMenu }) => (
-                    <Button disabled={uploading || deleting} onClick={toggleMenu}>
-                      <RefreshCw size={15} /> Replace video <ChevronDown size={14} />
-                    </Button>
-                  )}
-                </MenuTrigger>
-                <MenuItem onClick={() => confirmReplace("same")}>Same video, better quality</MenuItem>
-                <MenuItem onClick={() => confirmReplace("different")}>Different video</MenuItem>
-              </Menu>
+              <Button disabled={uploading || deleting} onClick={confirmReplace}>
+                <RefreshCw size={15} /> Replace video
+              </Button>
               <Menu menuClassName="min-w-[180px] p-0" placement="bottom-end">
                 <MenuTrigger>
                   {({ toggleMenu }) => (

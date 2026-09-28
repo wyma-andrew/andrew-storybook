@@ -81,6 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             script_approved: false,
             render_script: null,
             current_step: 1,
+            max_step: 1,
           }),
       render_status: "idle",
       render_is_mock: false,

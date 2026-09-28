@@ -56,7 +56,7 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
 
   return (
     <div className="mt-8 rounded-xl border border-line bg-panel-2 p-4">
-      <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <History size={16} className="text-fg-3" />
           <span className="text-sm font-medium">Render history</span>
@@ -67,12 +67,6 @@ export default function MovieRecapRenderHistory({ projectId }: { projectId: stri
           </Button>
         )}
       </div>
-      <p className="mb-4 text-xs text-fg-2">
-        Latest three generations from this browser, newest first. <span className="font-medium text-fg">Held</span> is seconds
-        with no footage behind them, filled by repeating a frame — it should be zero. Stored locally, so it does not
-        follow you to another machine.
-      </p>
-
       {/* Shown empty rather than hidden: a panel that only exists once a render
           has happened is one nobody can find when they go looking for it. */}
       {entries.length === 0 ? (

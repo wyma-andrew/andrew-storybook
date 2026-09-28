@@ -7,6 +7,148 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Replace video uses one same-video action
+
+**Decision, approved by the user:** replace the two-item Replace video menu with
+one button that uses the existing same-video replacement path. Keep its
+confirmation, duration mismatch warning, and multipart upload flow.
+
+**Why:** replacement files in this workflow are always better-quality copies
+of the same cut, so asking which kind of video is being uploaded adds an
+unneeded choice.
+
+**Rejected:** keeping the Different video option in the UI. This supersedes
+the two-item menu from the 2026-09-23 source replacement decision. The server
+still accepts the legacy different-video mode; the UI no longer offers it.
+
+## 2026-09-29 — Keep visited steps unlocked after returning to Narrative Script
+
+**Decision:** persist the furthest visited wizard step in `max_step` while
+`current_step` continues to record the step selected by navigation. Step tabs
+unlock through `max_step`, and Different-video source replacement resets both
+values to step one.
+
+**Why:** returning from Customize to Narrative Script saved `current_step = 3`.
+After a reload, the wizard treated that value as the furthest visited step and
+disabled Customize and Review even though the user had already reached them.
+
+**Rejected:** deriving the furthest step from `current_step` on every load;
+that field also tracks backward navigation. Existing projects with a saved
+render script are backfilled through Review because their previous maximum
+cannot be reconstructed exactly.
+
+## 2026-09-29 — Remove the floating beat player
+
+**Decision, approved by the user:** remove the fixed bottom-right beat player
+from the Script step. Keep each beat's inline play/pause button, active-beat
+outline, automatic scroll during playback, and pause/resume behavior.
+
+**Why:** the floating control duplicates the playback control in each beat and
+occupies the page corner.
+
+**Rejected:** retaining the floating player from the 2026-09-23 decision below.
+That decision's player and scroll-to-top button are superseded; its other
+playback behavior remains.
+
+## 2026-09-29 — Shorten Review labels
+
+**Decision:** call the Range action “Render Beats” and remove the explanatory
+paragraph beneath Render history. Keep its columns, empty state, and Clear
+action.
+
+**Why:** the Range selectors already identify which beats will render, and the
+history paragraph repeated details that do not need to occupy Review space.
+
+## 2026-09-29 — Align render actions with their selectors
+
+**Decision:** place Render Video beside the Full render-selection field in an
+intrinsic-width grid column. In Range mode, keep the three selectors and place
+Render Beats in a fourth intrinsic-width column on the same row.
+
+**Why:** each action belongs beside the options it will use. Both buttons keep
+their natural width instead of filling the remaining panel.
+
+**Consequence:** no overflow-clipping wrapper surrounds the Range selectors,
+so their dropdown menus remain visible. The row keeps its minimum width on
+narrow screens.
+
+## 2026-09-29 — Put Mock Preview in Review's more menu
+
+**Decision:** move Render Mock Preview from the primary action row into a more
+menu at the right side of the Video render heading. The menu item calls the same
+mock-render action and stays unavailable while a render is running.
+
+**Why:** Mock Preview is a secondary action independent of Full/Range selection;
+beside Render Selected Beats it looked like another range-render choice.
+
+**Consequence:** the output slot and current Full/Range view behavior remain
+unchanged, including when Range is selected.
+
+## 2026-09-29 — Keep range selectors together in Review
+
+**Decision:** show Render selection, Start beat, and End beat in three equal
+selector columns when Range is selected. The render action now occupies a
+fourth column as recorded above.
+
+**Why:** all three fields define one render range and are easier to scan and
+adjust together.
+
+**Consequence:** selected beat names stay on one line and truncate with an
+ellipsis to fit their grid column. The dropdown retains the full beat text.
+Start and End beat dropdown panels are capped at 24rem or the viewport width
+minus 2rem, whichever is smaller; long option text wraps within the panel.
+The action row does not repeat the selected beat numbers because the selectors
+already show them.
+
+## 2026-09-29 — Separate Review progress from render controls
+
+**Decision:** remove the “Render preview” status row and explanatory sentence
+from Review. Show the progress stepper in its own section after a render starts,
+with the active stage or failure beneath it. Put Video render and its controls
+in a separate section below.
+
+**Why:** the heading and helper repeated what the stepper and controls already
+showed, while nesting the controls inside the progress card blurred their roles.
+
+**Consequence:** an idle Review opens directly on Video render; a finished
+render shows its completed stepper above the controls without a separate “Done”
+label. This supersedes the 2026-09-17 status-label placement, but retains its
+active-stage detail and progress stepper. The stepper has no surrounding card,
+padding, background, or border.
+
+## 2026-09-29 — Download the combined Review video
+
+**Decision:** add Download video under the Review player for the rendered MP4.
+The authenticated project route signs the current combined output for a
+short-lived attachment download. Mock previews use that same output slot.
+
+**Why:** the player allowed watching the result but offered no way to save the
+complete video.
+
+**Consequence:** the 2026-09-22 decision to hide separate narration and
+footage downloads still applies; this action downloads only what the player
+shows. A previous completed output remains downloadable during a new render.
+The download button is centered below the player.
+It shows a loading state while requesting the signed URL, then lets the browser
+handle the file transfer.
+
+## 2026-09-29 — Let users adjust caption size in Customize
+
+**Decision, approved by the user:** keep the two caption colour/outline presets
+and add a per-project text-size override from 1% to 10% of output frame height.
+An unset override uses the existing aspect-ratio default. Customize can restore
+that default after a manual change; preview and ASS render resolve the same size.
+
+**Why:** the aspect-ratio defaults remain useful starting points, but users need
+to match caption scale to a particular video, as they already can in Translate.
+
+**Rejected:** keeping size fixed inside the preset. The user explicitly asked
+to change the 2026-09-16 fixed-size decision; retaining a fixed size prevents
+this customization.
+
+**Consequence:** existing projects retain their current size until adjusted.
+The shared subtitle style also sizes the Hook Title overlay when present.
+
 ## 2026-09-27 — Static ffmpeg/ffprobe for beat audio preview on Vercel
 
 **Decision:** When `FFMPEG_PATH` is unset, ffmpeg and ffprobe come from the `ffmpeg-static` and `ffprobe-static` packages. Only the beat preview route (`script/beat/preview`) traces the linux binaries into its function; other platforms' ffprobe builds are excluded from tracing.

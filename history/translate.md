@@ -4,6 +4,14 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-28 — Shorten the new-project action on mobile
+
+**Decision:** show “New” beside the plus icon in the Translate project-list
+header below `sm`; retain “New project” on wider screens.
+
+**Why:** the shorter label leaves room for the adjacent Import action in a
+narrow header without changing where the link goes.
+
 ## 2026-09-27 — Cue edit is a bottom sheet without a backdrop
 
 **Decision:** Editing a translated cue opens a bottom `Drawer` (max 560px content, 3-row text) instead of a dialog, with no backdrop and no outside-click close. Start and End each have a "Now" button that copies the video's current time.

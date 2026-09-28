@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, ArrowUpToLine, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -98,7 +98,6 @@ export function MovieRecapScript({
   const [playingBeat, setPlayingBeat] = useState<number | null>(null);
   const [activeBeat, setActiveBeat] = useState<number | null>(null);
   const beatRefs = useRef(new Map<number, HTMLDivElement>());
-  const rootRef = useRef<HTMLDivElement>(null);
   const [previewingBeat, setPreviewingBeat] = useState<number | null>(null);
   const [scenePlan, setScenePlan] = useState<MovieRecapSceneTimingPlan | null>(null);
   const [scenePlanMeasured, setScenePlanMeasured] = useState(true);
@@ -216,19 +215,6 @@ export function MovieRecapScript({
     beatRefs.current.get(playingBeat)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [playingBeat]);
 
-  function scrollToTop() {
-    let element = rootRef.current?.parentElement ?? null;
-    while (element) {
-      const { overflowY } = getComputedStyle(element);
-      if ((overflowY === "auto" || overflowY === "scroll") && element.scrollHeight > element.clientHeight) {
-        element.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
-      element = element.parentElement;
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   async function continueToNextBeat() {
     const finished = playingBeatRef.current;
     playingBeatRef.current = null;
@@ -262,7 +248,7 @@ export function MovieRecapScript({
   return (
     <>
       <audio ref={audioRef} className="hidden" onEnded={() => void continueToNextBeat()} />
-      <div ref={rootRef} className="mt-4 rounded-xl border border-line bg-panel-2 p-4">
+      <div className="mt-4 rounded-xl border border-line bg-panel-2 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-fg-3" />
@@ -496,34 +482,6 @@ export function MovieRecapScript({
           )}
         </div>
       </div>
-      {activeBeat !== null && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-lg border border-line bg-panel p-2 shadow-lg">
-          <span className="px-1 text-xs font-medium text-fg-2 tabular-nums">Beat {activeBeat + 1}</span>
-          <Button
-            className="!h-8 !w-8 !px-0"
-            disabled={previewingBeat !== null}
-            aria-label={playingBeat === activeBeat ? "Pause" : "Play"}
-            title={playingBeat === activeBeat ? "Pause" : "Play"}
-            onClick={() => void toggleBeatPreview(activeBeat)}
-          >
-            {previewingBeat !== null ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : playingBeat === activeBeat ? (
-              <Pause size={14} />
-            ) : (
-              <Play size={14} />
-            )}
-          </Button>
-          <Button
-            className="!h-8 !w-8 !px-0"
-            aria-label="Scroll to top"
-            title="Scroll to top"
-            onClick={scrollToTop}
-          >
-            <ArrowUpToLine size={14} />
-          </Button>
-        </div>
-      )}
     </>
   );
 }

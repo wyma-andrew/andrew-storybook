@@ -492,12 +492,12 @@ export type MovieRecapSubtitlePosition = (typeof MOVIE_RECAP_SUBTITLE_POSITIONS)
 export type MovieRecapSubtitlePreset = (typeof MOVIE_RECAP_SUBTITLE_PRESETS)[number]["id"];
 
 // The one place the preview and the render agree on what a caption looks like.
-// Everything that used to be a per-project column — colour, size, weight,
-// shadow — is resolved from the preset and the aspect ratio here, so the two
-// renderers cannot drift apart.
+// Colour, outline and weight come from the preset; size uses the project override
+// when present, otherwise the aspect-ratio default.
 export function movieRecapSubtitleStyle(project: {
   subtitlePreset: MovieRecapSubtitlePreset;
   aspectRatio: MovieRecapAspectRatio;
+  subtitleSize: number | null;
 }) {
   const preset = MOVIE_RECAP_SUBTITLE_PRESETS.find((item) => item.id === project.subtitlePreset)
     ?? MOVIE_RECAP_SUBTITLE_PRESETS[0];
@@ -508,7 +508,7 @@ export function movieRecapSubtitleStyle(project: {
     weight: preset.weight,
     // Percentage of frame height, the same number libass gets as `Fontsize`
     // against `PlayResY`.
-    fontSizePct: MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio],
+    fontSizePct: project.subtitleSize ?? MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio],
   };
 }
 

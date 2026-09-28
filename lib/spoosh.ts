@@ -227,6 +227,9 @@ export type ApiSchema = {
   "movie-recaps/:id/render/ranges/:rangeId/download": {
     GET: { data: { url: string } };
   };
+  "movie-recaps/:id/render/download": {
+    GET: { data: { url: string } };
+  };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };
   };

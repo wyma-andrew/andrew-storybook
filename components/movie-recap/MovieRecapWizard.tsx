@@ -4,8 +4,8 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
 import Image from "next/image";
-import { Captions, Check, ChevronLeft, ChevronRight, Clapperboard, Crop, Droplet, Pencil, Plus, RectangleHorizontal, RectangleVertical, Scissors, Square, Stamp, Trash2, Upload, X } from "lucide-react";
-import { Alert, ConfirmDialog, Dialog, Input, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
+import { Captions, Check, ChevronLeft, ChevronRight, Clapperboard, Crop, Droplet, MoreHorizontal, Pencil, Plus, RectangleHorizontal, RectangleVertical, Scissors, Square, Stamp, Trash2, Upload, X } from "lucide-react";
+import { Alert, ConfirmDialog, Dialog, Input, Menu, MenuItem, MenuTrigger, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
@@ -51,6 +51,7 @@ const CUSTOMIZE_FIELDS = [
   "mirrorEnabled",
   "copyrightZoom",
   "subtitlePreset",
+  "subtitleSize",
   "subtitlesEnabled",
   "subtitlePosition",
   "subtitleOffset",
@@ -76,6 +77,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5;
 // Mirrors the server's own limit (the PATCH route), so the Add button stops at
 // the same place the request would have been refused.
 const MAX_BLUR_REGIONS = 8;
+const BEAT_SELECT_BUTTON_CLASS = "[&>div:first-child]:min-w-0 [&>div:first-child]:flex-nowrap [&>div:first-child>span]:block [&>div:first-child>span]:min-w-0 [&>div:first-child>span]:truncate";
 
 type CustomizeTab = "aspect" | "subtitle" | "logo" | "blur";
 
@@ -100,21 +102,21 @@ function ChoiceButton({ selected, children, onClick, showSelectedIndicator = tru
   );
 }
 
-function BlurNumberField({ label, value, min, onCommit }: { label: string; value: number; min: number; onCommit: (value: number) => void }) {
+function PercentNumberField({ label, value, min, max = 100, onCommit }: { label: string; value: number; min: number; max?: number; onCommit: (value: number) => void }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
   return <Input
     type="number"
     aria-label={label}
     min={min}
-    max={100}
+    max={max}
     step={0.1}
     value={editing ? text : String(Number(value.toFixed(1)))}
     onFocus={() => { setText(String(Number(value.toFixed(1)))); setEditing(true); }}
     onChange={(event) => setText(event.target.value)}
     onBlur={() => {
       const next = Number(text);
-      if (text.trim() && Number.isFinite(next)) onCommit(Math.min(100, Math.max(min, next)));
+      if (text.trim() && Number.isFinite(next)) onCommit(Math.min(max, Math.max(min, next)));
       setEditing(false);
     }}
     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
@@ -228,7 +230,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
   const [project, setProject] = useState<MovieRecapProject | null>(initialProject);
-  const [maxStep, setMaxStep] = useState<StepNumber>(initialProject?.currentStep ?? 1);
+  const maxStep = project?.maxStep ?? 1;
   // No `withDefault`: an absent `?step` has to stay distinguishable from an
   // explicit one, because with nothing in the URL the wizard opens where the
   // project was left (`currentStep`) rather than at step one.
@@ -344,7 +346,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
     setProject(result.data);
     if (step === 4) setLogoAction("unchanged");
-    setMaxStep((current) => Math.max(current, target) as StepNumber);
     void setStep(target);
   }
 
@@ -863,9 +864,6 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   </div>}
                   {tab === "subtitle" && <div>
                     <div className="space-y-5">
-                      {/* Colour, size, weight and shadow are one choice, not four
-                          knobs — see history/movie-recap.md. The swatch shows the
-                          preset drawing its own name the way the export will. */}
                       <div><div className="mb-2 text-xs font-medium text-fg-2">Caption style</div>
                         <div className="grid grid-cols-2 gap-2">
                           {MOVIE_RECAP_SUBTITLE_PRESETS.map((item) => (
@@ -877,7 +875,14 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                             </ChoiceButton>
                           ))}
                         </div>
-                        <p className="mt-2 text-xs text-fg-3">Text size is {MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}% of frame height for {project.aspectRatio}.</p>
+                      </div>
+                      <div>
+                        <div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-fg-2">
+                          <span>Text size (% of frame height)</span>
+                          {project.subtitleSize !== null && <Button variant="ghost" className="!h-7 !px-2 !text-xs" onClick={() => merge({ subtitleSize: null })}>Use default</Button>}
+                        </div>
+                        <PercentNumberField label="Subtitle text size" min={1} max={10} value={project.subtitleSize ?? MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]} onCommit={(value) => merge({ subtitleSize: value })} />
+                        {project.subtitleSize === null && <p className="mt-1 text-xs text-fg-3">Default for {project.aspectRatio}: {MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}%.</p>}
                       </div>
                       <div><div className="mb-2 text-xs font-medium text-fg-2">Position</div><div className="grid grid-cols-3 gap-2">{MOVIE_RECAP_SUBTITLE_POSITIONS.map((item) => <Button key={item.id} onClick={() => merge({ subtitlePosition: item.id })} className={project.subtitlePosition === item.id ? "!border-accent !bg-accent-dim !text-fg" : ""}>{item.name}</Button>)}</div></div>
                       {project.subtitlePosition !== "middle" && <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Edge distance</span><span>{Math.round(project.subtitleOffset)}%</span></span><input aria-label="Subtitle edge distance" type="range" min={0} max={45} value={project.subtitleOffset} onChange={(event) => merge({ subtitleOffset: Number(event.target.value) })} className="w-full accent-accent" /></label>}
@@ -985,7 +990,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                         {(["x", "y", "width", "height"] as const).map((field) => (
                           <label key={`${selectedBlur}:${field}`} className="text-xs text-fg-2">
                             <span className="mb-1 block capitalize">{field} %</span>
-                            <BlurNumberField
+                            <PercentNumberField
                               label={`Blur area ${selectedBlur + 1} ${field}`}
                               min={field === "width" || field === "height" ? 5 : 0}
                               value={selectedBlurRegion[field]}
@@ -1131,7 +1136,6 @@ function Review({
     else toast.error(result.error?.error ?? "Could not download the range video.");
   }
 
-  const statusColor = project.renderStatus === "failed" ? "text-danger" : project.renderStatus === "done" ? "text-ok" : "text-fg-3";
   const stageLabel = project.renderStage
     ? {
         downloading_source: "Downloading source",
@@ -1149,53 +1153,46 @@ function Review({
         uploading: "Uploading result",
       }[project.renderStage]
     : null;
-  const mockTag = project.renderIsMock && project.renderStatus !== "idle" ? " (mock)" : "";
-  const statusLabel = project.renderStatus === "running" ? `${activeRange ? "Range: " : ""}${stageLabel ?? "Starting…"}` : { idle: "Not rendered yet", running: "Rendering…", done: "Done", failed: "Failed" }[project.renderStatus];
   return <div>
-    <div className="rounded-xl border border-line bg-panel-2 p-4">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-sm font-medium">Render preview</span>
-        <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}{mockTag}</span>
+    {project.renderStatus !== "idle" && (
+      <div>
+        <MovieRecapRenderProgress project={project} />
+        {project.renderStatus === "running" && <p className="mt-3 text-xs text-fg-2">{activeRange ? "Range: " : ""}{stageLabel ?? "Starting…"}</p>}
+        {project.renderStatus === "failed" && project.renderError && <p className="mt-3 text-sm text-danger">{project.renderError}</p>}
       </div>
-      <p className="mb-4 text-xs text-fg-2">Render the complete story or just the beats you want to check. Choose a mode to review its videos below.</p>
-      {/* The stepper replaces watching one line of text change for minutes.
-          It is hidden while idle, where seven grey dots would say nothing the
-          "Not rendered yet" label does not already say. */}
-      {project.renderStatus !== "idle" && (
-        <div className="mb-4 rounded-lg border border-line bg-panel p-3">
-          <MovieRecapRenderProgress project={project} />
-        </div>
-      )}
-      {project.renderStatus === "failed" && project.renderError && <p className="mb-4 text-sm text-danger">{project.renderError}</p>}
-      <div className="rounded-lg border border-line bg-panel p-4">
-        <div className="mb-3 flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">Video render</span></div>
-        <div className="max-w-xs">
+    )}
+    <div className={`${project.renderStatus !== "idle" ? "mt-5 " : ""}rounded-xl border border-line bg-panel-2 p-4`}>
+      <div className="mb-3 flex items-center gap-2">
+        <Clapperboard size={16} className="text-accent" />
+        <span className="text-sm font-medium">Video render</span>
+        <Menu className="ml-auto" menuClassName="min-w-[190px] p-0" placement="bottom-end">
+          <MenuTrigger>
+            {({ toggleMenu }) => <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="More render actions" disabled={rendering || project.renderStatus === "running"} onClick={toggleMenu}><MoreHorizontal size={16} /></Button>}
+          </MenuTrigger>
+          <MenuItem disabled={rendering || project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</MenuItem>
+        </Menu>
+      </div>
+      <div className={renderMode === "range" ? "grid min-w-[640px] grid-cols-[repeat(3,minmax(0,1fr))_max-content] items-end gap-3" : "grid grid-cols-[minmax(0,20rem)_max-content] items-end gap-3"}>
+        <div className="min-w-0">
           <div className="mb-1.5 text-xs font-medium text-fg-2">Render selection</div>
           <Select value={renderMode} onChange={chooseRenderMode}>
             <SelectOption value="full" label="Full" />
             <SelectOption value="range" label="Range" />
           </Select>
         </div>
-        {renderMode === "range" && (
-          <div className="mt-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div><div className="mb-1.5 text-xs font-medium text-fg-2">Start beat</div><Select value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text.slice(0, 42)}`} />)}</Select></div>
-              <div><div className="mb-1.5 text-xs font-medium text-fg-2">End beat</div><Select value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text.slice(0, 42)}`} />)}</Select></div>
-            </div>
-          </div>
-        )}
+        {renderMode === "range" && <>
+          <div className="min-w-0"><div className="mb-1.5 text-xs font-medium text-fg-2">Start beat</div><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
+          <div className="min-w-0"><div className="mb-1.5 text-xs font-medium text-fg-2">End beat</div><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
+        </>}
+        {renderMode === "full" && <LoadingButton variant="primary" className="justify-self-start" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>}
+        {renderMode === "range" && <LoadingButton variant="primary" className="justify-self-start" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
+      </div>
+      {((renderMode === "full" && !beatCount) || project.renderStatus === "running") && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {renderMode === "full" ? (
-            <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>
-          ) : (
-            <LoadingButton variant="primary" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Selected Beats</LoadingButton>
-          )}
-          <LoadingButton className="!border-mock-preview !text-mock-preview hover:!bg-mock-preview-hover" loading={rendering} disabled={project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</LoadingButton>
           {renderMode === "full" && !beatCount && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
-          {renderMode === "range" && <span className="text-xs text-fg-3">Beats {startBeat}–{endBeat}</span>}
           {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
         </div>
-      </div>
+      )}
     </div>
 
     <div ref={fullVideoSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "full" ? "" : "hidden"}`}>

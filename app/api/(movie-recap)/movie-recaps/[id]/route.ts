@@ -82,6 +82,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.subtitle_preset = body.subtitlePreset;
     changesConfiguration = true;
   }
+  if (body?.subtitleSize !== undefined) {
+    if (body.subtitleSize !== null && (typeof body.subtitleSize !== "number" || !Number.isFinite(body.subtitleSize) || body.subtitleSize < 1 || body.subtitleSize > 10)) {
+      return NextResponse.json({ error: "subtitleSize must be 1–10 or null." }, { status: 400 });
+    }
+    patch.subtitle_size = body.subtitleSize;
+    changesConfiguration = true;
+  }
   if (body?.subtitlesEnabled !== undefined) {
     if (typeof body.subtitlesEnabled !== "boolean") return NextResponse.json({ error: "subtitlesEnabled must be boolean." }, { status: 400 });
     patch.subtitles_enabled = body.subtitlesEnabled;
@@ -205,6 +212,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const step = Number(body.currentStep);
     if (!Number.isInteger(step) || step < 1 || step > 5) return NextResponse.json({ error: "Invalid wizard step." }, { status: 400 });
     patch.current_step = step;
+    patch.max_step = Math.max(Number(current.max_step ?? current.current_step), step);
   }
   if (body?.status !== undefined) {
     if (body.status !== "draft" && body.status !== "ready_for_generation") {
