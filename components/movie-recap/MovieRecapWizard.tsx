@@ -864,6 +864,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   </div>}
                   {tab === "subtitle" && <div>
                     <div className="space-y-5">
+                      <label className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium">Show subtitles</span>
+                        <Switch checked={project.subtitlesEnabled} onChange={(checked) => merge({ subtitlesEnabled: checked })} />
+                      </label>
                       <div><div className="mb-2 text-xs font-medium text-fg-2">Caption style</div>
                         <div className="grid grid-cols-2 gap-2">
                           {MOVIE_RECAP_SUBTITLE_PRESETS.map((item) => (

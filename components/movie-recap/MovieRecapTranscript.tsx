@@ -21,65 +21,68 @@ function formatTimestampedStoryPaste(raw: string) {
 }
 
 function buildMovieRecapTranslationPrompt(sourceText: string) {
-  return `Translate the following text into natural spoken Burmese for a movie recap narration.
+  return `You are a Burmese movie-recap narrator. Convert the raw auto-generated transcript below into natural spoken Burmese narration, synchronized with timestamps.
 
-STYLE:
-Write like a Burmese YouTube movie-recap narrator speaking continuously over the video.
-Use natural everyday spoken Burmese, not formal written Burmese and not textbook-style translation.
-The narration should flow smoothly from one action to the next, as if the narrator is watching the scene and explaining what is happening.
-Prefer connected storytelling sentences instead of many short, separate sentences.
-Use natural connectors such as:
-"အဲ့ဒီနောက်", "ဒီလိုနဲ့", "အဲဒီအချိန်မှာ", "ဒါပေမယ့်", "တစ်ဖက်မှာတော့", "နောက်တစ်နေ့မှာ", "အဲ့လိုဖြစ်နေရင်း", "အဲဒီနောက်မှာတော့"
-only when they sound natural in context.
-Describe actions directly and confidently. Do not make the narration sound like hearsay.
+STEP 1 — CLEAN THE SOURCE (do this internally; do not output it)
+1. Remove sound tags such as [music], [applause], [laughter], and speaker markers ">>". Drop any line with no spoken text left.
+2. Join the caption fragments and re-split them so that each line holds exactly ONE complete sentence (ending in ".", "?" or "!", including when followed by a closing quote).
+3. Give each sentence the timestamp of the caption line where its first word appears. Exception: if the sentence starts in the last 1–2 words of a caption line, use the NEXT caption line's timestamp.
+4. If a quote contains several sentences, split them into separate lines.
 
-TONE:
-Casual, clear, fast-moving, and easy to listen to.
-It should sound like a real Burmese person explaining a movie to a friend.
-Keep the original meaning and sequence of events accurate.
-Make complicated sentences easier to understand, but do not remove important story information.
-When several actions happen continuously, combine them naturally into one flowing narration.
+Example:
+Raw:
+02:45 "I've always been able to hear.
+02:46 >> [music]
+02:46 >> I just thought you were deaf." Although
+02:48 the man was delighted, he suddenly
+02:49 remembered his confession the day
+02:51 before. The girl had heard every single
+02:53 word.
 
-WORDING:
-Choose Burmese expressions that people commonly use in speech.
-Avoid direct word-for-word translation from English.
-Rewrite awkward English sentence structures into natural Burmese sentence order.
-Use character names naturally when needed, but avoid repeating the same name unnecessarily.
-Pronouns and subjects may be omitted when Burmese speech naturally allows it.
-Keep military, location, object, and story-specific terms accurate.
-For English acronyms, names, and terms that will be spoken aloud, use Burmese phonetic spelling when it improves TTS pronunciation. For example, write CIA as စီအိုင်အေ and Blackbird as ဘလက်ဘဒ်.
-Rewrite quantities and numbers into natural spoken Burmese forms when appropriate. For example, write 80,000 feet as ပေ ၈သောင်း so the narrator does not read each digit separately.
-Do not change a technical code, model number, coordinate, or other identifier when its exact form carries meaning.
+Cleaned:
+02:45  "I've always been able to hear.
+02:46  I just thought you were deaf."
+02:48  Although the man was delighted, he suddenly remembered his confession the day before.
+02:51  The girl had heard every single word.
 
-**TIMESTAMP & LINE MATCHING RULES:**
+STEP 2 — TRANSLATE INTO SPOKEN BURMESE NARRATION
 
-1. **Strict 1-to-1 Preservation:** Keep EVERY single timestamp line from the source text. Do NOT merge, skip, drop, or omit any timestamp under any circumstances.
-2. **Line-by-Line Alignment:** Each timestamp in the output MUST correspond to the source beat timing it belongs to. You may move a dangling word or phrase into the immediately following timestamp line when needed for natural Burmese phrasing; keep all events in their original order.
-3. **Flow Across Line Breaks:** Maintain a natural, continuous spoken narrative flow, but place a line break before every new timestamp to keep each visual beat synchronized. Do not combine text into longer paragraphs if it bypasses an existing timestamp beat.
-4. **No Standalone Timestamps:** Never output a timestamp on a line by itself without narration text next to it. Every timestamp must be immediately followed by its translated narration fragment.
-5. **Natural Line Breaks:** Do not end a line with a dangling word that grammatically belongs to the next line (e.g., a lone subject like "သူ" or a split phrase like "အဲဒီ / အချိန်ကျမှ"). Move that word to the start of the next timestamp line so each line reads as a natural spoken chunk.
+STYLE
+- Write like a Burmese YouTube movie-recap narrator speaking continuously over the video, as if explaining the story to a friend.
+- Use everyday spoken Burmese — not formal written Burmese, news-report style, subtitle style, or textbook translation.
+- Casual, clear, fast-moving, and easy to listen to.
+- Link lines with natural connectors so the narration flows from one line into the next, e.g. "အဲ့ဒီနောက်", "ဒီလိုနဲ့", "အဲဒီအချိန်မှာ", "ဒါပေမယ့်", "တစ်ဖက်မှာတော့", "နောက်တစ်နေ့မှာ", "အဲ့လိုဖြစ်နေရင်း" — only where they sound natural, and without overusing the same one.
+- Describe what happens directly and confidently, as if the narrator is watching it.
 
-IMPORTANT:
+ACCURACY
+- Keep the original meaning and order of events. Do not add information that is not in the source.
+- Simplify complicated phrasing, not content. Do not drop details just to make it shorter.
+- Keep names and story-specific terms (people, places, organizations, objects, technical terms) accurate and consistent throughout.
 
-Do NOT use overly formal phrases.
-Do NOT write like a news report.
-Do NOT write like subtitles.
-Do NOT translate sentence by sentence mechanically.
-Do NOT add information that is not in the source.
-Do NOT use unnecessary phrases such as "ဖြစ်ကြောင်း", "ဟုဆိုသည်", "တွေ့ရှိရသည်", "လုပ်ဆောင်ခဲ့သည်" unless the context truly requires them.
-Avoid sentence-final hearsay expressions like "တဲ့", "လို့ဆိုပါတယ်", or "လို့သိရပါတယ်" when the narrator directly knows or sees what happens.
-Avoid unnecessary obligation/inference wording such as "လုပ်ရတယ်" unless the source actually means "has to / must."
-Do not make the Burmese shorter merely to simplify it. Preserve enough detail for the viewer to understand exactly what is happening.
+WORDING
+- Rewrite English sentence structure into natural Burmese word order. Never translate word-for-word.
+- Omit subjects and pronouns where Burmese speech naturally allows it, and avoid repeating the same name unnecessarily.
+- For English names, acronyms and terms that will be read aloud, use Burmese phonetic spelling when it helps TTS pronunciation (e.g. CIA → စီအိုင်အေ).
+- Write numbers and quantities in spoken form when appropriate (e.g. 80,000 feet → ပေ ၈သောင်း), but keep codes, model numbers, coordinates and other exact identifiers unchanged.
+- Avoid formal fillers such as "ဖြစ်ကြောင်း", "ဟုဆိုသည်", "တွေ့ရှိရသည်", "လုပ်ဆောင်ခဲ့သည်".
+- Avoid hearsay endings such as "တဲ့", "လို့ဆိုပါတယ်", "လို့သိရပါတယ်" when describing what happens on screen; use them only for reported speech.
+- Avoid "လုပ်ရတယ်" unless the source actually means "must / has to".
 
-TARGET STYLE EXAMPLE:
+TIMESTAMP RULES
+1. Output exactly one line per cleaned source line, with the same timestamp, in the same order. Never merge, skip, or add lines.
+2. Every timestamp must be followed by its narration on the same line. No timestamp may stand alone.
+3. Each line must read as a complete, natural spoken chunk. Do not end a line with a word that grammatically belongs to the next line.
+
+OUTPUT FORMAT
+- One line per timestamp: MM:SS  Burmese narration
+- Two spaces between the timestamp and the text.
+- Output only the Burmese narration lines — no cleaned English, headings, notes, or explanations.
+
+STYLE REFERENCE (match its tone and rhythm only — do not copy its content):
 "မြောက်ကိုရီးယားစစ်တပ်ရဲ့ တပ်စခန်းတစ်ခုမှာ စစ်သားတစ်ယောက်က လူမသိအောင် တစ်ယောက်တည်း ခိုးထွက်လာပြီး လေဝင်ပေါက်ထဲဝင်ကာ သူသိမ်းထားတဲ့မြေပုံကို ထုတ်ကြည့်ပါတယ်။ ပြီးတော့ သံလိုက်အိမ်မြှောင်ပြတဲ့လမ်းအတိုင်း လျှပ်စစ်လွှတ်ထားတဲ့ ခြံစည်းရိုးကိုကျော်ပြီး ရှေ့ဆက်သွားပါတယ်။ လမ်းတစ်လျှောက်မှာလည်း မြေပုံပေါ်မပါသေးတဲ့ မြေမြှုပ်မိုင်းနေရာတွေကို တွေ့သမျှ ထပ်မှတ်ထားရင်း အဝေးမှာ မီးတွေထိန်ထိန်လင်းနေတဲ့ နယ်စပ်ဘက်ကို မျှော်လင့်တကြီးကြည့်နေပါတယ်။"
-The output should have this same spoken storytelling rhythm and flow.
 
 SOURCE TEXT:
-${sourceText.trim()}
-
-OUTPUT:
-Return only the final Burmese movie-recap narration with the preserved timestamps.`;
+${sourceText.trim()}`;
 }
 
 function showTranscriptImport(onImport: (text: string) => void) {

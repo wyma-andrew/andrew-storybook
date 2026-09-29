@@ -7,6 +7,22 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Clean transcript sentences in the copied prompt
+
+**Decision, approved by the user:** the copied translation prompt now asks the external translator to strip sound tags and speaker markers, join caption fragments into complete sentences, assign each sentence its first-word timestamp (or the next caption's timestamp when it begins at a caption's last one or two words), then produce exactly one Burmese narration line per cleaned sentence.
+
+**Why:** raw auto-generated caption boundaries are not natural narration beats. Sentence-level cleaning provides complete spoken chunks while retaining timestamp synchronization and the established casual Burmese recap voice.
+
+**Supersedes:** the 2026-09-22 strict preservation of every raw source timestamp and the 2026-09-28 relaxation that moved words across those raw lines. The new one-to-one rule applies to cleaned sentence lines instead. Sound-only lines disappear; several caption fragments may become one beat, and one caption may contribute to multiple beats. Only the copied prompt changes; transcript storage and rendering stay unchanged.
+
+## 2026-09-29 — Restore subtitle visibility control
+
+**Decision, approved by the user:** restore a Show subtitles switch in the Subtitle tab. It edits the existing `subtitlesEnabled` draft, which Save & Continue persists; preview and render already respect it.
+
+**Why:** users need to produce a recap without burned-in subtitles, and the existing persisted setting had no UI control.
+
+**Supersedes:** the 2026-09-22 decision to omit the Captions switch. Keep style and placement choices available even when subtitles are off, so re-enabling them retains those choices. No new setting or render path is needed.
+
 ## 2026-09-29 — Keep project order fixed by creation
 
 **Decision:** list recap projects newest-created first, regardless of later edits or renders. Stories and Translate use the same list order.
