@@ -4,6 +4,14 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-09-29 — Keep project order fixed by creation
+
+**Decision:** list Translate projects newest-created first, matching Movie Recap and Stories.
+
+**Why:** editing or rendering an older project should not move its card.
+
+**Rejected:** ordering by last update. The card date still shows the last update.
+
 ## 2026-09-29 — Store a project cover from the source video
 
 **Decision:** After a successful source upload, capture the first frame in the browser as a small JPEG and store it in project-scoped R2. The project list displays that cover with `object-contain`; projects without a cover retain the Film icon. The editor's Set cover action captures the visible video's current playhead frame, including for videos uploaded before this feature, and remains available after a cover is set. A successful video replacement clears the previous cover and attempts to capture the replacement's first frame.

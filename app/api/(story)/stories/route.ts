@@ -10,7 +10,7 @@ export async function GET() {
     .from("stories")
     .select("*, chapters(count)")
     .is("deleted_at", null)
-    .order("updated_at", { ascending: false });
+    .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const styles = await resolveVisualStyles(data.map((r) => r.visual_style_id as string | null));

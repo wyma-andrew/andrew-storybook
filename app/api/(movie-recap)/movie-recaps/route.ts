@@ -10,7 +10,7 @@ const MAX_R2_OBJECT_SIZE = 5 * 1024 ** 4 - 5 * 1024 ** 3;
 
 export async function GET() {
   const db = await supabaseRoute();
-  const { data, error } = await db.from("movie_recap_projects").select("*").order("updated_at", { ascending: false });
+  const { data, error } = await db.from("movie_recap_projects").select("*").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json((data ?? []).map(mapMovieRecapProject));
 }

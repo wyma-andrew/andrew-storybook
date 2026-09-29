@@ -1,5 +1,13 @@
 Covers: app/(app)/**, app/page.tsx, app/sign-in/page.tsx, app/sign-up/page.form.tsx, app/api/(story)/**, lib/spoosh.ts (Spoosh keys), lib/supabase/middleware.ts (auth redirects), route.pathname redirects, components/Sidebar.tsx, components/MobileNav.tsx, components/Frame.tsx, components/ui/Layout.tsx (TopBar), components/ChapterHeader.tsx (header layout only)
 
+## 2026-09-29 — Keep Stories list order fixed by creation
+
+**Decision:** list Stories newest-created first, matching Movie Recap and Translate.
+
+**Why:** editing an existing story should not rearrange its card among other stories.
+
+**Rejected:** ordering by last update. The card date remains a last-updated date.
+
 ## 2026-09-29 — Land on an enabled feature after sign-in
 
 **Decision:** Sign-in and the signed-in `/sign-in` redirect go to `/`. The root page reads the account's feature flags and redirects to the first enabled destination in the established feature order: Stories, Movie Recap, Translate, Voice Lab. An admin with no enabled feature goes to Admin; an account with neither an enabled feature nor admin access goes to No access.

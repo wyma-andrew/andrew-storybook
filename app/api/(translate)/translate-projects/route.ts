@@ -8,7 +8,7 @@ export async function GET() {
   const { unauthorized } = await requireFeature("translate");
   if (unauthorized) return unauthorized;
   const db = await supabaseRoute();
-  const { data, error } = await db.from("translate_projects").select("id,name,source_file_name,source_size_bytes,source_duration_seconds,source_upload_status,srt_file_name,render_status,updated_at,cover_url").order("updated_at", { ascending: false });
+  const { data, error } = await db.from("translate_projects").select("id,name,source_file_name,source_size_bytes,source_duration_seconds,source_upload_status,srt_file_name,render_status,updated_at,cover_url").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json((data ?? []).map(mapTranslateProjectListItem));
 }

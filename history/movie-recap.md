@@ -7,6 +7,14 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Keep project order fixed by creation
+
+**Decision:** list recap projects newest-created first, regardless of later edits or renders. Stories and Translate use the same list order.
+
+**Why:** returning to work on an older project should not rearrange the project cards.
+
+**Rejected:** ordering by last update. Card dates remain last-updated dates; only list order changes.
+
 ## 2026-09-29 — Show the whole project cover
 
 **Decision:** display saved project-card covers with `object-contain` inside
