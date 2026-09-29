@@ -120,19 +120,17 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
     }
 
     await setStage(db, project.id, "writing_script", 0, blocks.length);
-    const narration: MovieRecapNarrationSegment[] = [];
-    for (const [blockIndex, block] of blocks.entries()) {
-      if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
-      narration.push({
-        shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
-        text: block.text,
-        originalText: block.text,
-        blockIndex,
-        blockStartS: block.startS,
-        blockEndS: block.endS,
-      });
-      await setStage(db, project.id, "writing_script", blockIndex + 1, blocks.length);
-    }
+    if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+    const narration: MovieRecapNarrationSegment[] = blocks.map((block, blockIndex) => ({
+      shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
+      text: block.text,
+      originalText: block.text,
+      blockIndex,
+      blockStartS: block.startS,
+      blockEndS: block.endS,
+    }));
+    if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+    await setStage(db, project.id, "writing_script", blocks.length, blocks.length);
 
     // Narration is the master timeline. Speak each beat once, keep the
     // content-addressed clips, then save a combined narration.wav and its beat

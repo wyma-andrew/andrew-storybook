@@ -7,6 +7,14 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-09-29 — Build script blocks without per-block database writes
+
+**Decision:** turn timestamped story blocks into narration beats in memory, then report the completed Script stage once. Keep cancellation checks before and after the mapping.
+
+**Why:** the mapping is synchronous and cheap; writing progress and checking run status through the database for every block made a 604-block script appear stuck around 93%, even though no expensive work was happening there.
+
+**Rejected:** retaining a database round trip per block for a progress bar. Narration synthesis remains a separate, genuinely long counted stage; this change does not shorten TTS work.
+
 ## 2026-09-29 — Clean transcript sentences in the copied prompt
 
 **Decision, approved by the user:** the copied translation prompt now asks the external translator to strip sound tags and speaker markers, join caption fragments into complete sentences, assign each sentence its first-word timestamp (or the next caption's timestamp when it begins at a caption's last one or two words), then produce exactly one Burmese narration line per cleaned sentence.
