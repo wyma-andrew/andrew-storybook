@@ -20,7 +20,7 @@ hf_cache = modal.Volume.from_name("voice-lab-hf-cache", create_if_missing=True)
 
 # Sized for free-credit use; see history/voice-lab.md (2026-09-28). T4 lacks
 # native bf16 — redeploy with VOICE_LAB_GPU=L4 if generation fails or crawls.
-@app.function(
+GPU_FUNCTION = dict(
     image=image,
     gpu=os.environ.get("VOICE_LAB_GPU", "T4"),
     cpu=1,
@@ -30,10 +30,22 @@ hf_cache = modal.Volume.from_name("voice-lab-hf-cache", create_if_missing=True)
     min_containers=0,
     max_containers=1,
     scaledown_window=20,
-    timeout=300,
 )
+
+
+# Batch jobs run here, not in `web`: a container with no request in flight can
+# be scaled down mid-job, and a spawned function is what keeps it alive.
+@app.function(timeout=3600, **GPU_FUNCTION)
+def process_job(payload: dict):
+    from app import JobRequest, run_job
+
+    run_job(JobRequest(**payload))
+
+
+@app.function(timeout=300, **GPU_FUNCTION)
 @modal.asgi_app()
 def web():
-    from app import app as worker
+    import app as worker_module
 
-    return worker
+    worker_module.job_launcher = lambda payload: process_job.spawn(payload)
+    return worker_module.app
