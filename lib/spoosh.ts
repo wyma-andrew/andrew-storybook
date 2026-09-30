@@ -67,10 +67,11 @@ export type ApiSchema = {
   "labs/voice/items": {
     GET: { data: VoiceLabItem[] };
     POST: { data: VoiceLabItem[]; body: { script: string } };
+    PATCH: { data: null; body: { order: string[] } };
     DELETE: { data: null };
   };
   "labs/voice/items/:id": {
-    PATCH: { data: VoiceLabItem; body: { text: string } };
+    PATCH: { data: VoiceLabItem; body: { text?: string; resetAudio?: boolean } };
     DELETE: { data: null };
   };
   "labs/voice/generate": {

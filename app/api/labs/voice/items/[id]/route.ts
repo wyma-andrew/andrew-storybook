@@ -12,14 +12,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const body = await req.json().catch(() => null);
-  const textError = validateVoiceLabText(body?.text);
-  if (textError) return NextResponse.json({ error: textError }, { status: 400 });
+  const resetAudio = body?.resetAudio === true;
+  if (!resetAudio) {
+    const textError = validateVoiceLabText(body?.text);
+    if (textError) return NextResponse.json({ error: textError }, { status: 400 });
+  }
 
   const db = await supabaseRoute();
   const { data: current, error: currentError } = await db.from("voice_lab_items").select("*").eq("id", id).single();
   if (currentError) return NextResponse.json({ error: currentError.message }, { status: 404 });
-  const text = (body.text as string).trim();
-  if (text === current.text) return NextResponse.json(mapVoiceLabItem(current));
+  const text = resetAudio ? current.text : (body.text as string).trim();
+  if (!resetAudio && text === current.text) return NextResponse.json(mapVoiceLabItem(current));
 
   const { data, error } = await db
     .from("voice_lab_items")

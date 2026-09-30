@@ -74,6 +74,25 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data.map(mapVoiceLabItem));
 }
 
+export async function PATCH(req: NextRequest) {
+  const { unauthorized } = await requireFeature("voice_lab");
+  if (unauthorized) return unauthorized;
+
+  const body = await req.json().catch(() => null);
+  const order: unknown = body?.order;
+  if (!Array.isArray(order) || order.some((id) => typeof id !== "string") || new Set(order).size !== order.length) {
+    return NextResponse.json({ error: "order must be a list of unique item IDs." }, { status: 400 });
+  }
+
+  const db = await supabaseRoute();
+  const results = await Promise.all(
+    (order as string[]).map((id, index) => db.from("voice_lab_items").update({ position: index + 1 }).eq("id", id)),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 });
+  return NextResponse.json(null);
+}
+
 export async function DELETE() {
   const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;

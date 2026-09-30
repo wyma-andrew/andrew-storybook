@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore, type DragEvent } from "react";
 import Link from "next/link";
-import { ConfirmDialog, Dialog, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
-import { FileText, Loader2, RotateCw, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
+import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
+import { AudioLines, ChevronDown, FileText, GripVertical, Loader2, RotateCw, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
@@ -15,6 +15,37 @@ import {
 } from "@/lib/voice-lab";
 
 const POLL_MS = 2500;
+const VOICE_STORAGE_KEY = "voice-lab:voice-id";
+const VOICE_CHANGE_EVENT = "voice-lab:voice-change";
+
+function readStoredVoice() {
+  try {
+    return window.localStorage.getItem(VOICE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function subscribeStoredVoice(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(VOICE_CHANGE_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(VOICE_CHANGE_EVENT, callback);
+  };
+}
+
+function useStoredVoice() {
+  const stored = useSyncExternalStore(subscribeStoredVoice, readStoredVoice, () => null);
+  const voiceId = VOICE_LAB_PROFILES.some((profile) => profile.id === stored) ? (stored as string) : VOICE_LAB_PROFILES[0].id;
+  function setVoiceId(id: string) {
+    try {
+      window.localStorage.setItem(VOICE_STORAGE_KEY, id);
+    } catch {}
+    window.dispatchEvent(new Event(VOICE_CHANGE_EVENT));
+  }
+  return [voiceId, setVoiceId] as const;
+}
 
 function ImportDialogBody({ dismiss }: { dismiss: () => void }) {
   const [script, setScript] = useState("");
@@ -56,7 +87,16 @@ function ImportDialogBody({ dismiss }: { dismiss: () => void }) {
   );
 }
 
-function ItemRow({ item, index, voiceId }: { item: VoiceLabItem; index: number; voiceId: string }) {
+type DragProps = {
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
+};
+
+function ItemRow({ item, index, voiceId, drag }: { item: VoiceLabItem; index: number; voiceId: string; drag: DragProps }) {
   const [draft, setDraft] = useState(item.text);
   const { trigger: save } = useWrite((api) => api("labs/voice/items/:id").PATCH());
   const { trigger: remove } = useWrite((api) => api("labs/voice/items/:id").DELETE());
@@ -76,14 +116,54 @@ function ItemRow({ item, index, voiceId }: { item: VoiceLabItem; index: number; 
     }
   }
 
+  function confirmRemoveAudio() {
+    ConfirmDialog.show({
+      title: `Delete audio of line ${index + 1}?`,
+      content: "The generated audio will be deleted. The line stays and can be generated again.",
+      confirmButtonLabel: "Delete audio",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        const result = await save({ params: { id: item.id }, body: { resetAudio: true } });
+        if (result.error) toast.error(result.error.error);
+        dismiss();
+      },
+    });
+  }
+
+  function confirmDelete() {
+    ConfirmDialog.show({
+      title: `Delete line ${index + 1}?`,
+      content: "The line and its generated audio will be deleted.",
+      confirmButtonLabel: "Delete",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        await remove({ params: { id: item.id } });
+        dismiss();
+      },
+    });
+  }
+
   async function regenerate() {
     const result = await generate({ body: { voiceId, itemIds: [item.id] } });
     if (result.error) toast.error(result.error.error);
   }
 
   return (
-    <li className="rounded-xl border border-line bg-panel-2 p-3">
-      <div className="flex items-start gap-3">
+    <li
+      className={`rounded-xl border bg-panel-2 p-3 ${drag.dropTarget ? "border-accent" : "border-line"} ${drag.dragging ? "opacity-40" : ""}`}
+      onDragOver={drag.onDragOver}
+      onDrop={drag.onDrop}
+    >
+      <div className="flex items-start gap-2">
+        <span
+          draggable
+          aria-label="Drag to reorder"
+          className="mt-1.5 shrink-0 cursor-grab text-fg-3 active:cursor-grabbing"
+          onDragStart={drag.onDragStart}
+          onDragEnd={drag.onDragEnd}
+        >
+          <GripVertical size={16} />
+        </span>
         <span className="mt-2 w-6 shrink-0 text-right font-mono text-xs text-fg-3">{index + 1}</span>
         <div className="min-w-0 flex-1">
           <Textarea
@@ -109,9 +189,21 @@ function ItemRow({ item, index, voiceId }: { item: VoiceLabItem; index: number; 
               <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="Regenerate" disabled={busy} onClick={regenerate}>
                 <RotateCw size={14} />
               </Button>
-              <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="Delete" disabled={busy} onClick={() => remove({ params: { id: item.id } })}>
-                <Trash2 size={14} />
-              </Button>
+<Menu placement="bottom-end">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <Button variant="ghost" className="!h-8 !gap-0.5 !px-2" aria-label="Delete options" disabled={busy} onClick={toggleMenu}>
+                      <Trash2 size={14} /><ChevronDown size={12} />
+                    </Button>
+                  )}
+                </MenuTrigger>
+                <MenuItem disabled={item.status !== "done"} onClick={confirmRemoveAudio}>
+                  <span className="flex items-center gap-2"><AudioLines size={14} /> Delete audio only</span>
+                </MenuItem>
+                <MenuItem onClick={confirmDelete}>
+                  <span className="flex items-center gap-2 text-danger"><Trash2 size={14} /> Delete line</span>
+                </MenuItem>
+              </Menu>
             </div>
           </div>
         </div>
@@ -121,12 +213,21 @@ function ItemRow({ item, index, voiceId }: { item: VoiceLabItem; index: number; 
 }
 
 export default function VoiceLabPage() {
-  const [voiceId, setVoiceId] = useState<string>(VOICE_LAB_PROFILES[0].id);
+  const [voiceId, setVoiceId] = useStoredVoice();
   const { data: items, loading, trigger: refresh } = useRead((api) => api("labs/voice/items").GET());
   const { trigger: generate, loading: generating } = useWrite((api) => api("labs/voice/generate").POST());
   const { trigger: clearAll } = useWrite((api) => api("labs/voice/items").DELETE());
+  const { trigger: saveOrder } = useWrite((api) => api("labs/voice/items").PATCH());
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
+  const ordered = localOrder && items
+    ? localOrder.map((id) => items.find((item) => item.id === id)).filter((item): item is VoiceLabItem => !!item)
+    : items;
   const anyProcessing = items?.some((item) => item.status === "processing") ?? false;
+  const doneCount = items?.filter((item) => item.status === "done").length ?? 0;
+  const failedCount = items?.filter((item) => item.status === "failed").length ?? 0;
   const pendingCount = items?.filter((item) => item.status !== "done" && item.status !== "processing").length ?? 0;
   const profile = VOICE_LAB_PROFILES.find((item) => item.id === voiceId)!;
 
@@ -135,6 +236,22 @@ export default function VoiceLabPage() {
     const timer = setInterval(() => void refresh({ force: true }), POLL_MS);
     return () => clearInterval(timer);
   }, [anyProcessing, refresh]);
+
+  async function handleDrop(targetId: string) {
+    const sourceId = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (!ordered || !sourceId || sourceId === targetId) return;
+    const ids = ordered.map((item) => item.id);
+    const from = ids.indexOf(sourceId);
+    ids.splice(from, 1);
+    ids.splice(ids.indexOf(targetId) + (from < ordered.findIndex((item) => item.id === targetId) ? 1 : 0), 0, sourceId);
+    setLocalOrder(ids);
+    const result = await saveOrder({ body: { order: ids } });
+    if (result.error) toast.error(result.error.error);
+    await refresh({ force: true });
+    setLocalOrder(null);
+  }
 
   async function handleGenerate() {
     const result = await generate({ body: { voiceId } });
@@ -203,13 +320,51 @@ export default function VoiceLabPage() {
               <Button variant="danger" onClick={handleClear} disabled={!items?.length || anyProcessing}><Trash2 size={15} /> Clear all</Button>
               </div>
               <p className="mt-2 text-xs text-fg-3">{profile.description}</p>
+              {items?.length && (anyProcessing || generating) ? (
+                <div className="mt-4">
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-fg-3">
+                    <span>Generating audio…</span>
+                    <span>{doneCount} / {items.length}{failedCount ? ` · ${failedCount} failed` : ""}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-sunken" role="progressbar" aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={doneCount}>
+                    <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(doneCount / items.length) * 100}%` }} />
+                  </div>
+                </div>
+              ) : null}
             </section>
 
-            {loading && !items ? (
+            {loading && !ordered ? (
               <p className="text-sm text-fg-3">Loading…</p>
-            ) : items?.length ? (
+            ) : ordered?.length ? (
               <ul className="space-y-3">
-                {items.map((item, index) => <ItemRow key={`${item.id}:${item.text}`} item={item} index={index} voiceId={voiceId} />)}
+                {ordered.map((item, index) => (
+                  <ItemRow
+                    key={`${item.id}:${item.text}`}
+                    item={item}
+                    index={index}
+                    voiceId={voiceId}
+                    drag={{
+                      dragging: dragId === item.id,
+                      dropTarget: !!dragId && dragId !== item.id && overId === item.id,
+                      onDragStart: (event) => {
+                        setDragId(item.id);
+                        const row = event.currentTarget.closest("li");
+                        if (row) event.dataTransfer.setDragImage(row, 16, 16);
+                        event.dataTransfer.effectAllowed = "move";
+                      },
+                      onDragEnd: () => { setDragId(null); setOverId(null); },
+                      onDragOver: (event) => {
+                        if (!dragId) return;
+                        event.preventDefault();
+                        setOverId(item.id);
+                      },
+                      onDrop: (event) => {
+                        event.preventDefault();
+                        void handleDrop(item.id);
+                      },
+                    }}
+                  />
+                ))}
               </ul>
             ) : (
               <div className="grid min-h-48 place-items-center rounded-xl border border-dashed border-line-2 bg-sunken px-5 text-center">
