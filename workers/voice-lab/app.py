@@ -61,14 +61,13 @@ def get_model():
 def render_wav(request: GenerateRequest):
     with _model_lock:
         model = get_model()
-        designed_text = f"({request.stylePrompt}){request.text.strip()}"
         torch.manual_seed(request.seed)
         reference_path = REFERENCE_AUDIO[request.referenceAudioId] if request.referenceAudioId else None
         if reference_path is not None and not reference_path.is_file():
             raise FileNotFoundError(f"Reference audio is missing: {reference_path.name}")
         reference_text = request.referenceText if reference_path else None
         audio = model.generate(
-            text=designed_text,
+            text=request.text.strip(),
             prompt_wav_path=str(reference_path) if reference_path and reference_text else None,
             prompt_text=reference_text,
             reference_wav_path=str(reference_path) if reference_path else None,

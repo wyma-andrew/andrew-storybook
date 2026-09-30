@@ -10,6 +10,7 @@ import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
+import type { VoiceLabItem } from "@/lib/voice-lab";
 import type { TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
 
 export type ApiSchema = {
@@ -63,23 +64,17 @@ export type ApiSchema = {
   "translate-projects/:id/render/download": {
     GET: { data: { url: string } };
   };
+  "labs/voice/items": {
+    GET: { data: VoiceLabItem[] };
+    POST: { data: VoiceLabItem[]; body: { script: string } };
+    DELETE: { data: null };
+  };
+  "labs/voice/items/:id": {
+    PATCH: { data: VoiceLabItem; body: { text: string } };
+    DELETE: { data: null };
+  };
   "labs/voice/generate": {
-    POST: {
-      data: {
-        audioBase64: string;
-        contentType: "audio/wav";
-        durationSeconds: number;
-        sampleRate: number;
-        generationMs: number;
-        // Which service spoke this clip — the lab offers voices from more than
-        // one provider so they can be compared.
-        providerId: string;
-      };
-      body: {
-        text: string;
-        voiceId: string;
-      };
-    };
+    POST: { data: VoiceLabItem[]; body: { voiceId: string; itemIds?: string[] } };
   };
   "voices/preview": {
     POST: {

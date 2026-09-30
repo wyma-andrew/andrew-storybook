@@ -339,14 +339,14 @@ and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 - API proxy: `app/api/labs/voice/`
 - Worker: `workers/voice-lab/` (deployed to Modal scale-to-zero GPU via `modal_app.py`)
 
-The authenticated lab sends bounded Burmese test text through Spoosh to a
-Next.js route, which hands it to the TTS layer (`lib/tts/`). The lab lists every
-voice flagged for its surface — the Azure Burmese neural voices and the
-self-hosted VoxCPM2 profiles — so the two services can be compared on the same
-line of text, and returns an in-memory WAV for playback and download. Lab text
-and audio are deliberately not stored in Supabase or R2. `TTS_AZURE_KEY` and
-`VOICE_LAB_WORKER_URL` stay server-only; an optional shared bearer token
-protects the worker connection.
+The authenticated lab keeps a saved list of Burmese lines (`voice_lab_items`):
+Import splits pasted text into one editable row per line. Generate renders the
+unfinished lines with the chosen voice through the TTS layer (`lib/tts/`). Azure
+voices are rendered by the route; VoxCPM2 lines go to the worker as one job that
+uploads each WAV to R2 via presigned URLs and reports back to
+`app/api/labs/voice/callback`. The page polls the rows. `TTS_AZURE_KEY` and
+`VOICE_LAB_WORKER_URL` stay server-only; `VOICE_LAB_WORKER_TOKEN` also
+authenticates the callback. See `history/voice-lab.md`.
 
 Wai Yan and Yuzana use fixed 16 kHz reference WAVs bundled only into the worker
 runtime. The server sends a profile ID and reference transcript; the worker

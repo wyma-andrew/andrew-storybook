@@ -185,3 +185,54 @@ preview caches are regenerated.
 The second profile is now displayed as **Yuzana** (the catalog ID remains
 `narrator-female`, previously displayed as Yu Yu). The supplied reference clips
 are short, so identity consistency may be limited even with matching text.
+
+## 2026-09-30 — Persisted line list with async worker jobs
+
+**Supersedes** the "no database or R2 persistence" part of the 2026-09-15
+entry. The lab is now a saved list: Import splits pasted text on line breaks
+into `voice_lab_items` rows (one per non-empty line, each editable, auto-saved
+on blur), and audio is stored in R2 under `voice-lab/<owner>/`. One voice is
+chosen for the whole list.
+
+**Decision:** for VoxCPM2 voices, Generate sends every unfinished line to the
+worker as ONE job (`POST /jobs`, `202`). The worker renders them one at a time
+(the model lock already serializes generation), PUTs each WAV to a presigned R2
+URL minted by Next, and reports each finished line to
+`POST /api/labs/voice/callback`. The browser polls the list from the database;
+it never talks to the worker. Azure voices skip the worker: the route renders
+them itself, three at a time.
+
+**Why:** one long request would hit `maxDuration` and Vercel's ~4.5 MB response
+limit (audio was base64 in JSON). Presigned uploads keep audio out of the
+callback body. Polling the database means a closed tab loses nothing.
+
+**Callback auth:** the worker has no user session, so the callback route is the
+one voice-lab route that writes with `supabaseAdmin()`. It trusts a bearer equal
+to `VOICE_LAB_WORKER_TOKEN` (already shared with the worker) and only updates a
+row still `processing`. Rejected: giving the worker the service-role key;
+per-row tokens (skipped for now — internal use; add if users widen).
+
+**Consequences:** callback needs a URL the worker can reach — set
+`VOICE_CALLBACK_BASE_URL` (tunnel) for local dev, else the request origin is
+used. Batch jobs run in a separate Modal function (`process_job`, spawned by
+`web`) so an idle container cannot be scaled down mid-job; that means up to two
+GPU containers can exist at once. A worker that dies leaves rows `processing`;
+Generate re-picks those after 30 minutes. Editing a line resets it to pending
+and deletes its audio. A callback that never arrives is not retried by Next.
+
+**Addendum 2026-09-30 — R2 reconciliation:** `GET /api/labs/voice/items` also
+marks a `processing` row `done` when its `audio_key` object already exists in
+R2 (duration read from the WAV header). The callback stays the only way a
+worker *failure* is reported; this only recovers lost success callbacks (local
+dev with no tunnel, network drops). Rejected: dropping the callback — R2 alone
+cannot tell "still rendering" from "worker died".
+
+## 2026-09-30 — Never prepend a style prefix to the spoken text
+
+**Decision:** the worker sends the model exactly the text it was given. It no
+longer prepends `(stylePrompt)` in any case; with a reference recording the
+model read the English prefix aloud ("a calm cinematic narrator…").
+
+**Consequence:** `stylePrompt` is still required by the request and catalog but
+is unused. Movie Recap narration shares this path, so audio cached before this
+fix may contain the spoken prefix; regenerate it.

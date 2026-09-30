@@ -159,7 +159,8 @@ export function TranslateTimeline({ duration, currentTime, fps, cues, activeInde
     <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden rounded-lg border border-line bg-panel-2 [scrollbar-color:var(--gecko-ui-scrollbar-thumb)_transparent] [scrollbar-width:thin]" onScroll={(event) => setView({ left: event.currentTarget.scrollLeft, width: event.currentTarget.clientWidth })}>
       <div ref={innerRef} className="relative h-[68px] max-md:h-[54px] cursor-pointer touch-pan-x select-none" style={{ width: `${Math.max(view.width, duration * scale)}px` }}
         onPointerDown={startScrub}
-        onPointerMove={(event) => { if (scrubbing.current) onSeek(timeAt(event.clientX)); }}
+        onPointerMove={(event) => { if (!scrubbing.current) return; if (event.buttons === 0) { scrubbing.current = false; return; } onSeek(timeAt(event.clientX)); }}
+        onLostPointerCapture={() => { scrubbing.current = false; }}
         onPointerUp={endScrub}
         onPointerCancel={() => { scrubbing.current = false; touchTap.current = null; }}>
         <div className="absolute inset-x-0 top-0 h-5 border-b border-line">
@@ -197,7 +198,8 @@ export function TranslateTimeline({ duration, currentTime, fps, cues, activeInde
             event.currentTarget.setPointerCapture(event.pointerId);
             scrubbing.current = true;
           }}
-          onPointerMove={(event) => { if (scrubbing.current) onSeek(timeAt(event.clientX)); }}
+          onPointerMove={(event) => { if (!scrubbing.current) return; if (event.buttons === 0) { scrubbing.current = false; return; } onSeek(timeAt(event.clientX)); }}
+        onLostPointerCapture={() => { scrubbing.current = false; }}
           onPointerUp={() => { scrubbing.current = false; }}
           onPointerCancel={() => { scrubbing.current = false; }}>
           <div className="absolute inset-y-0 left-1/2 w-px bg-accent" />
