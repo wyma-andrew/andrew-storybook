@@ -104,6 +104,15 @@ first, then footage to match.
   style, wording and style-reference blocks are shared constants, so the three
   prompts keep one voice.
 
+**Update, same day: budget raised again to 22–26% (by the user, "a little
+more"),** after 18–22% below.
+
+**Update, same day: budget raised from 12–15% to 18–22% of the source (by the
+user).** At 12–15%, the rendered recap's events felt rushed: about 20 lines
+for 25 minutes, so each line stood for about 75s of film. The user's target
+is a 15-minute film to about a 3-minute recap (~20%). The prompt still aims
+for the middle of the range.
+
 **Update, same day: FINAL REVIEW protects the stakes line (wording by the
 user).** A review found that the story's "why" was gone: the company was close
 to bankruptcy, so the auction was its only chance. Without that line the

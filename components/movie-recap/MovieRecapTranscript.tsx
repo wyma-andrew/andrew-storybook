@@ -122,10 +122,11 @@ ${sourceText.trim()}`;
 // rules that contradicted each other. See history/movie-recap.md.
 //
 // The length is a ratio of the source so a longer film keeps more moments.
-// 12-15% is the user's target (a 25-minute film -> a 3-4 minute recap); "be
-// strict" in words alone came back at 70-80%. 10s per line is the user's
+// 22-26% is the user's target, raised in steps from 12-15% because shorter
+// recaps read as events rushing past; "be strict" in words alone came back at
+// 70-80%. 10s per line is the user's
 // measured average for a translated Burmese line, not the TTS rate.
-const RECAP_SHARE = { min: 0.12, max: 0.15 };
+const RECAP_SHARE = { min: 0.22, max: 0.26 };
 const RECAP_SECONDS_PER_LINE = 10;
 
 function clock(seconds: number) {

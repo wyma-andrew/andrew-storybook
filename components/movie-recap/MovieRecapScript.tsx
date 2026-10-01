@@ -10,6 +10,14 @@ import { MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap
 import { formatDuration } from "@/lib/movie-recap";
 import { apiClient } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
+
+function formatHms(seconds: number) {
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return [hours && `${hours}h`, (hours || minutes) && `${minutes}m`, `${secs}s`].filter(Boolean).join(" ");
+}
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 
 /**
@@ -344,7 +352,7 @@ export function MovieRecapScript({
             <span className="tabular-nums text-fg-2">
               {unmeasured < script.length && (
                 <>
-                  <span className="font-medium text-fg">{totalAudioS.toFixed(0)}s</span> of narration
+                  <span className="font-medium text-fg">{formatHms(totalAudioS)}</span> of narration
                   {unmeasured > 0 && " so far"}
                 </>
               )}
