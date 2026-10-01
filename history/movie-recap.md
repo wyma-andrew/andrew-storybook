@@ -104,6 +104,16 @@ first, then footage to match.
   style, wording and style-reference blocks are shared constants, so the three
   prompts keep one voice.
 
+**Update, same day: FINAL REVIEW protects the stakes line (wording by the
+user).** A review found that the story's "why" was gone: the company was close
+to bankruptcy, so the auction was its only chance. Without that line the
+ending's win carried no weight. FINAL REVIEW item 1 now never removes the line
+that sets up the main character's goal or what they stand to lose.
+Deliberately minimal: a writing-time "stakes, setups and payoffs" rule
+and a two-way setup/payoff check were considered and held back until a test
+shows that stakes or setups (such as an offer that pays off later) are still
+missing from the draft.
+
 **Update, same day: second review of the script (wording by the user).**
 - **"Same moment" is defined as one continuous action within about 10s of film
   time,** in rule 4 and in FINAL REVIEW item 3. "Same place" was read

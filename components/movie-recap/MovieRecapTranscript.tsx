@@ -166,7 +166,7 @@ ${NARRATION_STYLE}
 ${NARRATION_WORDING}
 
 FINAL REVIEW (do this before you output)
-1. Read your draft as one recap. Remove any line that repeats an earlier beat or covers a side detail. Remove other lines, weakest first, only while the total stays at or above the minimum of the length budget. If the total falls under the minimum, add back a story moment you skipped — never filler.
+1. Read your draft as one recap. Remove any line that repeats an earlier beat or covers a side detail. Remove other lines, weakest first, only while the total stays at or above the minimum of the length budget. Never remove the line that sets up the main character's goal or what they stand to lose. If the total falls under the minimum, add back a story moment you skipped — never filler.
 2. Shorten any line that runs over about ${RECAP_SECONDS_PER_LINE} seconds by cutting words, not moments.
 3. Never fix length by merging two lines into one — a merged line describes two moments but plays over one clip. Drop the weaker line instead, unless both are the same continuous action within about ${RECAP_SECONDS_PER_LINE} seconds.
 4. Check the total against the length budget once more.
