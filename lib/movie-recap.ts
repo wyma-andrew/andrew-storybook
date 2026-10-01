@@ -4,6 +4,7 @@ import {
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_SCRIPT_STEPS,
   MOVIE_RECAP_RENDER_STEPS,
+  MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS,
   MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS,
   MOVIE_RECAP_TRANSCRIPT_STEPS,
 } from "./constants/movie-recap";
@@ -206,7 +207,7 @@ export function movieRecapScriptStepStates({
 }
 
 // The transcript step's own bar. A retell-only run never downloads the source or
-// reads its dialogue, so those show skipped for the same reason a mock render's
+// reads it, and an automatic read never retells, so those show skipped for the same reason a mock render's
 // do: a bar claiming work that did not happen is a bar telling a lie.
 export function movieRecapTranscriptStepStates({
   status,
@@ -217,7 +218,7 @@ export function movieRecapTranscriptStepStates({
   stage: MovieRecapTranscriptStage | null;
   storyOnly: boolean;
 }) {
-  return stepStates(MOVIE_RECAP_TRANSCRIPT_STEPS, status, stage, storyOnly ? MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS : []);
+  return stepStates(MOVIE_RECAP_TRANSCRIPT_STEPS, status, stage, storyOnly ? MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS : MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS);
 }
 
 /**

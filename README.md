@@ -36,6 +36,21 @@ Place the approved Narrator preview at:
 public/movie-recap/voices/narrator.mp3
 ```
 
+## Self-hosted speech recognition (FunASR on Modal)
+
+Movie Recap transcription and Translate Auto Sync use only the FunASR worker in
+`workers/funasr` (Paraformer-zh + VAD + punctuation, character timestamps).
+Without `ASR_WORKER_URL`, both fail; there is no OpenAI fallback.
+
+```bash
+modal secret create funasr ASR_WORKER_TOKEN=<random token>
+modal deploy workers/funasr/modal_app.py
+```
+
+Then set `ASR_WORKER_URL` (the printed `FunAsr.transcribe` URL) and the same
+`ASR_WORKER_TOKEN` in `.env`. Models download from ModelScope on first use and
+are cached in the `funasr-cache` volume.
+
 ## Movie Recap rendering (ffmpeg with libass)
 
 The render pipeline shells out to ffmpeg, and burning styled Burmese subtitles

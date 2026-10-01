@@ -75,7 +75,8 @@ describe("movieRecapTranscriptStepStates", () => {
     const s = transcriptStates({ status: "running", stage: "transcribing", storyOnly: false });
     expect(s.download).toBe("done");
     expect(s.dialogue).toBe("active");
-    expect(s.story).toBe("pending");
+    expect(s.scenes).toBe("pending");
+    expect(s.story).toBe("skipped");
   });
 
   it("never claims a retell-only run read the source", () => {
@@ -83,20 +84,21 @@ describe("movieRecapTranscriptStepStates", () => {
     const s = transcriptStates({ status: "done", stage: null, storyOnly: true });
     expect(s.download).toBe("skipped");
     expect(s.dialogue).toBe("skipped");
+    expect(s.scenes).toBe("skipped");
     expect(s.story).toBe("done");
   });
 
   it("marks the step that failed, not the whole bar", () => {
-    const s = transcriptStates({ status: "failed", stage: "translating", storyOnly: false });
+    const s = transcriptStates({ status: "failed", stage: "describing_scenes", storyOnly: false });
     expect(s.dialogue).toBe("done");
-    expect(s.story).toBe("failed");
+    expect(s.scenes).toBe("failed");
   });
 
   it("covers every stage the transcript run can report", () => {
     // A stage added to the pipeline but not to a step group would silently read
     // as "not started".
     const grouped = new Set(MOVIE_RECAP_TRANSCRIPT_STEPS.flatMap((step) => [...step.stages]));
-    const all = ["downloading_source", "reading_captions", "extracting_audio", "transcribing", "translating"];
+    const all = ["downloading_source", "reading_captions", "extracting_audio", "transcribing", "detecting_scenes", "describing_scenes", "translating"];
     expect(all.filter((stage) => !grouped.has(stage as never))).toEqual([]);
   });
 });

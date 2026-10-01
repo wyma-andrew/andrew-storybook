@@ -17,6 +17,10 @@ import {
   movieRecapSceneVisionSystemPrompt,
 } from "./prompts/movie-recap-narration";
 import {
+  MOVIE_RECAP_TRANSCRIPT_VISION_SCHEMA,
+  movieRecapTranscriptVisionSystemPrompt,
+} from "./prompts/movie-recap-transcript-vision";
+import {
   MOVIE_RECAP_SCENE_SPLIT_SCHEMA,
   movieRecapSceneSplitSystemPrompt,
 } from "./prompts/movie-recap-scene-split";
@@ -286,6 +290,63 @@ export async function describeMovieRecapScenes(
   );
   const raw = res.choices[0]?.message?.content ?? "{}";
   return (JSON.parse(raw) as { scenes: { sceneIndex: number; visual: string; peakFrame: number }[] }).scenes ?? [];
+}
+
+export type TranscriptCastMember = { label: string; look: string };
+
+/**
+ * The Transcript step's scene pass. Unlike `describeMovieRecapScenes`, it sees
+ * the dialogue under each scene, may return an empty description for a scene
+ * that adds nothing, and carries a cast list between batches so a recurring
+ * person keeps one label for the whole film.
+ */
+export async function describeMovieRecapTranscriptScenes(
+  input: {
+    cast: TranscriptCastMember[];
+    previousVisual: string;
+    scenes: { index: number; startS: number; endS: number; dialogue: string; frames: string[] }[];
+  },
+  signal?: AbortSignal
+): Promise<{ scenes: { sceneIndex: number; visual: string }[]; cast: TranscriptCastMember[] }> {
+  const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+    {
+      type: "text",
+      text:
+        `Cast so far: ${input.cast.length ? input.cast.map((member) => `${member.label} — ${member.look}`).join("; ") : "none"}.\n` +
+        `Previous scene: ${input.previousVisual || "none"}`,
+    },
+  ];
+  for (const scene of input.scenes) {
+    content.push({
+      type: "text",
+      text:
+        `Scene ${scene.index} (${scene.startS.toFixed(1)}s-${scene.endS.toFixed(1)}s), ${scene.frames.length} frames in order. ` +
+        `Dialogue: ${scene.dialogue || "none"}`,
+    });
+    for (const frame of scene.frames) {
+      content.push({ type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame}`, detail: "low" } });
+    }
+  }
+  const res = await openai().chat.completions.create(
+    {
+      model: MOVIE_RECAP_VISION_MODEL,
+      reasoning_effort: "low",
+      messages: [
+        { role: "system", content: movieRecapTranscriptVisionSystemPrompt },
+        { role: "user", content },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "movie_recap_transcript_vision", schema: MOVIE_RECAP_TRANSCRIPT_VISION_SCHEMA, strict: true },
+      },
+    },
+    { signal }
+  );
+  const parsed = JSON.parse(res.choices[0]?.message?.content ?? "{}") as {
+    scenes?: { sceneIndex: number; visual: string }[];
+    cast?: TranscriptCastMember[];
+  };
+  return { scenes: parsed.scenes ?? [], cast: parsed.cast?.length ? parsed.cast : input.cast };
 }
 
 /**

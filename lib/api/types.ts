@@ -118,10 +118,12 @@ export type MovieRecapProject = {
   // every render. `transcriptStory` is that dialogue retold in Burmese as one
   // flowing story — deliberately not aligned to the lines above it.
   transcript: MovieRecapTranscriptSegment[] | null;
-  // The transcript as typed in by hand. The AI read is disconnected for now, so
-  // this is the transcript — `transcript` above only holds what an earlier
-  // automatic run left behind.
+  // The source transcript the step shows: typed in by hand, or written by the
+  // Auto read as dialogue interleaved with `[Scene]` lines. `transcript` above
+  // holds the Auto read's raw dialogue segments.
   transcriptText: string | null;
+  // Auto mode's recap script, written before its lines get source timestamps.
+  transcriptScript: string | null;
   transcriptStory: string | null;
   // Whether the lines came from the file's own subtitle track or from Whisper.
   transcriptSource: "captions" | "whisper" | null;
@@ -194,6 +196,8 @@ export type MovieRecapTranscriptStage =
   | "reading_captions"
   | "extracting_audio"
   | "transcribing"
+  | "detecting_scenes"
+  | "describing_scenes"
   | "translating";
 
 // Mirrors the stage names lib/movie-recap-render.ts writes as it runs, for
@@ -302,6 +306,7 @@ export type MovieRecapProjectPatch = Partial<{
   blurRegions: MovieRecapBlurRegion[];
   renderScript: MovieRecapNarrationSegment[];
   transcriptText: string;
+  transcriptScript: string;
   transcriptStory: string;
   currentStep: MovieRecapProject["currentStep"];
   status: MovieRecapProject["status"];

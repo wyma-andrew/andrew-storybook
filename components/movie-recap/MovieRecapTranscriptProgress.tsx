@@ -5,15 +5,16 @@ import type { MovieRecapProject } from "@/lib/api/types";
 import { MOVIE_RECAP_TRANSCRIPT_STEPS } from "@/lib/constants/movie-recap";
 import { movieRecapTranscriptStepStates, type MovieRecapStepState } from "@/lib/movie-recap";
 
-// PARKED: nothing renders this. The Transcript step takes its two texts by hand
-// while the automatic read is disconnected — see history/movie-recap.md. Kept
-// with the route and pipeline it belongs to, so turning the read back on is a
-// wizard change and not a rebuild.
-//
-// The transcript run's stages as a stepper, plus a real bar for the one stage
-// that can count itself: the retelling knows how many passages it has left.
+// The transcript run's stages as a stepper, plus a real bar for the stages that
+// can count themselves: keyframes extracted, scenes described, passages retold.
 // Every other stage is one opaque wait, so no percentage is invented for it —
 // a bar that fakes its own progress is worse than no bar.
+
+const COUNT_LABEL: Record<string, (current: number, total: number) => string> = {
+  detecting_scenes: (current, total) => `Extracting keyframes ${current} of ${total} scenes`,
+  describing_scenes: (current, total) => `Describing scenes ${current} of ${total}`,
+  translating: (current, total) => `Retelling passage ${current} of ${total}`,
+};
 
 const DOT: Record<MovieRecapStepState, string> = {
   done: "border-ok bg-ok text-panel",
@@ -47,13 +48,14 @@ export function MovieRecapTranscriptProgress({ project }: { project: MovieRecapP
   });
   const steps = MOVIE_RECAP_TRANSCRIPT_STEPS;
   const total = project.transcriptProgressTotal ?? 0;
-  // `current` is the passage being worked on, so the bar shows the ones already
-  // finished behind it rather than counting the one in flight as done.
   const done = project.transcriptProgressCurrent ?? 0;
-  const counting = project.transcriptStage === "translating" && total > 0;
-  // Passages finished, plus how far into the one in flight — so the bar keeps
-  // moving through a passage that takes minutes.
-  const fraction = counting ? (done + (project.transcriptProgressPartial ?? 0) / 100) / total : 0;
+  const counting = COUNT_LABEL[project.transcriptStage ?? ""] !== undefined && total > 0;
+  // A retold passage is reported while in flight, so the finished ones sit
+  // behind it plus how far into it the stream is; scene counters are already
+  // counts of finished work.
+  const retelling = project.transcriptStage === "translating";
+  const fraction = !counting ? 0 : retelling ? (done + (project.transcriptProgressPartial ?? 0) / 100) / total : done / total;
+  const label = counting ? COUNT_LABEL[project.transcriptStage ?? ""](retelling ? done + 1 : done, total) : "";
 
   return (
     <div>
@@ -85,7 +87,7 @@ export function MovieRecapTranscriptProgress({ project }: { project: MovieRecapP
       {counting && (
         <div className="mt-4" aria-live="polite">
           <div className="mb-1.5 flex justify-between text-xs text-fg-2">
-            <span>Retelling passage {done + 1} of {total}</span>
+            <span>{label}</span>
             <span className="tabular-nums">{Math.round(fraction * 100)}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-chip">

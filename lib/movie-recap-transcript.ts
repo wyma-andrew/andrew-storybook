@@ -1,30 +1,25 @@
-import { createReadStream } from "node:fs";
 import { downloadMovieRecapSource } from "./movie-recap-source-download";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { openai, retellInBurmese, type TranscriptSegment } from "./openai";
+import { describeMovieRecapTranscriptScenes, retellInBurmese, type TranscriptCastMember, type TranscriptSegment } from "./openai";
 import { readSourceCaptions } from "./movie-recap-captions";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
+import { ASR_NOT_CONFIGURED, asrWorkerConfigured, transcribeWithAsrWorker } from "./asr-worker";
 import { trimFailureMessage } from "./movie-recap";
+import { detectScenes, extractKeyframes } from "./movie-recap-scenes";
+import { buildAutoSourceTranscript, dialogueDuring, dropUnreliableSegments } from "./movie-recap-source-transcript";
+import { MOVIE_RECAP_KEYFRAMES_PER_SCENE } from "./constants/movie-recap";
 import type { MovieRecapProject, MovieRecapTranscriptStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
 
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 
-// Whisper rejects an upload over 25MB. That is a real ceiling on this feature,
-// not a formality: the extraction used to be 16kHz mono PCM, which is 32,000
-// bytes a second, so anything longer than about 13.6 MINUTES failed — and the
-// whole point is recapping feature-length films. Measured on a 131s source:
-// 4,204,190 bytes of WAV against 245,693 of Opus.
-//
-// Opus at 16kbps mono is ~1,870 bytes a second, which puts the ceiling near 3.9
-// hours and covers any film. It is a speech codec at a speech bitrate, so the
-// quality cost is small: transcribing the same clip as WAV and as Opus returned
-// the same dialogue apart from one proper noun. The narration prompt summarizes
-// rather than quotes, so that is a fair trade for the feature working at all.
+// Opus at 16kbps mono is ~1,870 bytes a second, small enough to POST a
+// feature film's audio in one request. It is a speech codec at a speech
+// bitrate: transcribing the same clip as WAV and as Opus returned the same
+// dialogue apart from one proper noun.
 const TRANSCRIBE_AUDIO_BITRATE = "16k";
-const WHISPER_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 // How much source wording goes into one retelling request. A feature's
 // transcript is far past what one call can be handed, so it is retold in
@@ -34,6 +29,10 @@ const WHISPER_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const STORY_CHUNK_CHARS = 12000;
 
 const PROGRESS_WRITE_INTERVAL_MS = 1500;
+
+// Sequential, because each batch hands the cast and the last description to
+// the next one.
+const VISION_BATCH_SCENES = 8;
 
 export type TranscriptProgress = (
   stage: MovieRecapTranscriptStage,
@@ -48,7 +47,7 @@ export type TranscriptProgress = (
 export type TranscriptReadStage = "reading_captions" | "extracting_audio" | "transcribing";
 export type TranscriptReadProgress = (stage: TranscriptReadStage) => PromiseLike<unknown>;
 
-// Whisper, with the audio compressed first. Extracted so the caller reads as
+// The self-hosted speech worker (FunASR), with the audio compressed first. Extracted so the caller reads as
 // the one decision it is: use the source's captions, or listen to it.
 async function transcribeSource(
   localSource: string,
@@ -56,6 +55,9 @@ async function transcribeSource(
   onProgress: TranscriptReadProgress,
   signal: AbortSignal
 ): Promise<TranscriptSegment[]> {
+  // No paid fallback: an unconfigured worker is an error, not a reason to call
+  // OpenAI's whisper-1 (see history/movie-recap.md).
+  if (!asrWorkerConfigured()) throw new Error(ASR_NOT_CONFIGURED);
   await onProgress("extracting_audio");
   const audioPath = path.join(workDir, "audio.ogg");
   await run(
@@ -63,21 +65,9 @@ async function transcribeSource(
     ["-y", "-i", localSource, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", TRANSCRIBE_AUDIO_BITRATE, audioPath],
     signal
   );
-  // Checked rather than assumed: the ceiling is wide but not infinite, and the
-  // API's own error for an oversized upload does not say what to do about it.
-  const audioBytes = (await stat(audioPath)).size;
-  if (audioBytes > WHISPER_MAX_UPLOAD_BYTES) {
-    throw new Error(
-      `The source is too long to transcribe in one pass (${(audioBytes / 1024 / 1024).toFixed(1)}MB of audio against a 25MB limit).`
-    );
-  }
   await onProgress("transcribing");
-  const transcription = await openai().audio.transcriptions.create(
-    { file: createReadStream(audioPath), model: "whisper-1", response_format: "verbose_json" },
-    { signal }
-  );
-  const rawSegments = (transcription as unknown as { segments?: { start: number; end: number; text: string }[] }).segments ?? [];
-  return rawSegments.map((segment) => ({ start: segment.start, end: segment.end, text: segment.text }));
+  const { segments } = await transcribeWithAsrWorker(audioPath, { signal });
+  return dropUnreliableSegments(segments).map((segment) => ({ start: segment.start, end: segment.end, text: segment.text }));
 }
 
 /**
@@ -170,12 +160,63 @@ export function cancelMovieRecapTranscript(projectId: string) {
   return true;
 }
 
+// What is on screen, one English sentence per detected scene, so a source with
+// little dialogue still gives the translator something to narrate.
+async function readSourceScenes(
+  localSource: string,
+  workDir: string,
+  dialogue: TranscriptSegment[],
+  onProgress: TranscriptProgress,
+  signal: AbortSignal
+) {
+  await onProgress("detecting_scenes");
+  const { scenes } = await detectScenes(localSource, workDir, signal);
+  const keyframes = await extractKeyframes(
+    FFMPEG,
+    localSource,
+    scenes,
+    workDir,
+    MOVIE_RECAP_KEYFRAMES_PER_SCENE,
+    signal,
+    (done, total) => onProgress("detecting_scenes", done, total)
+  );
+
+  await onProgress("describing_scenes", 0, scenes.length);
+  const visuals = new Map<number, string>();
+  let cast: TranscriptCastMember[] = [];
+  let previousVisual = "";
+  for (let start = 0; start < keyframes.length; start += VISION_BATCH_SCENES) {
+    const batch = await Promise.all(
+      keyframes.slice(start, start + VISION_BATCH_SCENES).map(async (keyframe) => {
+        const scene = scenes[keyframe.index];
+        return {
+          index: keyframe.index,
+          startS: scene.start,
+          endS: scene.end,
+          dialogue: dialogueDuring(dialogue, scene.start, scene.end),
+          frames: await Promise.all(keyframe.files.map(async (file) => (await readFile(file)).toString("base64"))),
+        };
+      })
+    );
+    const described = await describeMovieRecapTranscriptScenes({ cast, previousVisual, scenes: batch }, signal);
+    cast = described.cast;
+    for (const entry of described.scenes) {
+      if (!batch.some((scene) => scene.index === entry.sceneIndex)) continue;
+      const visual = entry.visual.trim();
+      visuals.set(entry.sceneIndex, visual);
+      if (visual) previousVisual = visual;
+    }
+    await onProgress("describing_scenes", Math.min(start + VISION_BATCH_SCENES, scenes.length), scenes.length);
+  }
+  return scenes.map((scene, index) => ({ start: scene.start, visual: visuals.get(index) ?? "" }));
+}
+
 /**
- * Reads the source once, at step 2, and writes the transcript and its Burmese
- * retelling onto the project row — the caller re-reads the row afterwards.
- * The render then uses the stored transcript instead of reading the source for
- * meaning a second time. With `storyOnly`, only the retelling is redone, from
- * the transcript already on the row.
+ * The Transcript step's automatic read: the source's dialogue (subtitle track or
+ * Whisper) interleaved with what each detected scene shows, written to
+ * `transcript_text` as the same timestamped lines a pasted transcript has. The
+ * Burmese story is still the user's — see history/movie-recap.md. With
+ * `storyOnly`, the parked retelling is redone from the stored transcript.
  */
 export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject, { storyOnly = false } = {}) {
   const controller = new AbortController();
@@ -198,37 +239,37 @@ export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject
     // The route already claimed this row in the statement that won the claim —
     // status, the story-only flag, the cleared error and stage all landed there.
 
+    const done = {
+      transcript_status: "done",
+      transcript_stage: null,
+      transcript_progress_current: null,
+      transcript_progress_total: null,
+      transcript_progress_partial: null,
+      transcript_error: null,
+    };
+
     // Retelling again runs on the transcript already stored: the source is not
-    // downloaded, and Whisper is not paid for a second time. It is the only way
-    // to reroll wording the user did not like without re-reading the film.
-    let segments = project.transcript ?? [];
-    let source = project.transcriptSource;
-    if (!storyOnly) {
-      await setProgress("downloading_source");
-      const localSource = path.join(workDir, "source.mp4");
-      await downloadMovieRecapSource(project, localSource, { signal });
-
-      const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal);
-      segments = read.segments;
-      source = read.source;
+    // downloaded, and Whisper is not paid for a second time.
+    if (storyOnly) {
+      const segments = project.transcript ?? [];
+      if (!segments.length) throw new Error("No speech was found in the source.");
+      const story = await retellTranscript(segments, setProgress, signal);
+      await db.from("movie_recap_projects").update({ ...done, transcript_story: story }).eq("id", project.id);
+      return;
     }
-    if (!segments.length) throw new Error("No speech was found in the source.");
 
-    const story = await retellTranscript(segments, setProgress, signal);
+    await setProgress("downloading_source");
+    const localSource = path.join(workDir, "source.mp4");
+    await downloadMovieRecapSource(project, localSource, { signal });
+
+    const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal);
+    const scenes = await readSourceScenes(localSource, workDir, read.segments, setProgress, signal);
+    const text = buildAutoSourceTranscript(read.segments, scenes);
+    if (!text) throw new Error("Nothing was read from the source: no speech and no scene descriptions.");
 
     await db
       .from("movie_recap_projects")
-      .update({
-        transcript: segments,
-        transcript_story: story,
-        transcript_source: source,
-        transcript_status: "done",
-        transcript_stage: null,
-        transcript_progress_current: null,
-        transcript_progress_total: null,
-        transcript_progress_partial: null,
-        transcript_error: null,
-      })
+      .update({ ...done, transcript: read.segments, transcript_source: read.source, transcript_text: text })
       .eq("id", project.id);
   } catch (error) {
     const cancelled = signal.aborted || (error instanceof Error && error.name === "AbortError");

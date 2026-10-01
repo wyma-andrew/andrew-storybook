@@ -290,14 +290,17 @@ other action reads the stored beats, which is what makes an edit cost one beat.
 Project name, output language and voice moved into Customize Video as its first
 section; there is no separate settings step.
 
-The Transcript step takes two texts by hand — the source transcript and the
-Burmese story written from it — stored on the project row (`transcript_text`,
-`transcript_story`) via `PATCH movie-recaps/:id`
-(`components/movie-recap/MovieRecapTranscript.tsx`). The automatic read and AI
-retelling are parked, not removed: `POST movie-recaps/:id/transcript`,
-`lib/movie-recap-transcript.ts` and `MovieRecapTranscriptProgress.tsx` still
-exist and nothing calls them (see `history/movie-recap.md`). The render still
-calls `readSourceTranscript` from that module for its own dialogue.
+The Transcript step's Burmese story is always typed or pasted by the user. The
+source transcript (`transcript_text`) has two modes: Manual (paste or import)
+and Auto, which calls `POST movie-recaps/:id/transcript`
+(`lib/movie-recap-transcript.ts`): subtitle track or Whisper for dialogue, plus
+PySceneDetect + a vision pass (`lib/movie-recap-scenes.ts`) for one `[Scene]`
+line per detected scene, merged into timestamped lines and written to
+`transcript_text`. Auto mode then works story-first: a copied script prompt
+yields an untimed Burmese recap script (`transcript_script`), and a copied clip
+prompt turns it into the timestamped story. The texts are saved via `PATCH movie-recaps/:id`
+(`components/movie-recap/MovieRecapTranscript.tsx`). The AI Burmese retelling
+(`storyOnly`) is still parked.
 
 A finished render leaves its script on the row (`render_script`) and everything
 the planner derived from the source — spare scenes, cuts, motion — in R2

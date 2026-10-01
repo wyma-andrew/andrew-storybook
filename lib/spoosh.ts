@@ -161,10 +161,10 @@ export type ApiSchema = {
     PATCH: { data: MovieRecapLogoTemplate; body: { projectId?: string; name?: string; logoWatermarkText?: string | null; replaceLogo?: boolean } };
     DELETE: { data: null };
   };
-  // Reads the source's dialogue and translates it — the wizard's Transcript
-  // step. Synchronous like the render: the request stays open for the whole
-  // run, and the browser polls the project row for its stage meanwhile.
-  // storyOnly: redo just the Burmese retelling from the stored transcript.
+  // The Transcript step's Auto mode: reads the source's dialogue and describes
+  // its scenes into `transcriptText`. Synchronous like the render: the request
+  // stays open for the whole run, and the browser polls the project row for its
+  // stage meanwhile. storyOnly: redo the parked Burmese retelling instead.
   "movie-recaps/:id/transcript": {
     POST: { data: MovieRecapProject; body: { storyOnly?: boolean } };
   };

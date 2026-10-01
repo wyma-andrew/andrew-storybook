@@ -4,6 +4,54 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-10-01 — Speech recognition moves from Whisper to FunASR Paraformer-zh (supersedes the Whisper worker below)
+
+**Decision, by the user:** both Movie Recap transcription and Translate Auto Sync
+use FunASR (`paraformer-zh` + `fsmn-vad` + `ct-punc`) on Modal
+(`workers/funasr/modal_app.py`, env `ASR_WORKER_URL` / `ASR_WORKER_TOKEN`). The
+Whisper worker and `workers/whisper` are removed. There is still no OpenAI
+fallback.
+
+**Why:** the sources are Chinese videos. Whisper's own benchmark puts
+`large-v3` at 12.8% CER on Mandarin (Common Voice 15), and `turbo` is worse.
+Whisper also mixes Traditional and Simplified characters, which breaks the
+character matching against a Simplified SRT. On a test clip Paraformer
+returned all 24 characters correctly, in Simplified, with a timestamp per
+character.
+
+**Constraints a later reader would otherwise "fix":**
+- Models load from **ModelScope**, not Hugging Face. The HF `paraformer-zh`
+  alias resolved to a model without a timestamp predictor, and generation
+  failed with `KeyError: 'timestamp'`.
+- The worker keeps the Whisper response shape (`segments`, and `words` with
+  `?words=true`), so callers did not change. A "word" is one CJK character or
+  one Latin word. It is paired with Paraformer's stamps after removing
+  punctuation, and a count mismatch is logged rather than failing the request.
+- FunASR sends no confidence fields, so `dropUnreliableSegments` passes every
+  segment. The Whisper hallucination filter has nothing to act on.
+- Paraformer-zh is a Mandarin model. English or other-language sources will
+  transcribe poorly. That was accepted, because the user works with Chinese
+  videos.
+- Cold start, including the first model download, was measured at about
+  2.5 minutes.
+- `transcript_source` still stores `"whisper"` for a transcribed source. It is
+  a column value constrained by the schema, not a label anyone reads.
+
+## 2026-10-01 — Auto Sync word timestamps come from the Modal Whisper worker (SUPERSEDED same day — FunASR above)
+
+**Decision, by the user:** Auto Sync gets word timestamps from the self-hosted
+Whisper worker (`workers/whisper`, `openai-whisper` `turbo`,
+`word_timestamps=True` via `?words=true`) instead of OpenAI's `whisper-1`. Without
+`WHISPER_WORKER_URL`, Auto Sync throws; there is no OpenAI fallback, to avoid
+unplanned API cost. The 25MB audio check is gone along with the OpenAI upload.
+
+**Consequence:** the R2 word cache key (`v2.words.json`) is unchanged, so a
+project already transcribed by `whisper-1` reuses those words. Only new sources
+are transcribed by the worker. The worker's word splitting can differ from
+`whisper-1`'s, especially in Chinese. That has not been compared against a
+real project, so a drop in matched cues after this change should be checked
+there first.
+
 ## 2026-09-29 — Keep project order fixed by creation
 
 **Decision:** list Translate projects newest-created first, matching Movie Recap and Stories.

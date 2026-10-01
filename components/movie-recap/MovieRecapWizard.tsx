@@ -42,7 +42,7 @@ type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
 
 const SETTINGS_FIELDS = ["name", "outputLanguage"] as const satisfies readonly PatchableField[];
 
-const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptStory", "voiceProfileId"] as const satisfies readonly PatchableField[];
+const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptScript", "transcriptStory", "voiceProfileId"] as const satisfies readonly PatchableField[];
 
 const CUSTOMIZE_FIELDS = [
   "aspectRatio",
@@ -221,6 +221,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
   const { trigger: renderRange, loading: renderingRange } = useWrite((api) => api("movie-recaps/:id/render/ranges").POST());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
+  const { trigger: readTranscript } = useWrite((api) => api("movie-recaps/:id/transcript").POST());
+  const { trigger: cancelTranscript, loading: cancellingTranscript } = useWrite((api) => api("movie-recaps/:id/transcript/cancel").POST());
   const { trigger: rebuildBeat, tasks: beatRebuilds, removeSettled: removeSettledBeatRebuilds } = useQueue(
     (api) => api("movie-recaps/:id/script/beat").POST(),
     { concurrency: 1 },
@@ -294,6 +296,12 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     if (result.data) setProject(result.data);
   }
 
+  // The Transcript fields are a browser draft until Save; a row fetched while
+  // an Auto read runs must not overwrite what the user typed meanwhile.
+  function adoptRow(row: MovieRecapProject, keep: readonly PatchableField[] = TRANSCRIPT_FIELDS) {
+    setProject((current) => (current ? { ...row, ...pick(current, keep) } : row));
+  }
+
   function merge(patch: Partial<MovieRecapProject>) {
     setProject((current) => current ? { ...current, ...patch } : current);
   }
@@ -361,6 +369,28 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       setProject(result.data);
       toast.success("Transcript saved.");
     }
+  }
+
+  async function readSourceTranscript() {
+    if (!project) return;
+    merge({ transcriptStatus: "running", transcriptStoryOnly: false, transcriptError: null, transcriptStage: null, transcriptProgressCurrent: null, transcriptProgressTotal: null });
+    const result = await readTranscript({ params: { id: project.id }, body: {} });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not read the source.");
+      const refreshed = await pollProject({ params: { id: project.id }, force: true });
+      if (refreshed.data) adoptRow(refreshed.data);
+      return;
+    }
+    adoptRow(result.data, ["transcriptScript", "transcriptStory", "voiceProfileId"]);
+    if (result.data.transcriptStatus === "done") toast.success("Source transcript ready.");
+    else if (result.data.transcriptStatus === "failed") toast.error(result.data.transcriptError ?? "Could not read the source.");
+  }
+
+  async function cancelTranscriptRead() {
+    if (!project) return;
+    const result = await cancelTranscript({ params: { id: project.id } });
+    if (result.error) toast.error(result.error.error ?? "Could not cancel the transcript read.");
+    else if (!result.data?.cancelled) toast.error("No transcript read is running for this project.");
   }
 
   async function buildRecapScript() {
@@ -736,15 +766,16 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const projectId = project?.id;
   const renderStatus = project?.renderStatus;
   const scriptStatus = project?.scriptStatus;
-  // Both long runs report their stage on the row, so one poller serves both.
+  const transcriptStatus = project?.transcriptStatus;
+  // Every long run reports its stage on the row, so one poller serves them all.
   useEffect(() => {
-    if (!projectId || (renderStatus !== "running" && scriptStatus !== "running")) return;
+    if (!projectId || (renderStatus !== "running" && scriptStatus !== "running" && transcriptStatus !== "running")) return;
     const interval = setInterval(async () => {
       const result = await pollProject({ params: { id: projectId }, force: true });
-      if (result.data) setProject(result.data);
+      if (result.data) adoptRow(result.data);
     }, 2000);
     return () => clearInterval(interval);
-  }, [projectId, renderStatus, scriptStatus, pollProject]);
+  }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject]);
 
   // Which blur box the preview's drag handles belong to. Per visit, like any
   // other selection — it is not part of the project.
@@ -793,7 +824,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
           {step === 1 && <MovieRecapSource project={project} onProject={(next, preview) => { setProject(next); setLocalVideoUrl(preview ?? null); }} />}
 
           {step === 2 && project && (
-            <MovieRecapTranscript project={project} onChange={merge} />
+            <MovieRecapTranscript
+              project={project}
+              onChange={merge}
+              onReadSource={() => void readSourceTranscript()}
+              onCancelRead={() => void cancelTranscriptRead()}
+              cancellingRead={cancellingTranscript}
+            />
           )}
 
           {step === 3 && project && (

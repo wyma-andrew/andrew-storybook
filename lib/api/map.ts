@@ -82,6 +82,7 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     status: r.status as MovieRecapProject["status"],
     transcript: (r.transcript as MovieRecapProject["transcript"]) ?? null,
     transcriptText: (r.transcript_text as string) ?? null,
+    transcriptScript: (r.transcript_script as string) ?? null,
     transcriptStory: (r.transcript_story as string) ?? null,
     transcriptSource: (r.transcript_source as MovieRecapProject["transcriptSource"]) ?? null,
     transcriptStatus: (r.transcript_status as MovieRecapProject["transcriptStatus"]) ?? "idle",

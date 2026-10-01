@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play } from "lucide-react";
-import { Dialog, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import { Check, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play, ScrollText, Sparkles } from "lucide-react";
+import { ConfirmDialog, Dialog, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { Button as AppButton, LinkButton } from "@/components/ui/Button";
+import { Button as AppButton, LinkButton, LoadingButton } from "@/components/ui/Button";
 import { MOVIE_RECAP_VOICES } from "@/lib/constants/movie-recap";
-import { formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
+import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
 import { useWrite } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
+import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
+
+type TranscriptMode = "manual" | "auto";
 
 function cleanImportedTranscript(raw: string) {
   return formatMovieRecapSourceTranscript(raw.replace(/&#x20;|&#32;|&nbsp;/gi, " "));
@@ -20,6 +23,27 @@ function formatTimestampedStoryPaste(raw: string) {
     .replace(/([^\n])[\t ]+(?=\d{1,2}:\d{2}\b)/g, "$1\n");
 }
 
+// Shared by every prompt below so the three never drift apart in voice.
+const NARRATION_STYLE = `STYLE
+- Write like a Burmese YouTube movie-recap narrator speaking continuously over the video, as if explaining the story to a friend.
+- Use everyday spoken Burmese — not formal written Burmese, news-report style, subtitle style, or textbook translation.
+- Casual, clear, fast-moving, and easy to listen to.
+- Link lines with natural connectors so the narration flows from one line into the next, e.g. "အဲ့ဒီနောက်", "ဒီလိုနဲ့", "အဲဒီအချိန်မှာ", "ဒါပေမယ့်", "တစ်ဖက်မှာတော့", "နောက်တစ်နေ့မှာ", "အဲ့လိုဖြစ်နေရင်း" — only where they sound natural, and without overusing the same one.
+- Describe what happens directly and confidently, as if the narrator is watching it.
+- Labels such as "Man A" or "Woman B" in [Scene] lines mark the same person every time they appear. Never say the label: use the character's name once the dialogue reveals it, otherwise a short natural description (e.g. the bearded man).`;
+
+const NARRATION_WORDING = `WORDING
+- Rewrite English sentence structure into natural Burmese word order. Never translate word-for-word.
+- Omit subjects and pronouns where Burmese speech naturally allows it, and avoid repeating the same name unnecessarily.
+- For English names, acronyms and terms that will be read aloud, use Burmese phonetic spelling when it helps TTS pronunciation (e.g. CIA → စီအိုင်အေ).
+- Write numbers and quantities in spoken form when appropriate (e.g. 80,000 feet → ပေ ၈သောင်း), but keep codes, model numbers, coordinates and other exact identifiers unchanged.
+- Avoid formal fillers such as "ဖြစ်ကြောင်း", "ဟုဆိုသည်", "တွေ့ရှိရသည်", "လုပ်ဆောင်ခဲ့သည်".
+- Avoid hearsay endings such as "တဲ့", "လို့ဆိုပါတယ်", "လို့သိရပါတယ်" when describing what happens on screen; use them only for reported speech.
+- Avoid "လုပ်ရတယ်" unless the source actually means "must / has to".`;
+
+const NARRATION_STYLE_REFERENCE = `STYLE REFERENCE (match its tone and rhythm only — do not copy its content):
+"မြောက်ကိုရီးယားစစ်တပ်ရဲ့ တပ်စခန်းတစ်ခုမှာ စစ်သားတစ်ယောက်က လူမသိအောင် တစ်ယောက်တည်း ခိုးထွက်လာပြီး လေဝင်ပေါက်ထဲဝင်ကာ သူသိမ်းထားတဲ့မြေပုံကို ထုတ်ကြည့်ပါတယ်။ ပြီးတော့ သံလိုက်အိမ်မြှောင်ပြတဲ့လမ်းအတိုင်း လျှပ်စစ်လွှတ်ထားတဲ့ ခြံစည်းရိုးကိုကျော်ပြီး ရှေ့ဆက်သွားပါတယ်။ လမ်းတစ်လျှောက်မှာလည်း မြေပုံပေါ်မပါသေးတဲ့ မြေမြှုပ်မိုင်းနေရာတွေကို တွေ့သမျှ ထပ်မှတ်ထားရင်း အဝေးမှာ မီးတွေထိန်ထိန်လင်းနေတဲ့ နယ်စပ်ဘက်ကို မျှော်လင့်တကြီးကြည့်နေပါတယ်။"`;
+
 function buildMovieRecapTranslationPrompt(sourceText: string) {
   return `You are a Burmese movie-recap narrator. Convert the raw auto-generated transcript below into natural spoken Burmese narration, synchronized with timestamps.
 
@@ -28,6 +52,7 @@ STEP 1 — CLEAN THE SOURCE (do this internally; do not output it)
 2. Join the caption fragments and re-split them so that each line holds exactly ONE complete sentence (ending in ".", "?" or "!", including when followed by a closing quote).
 3. Give each sentence the timestamp of the caption line where its first word appears. Exception: if the sentence starts in the last 1–2 words of a caption line, use the NEXT caption line's timestamp.
 4. If a quote contains several sentences, split them into separate lines.
+5. Lines tagged [Scene] describe what is on screen, not speech. Keep each one as its own line with its own timestamp — never join it with dialogue, never drop it as a sound tag.
 
 Example:
 Raw:
@@ -47,26 +72,14 @@ Cleaned:
 
 STEP 2 — TRANSLATE INTO SPOKEN BURMESE NARRATION
 
-STYLE
-- Write like a Burmese YouTube movie-recap narrator speaking continuously over the video, as if explaining the story to a friend.
-- Use everyday spoken Burmese — not formal written Burmese, news-report style, subtitle style, or textbook translation.
-- Casual, clear, fast-moving, and easy to listen to.
-- Link lines with natural connectors so the narration flows from one line into the next, e.g. "အဲ့ဒီနောက်", "ဒီလိုနဲ့", "အဲဒီအချိန်မှာ", "ဒါပေမယ့်", "တစ်ဖက်မှာတော့", "နောက်တစ်နေ့မှာ", "အဲ့လိုဖြစ်နေရင်း" — only where they sound natural, and without overusing the same one.
-- Describe what happens directly and confidently, as if the narrator is watching it.
+${NARRATION_STYLE}
 
 ACCURACY
 - Keep the original meaning and order of events. Do not add information that is not in the source.
 - Simplify complicated phrasing, not content. Do not drop details just to make it shorter.
 - Keep names and story-specific terms (people, places, organizations, objects, technical terms) accurate and consistent throughout.
 
-WORDING
-- Rewrite English sentence structure into natural Burmese word order. Never translate word-for-word.
-- Omit subjects and pronouns where Burmese speech naturally allows it, and avoid repeating the same name unnecessarily.
-- For English names, acronyms and terms that will be read aloud, use Burmese phonetic spelling when it helps TTS pronunciation (e.g. CIA → စီအိုင်အေ).
-- Write numbers and quantities in spoken form when appropriate (e.g. 80,000 feet → ပေ ၈သောင်း), but keep codes, model numbers, coordinates and other exact identifiers unchanged.
-- Avoid formal fillers such as "ဖြစ်ကြောင်း", "ဟုဆိုသည်", "တွေ့ရှိရသည်", "လုပ်ဆောင်ခဲ့သည်".
-- Avoid hearsay endings such as "တဲ့", "လို့ဆိုပါတယ်", "လို့သိရပါတယ်" when describing what happens on screen; use them only for reported speech.
-- Avoid "လုပ်ရတယ်" unless the source actually means "must / has to".
+${NARRATION_WORDING}
 
 TIMESTAMP RULES
 1. Output exactly one line per cleaned source line, with the same timestamp, in the same order. Never merge, skip, or add lines.
@@ -78,10 +91,120 @@ OUTPUT FORMAT
 - Two spaces between the timestamp and the text.
 - Output only the Burmese narration lines — no cleaned English, headings, notes, or explanations.
 
-STYLE REFERENCE (match its tone and rhythm only — do not copy its content):
-"မြောက်ကိုရီးယားစစ်တပ်ရဲ့ တပ်စခန်းတစ်ခုမှာ စစ်သားတစ်ယောက်က လူမသိအောင် တစ်ယောက်တည်း ခိုးထွက်လာပြီး လေဝင်ပေါက်ထဲဝင်ကာ သူသိမ်းထားတဲ့မြေပုံကို ထုတ်ကြည့်ပါတယ်။ ပြီးတော့ သံလိုက်အိမ်မြှောင်ပြတဲ့လမ်းအတိုင်း လျှပ်စစ်လွှတ်ထားတဲ့ ခြံစည်းရိုးကိုကျော်ပြီး ရှေ့ဆက်သွားပါတယ်။ လမ်းတစ်လျှောက်မှာလည်း မြေပုံပေါ်မပါသေးတဲ့ မြေမြှုပ်မိုင်းနေရာတွေကို တွေ့သမျှ ထပ်မှတ်ထားရင်း အဝေးမှာ မီးတွေထိန်ထိန်လင်းနေတဲ့ နယ်စပ်ဘက်ကို မျှော်လင့်တကြီးကြည့်နေပါတယ်။"
+[SCENE HANDLING DIRECTIVE - STRICT]
+
+When processing [Scene] tags in the transcript, follow these strictly:
+
+1. UNDERSTAND THE ROLE OF [Scene]:
+   - [Scene] lines are VISUAL ACTIONS (what happens on screen), NOT spoken dialogue.
+   - Do NOT translate [Scene] lines directly as characters speaking.
+   - Do NOT output the word "[Scene]" or any tag.
+   - Instead, convert the action into fluent, natural narrative prose (e.g., "ကောင်လေးက ဆိုင်ကယ်ကို စစ်ဆေးကြည့်ပေးပါတယ်") as a movie-recap narrator describing the visual.
+
+2. TREATMENT OF DIALOGUE LINES:
+   - Lines without [Scene] tags (or following a [Scene] tag) represent what characters say.
+   - Do NOT use rigid quote markers or literal repetition like "ဟုပြောသည်" or "လို့ဆိုသည်".
+   - Retell the dialog naturally as part of the continuous narration flow.
+
+3. PRESERVE LINE-BY-LINE TIMESTAMPS:
+   - Keep 1-to-1 alignment with each cleaned timestamp line.
+   - Output ONLY: MM:SS  [Burmese narration text]
+
+${NARRATION_STYLE_REFERENCE}
 
 SOURCE TEXT:
+${sourceText.trim()}`;
+}
+
+// Auto mode reads a raw, uncut film and works story-first, the way recap
+// channels do: Prompt A writes the narration with no timestamps, Prompt B then
+// picks a source timestamp for each line. One prompt doing both kept growing
+// rules that contradicted each other. See history/movie-recap.md.
+//
+// The length is a ratio of the source so a longer film keeps more moments.
+// 12-15% is the user's target (a 25-minute film -> a 3-4 minute recap); "be
+// strict" in words alone came back at 70-80%. 10s per line is the user's
+// measured average for a translated Burmese line, not the TTS rate.
+const RECAP_SHARE = { min: 0.12, max: 0.15 };
+const RECAP_SECONDS_PER_LINE = 10;
+
+function clock(seconds: number) {
+  const total = Math.round(seconds);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function buildRecapScriptPrompt(sourceText: string, sourceDurationS: number) {
+  const minS = sourceDurationS * RECAP_SHARE.min;
+  const maxS = sourceDurationS * RECAP_SHARE.max;
+  const minLines = Math.max(3, Math.round(minS / RECAP_SECONDS_PER_LINE));
+  const maxLines = Math.max(minLines, Math.round(maxS / RECAP_SECONDS_PER_LINE));
+  return `You are a Burmese movie-recap narrator. Read the transcript of a film below and write a SHORT spoken Burmese recap script of its story.
+
+ABOUT THE TRANSCRIPT
+- Each line starts with a timestamp. Lines tagged [Scene] describe what is on screen; all other lines are what the characters say.
+- Labels such as "Man A" or "Woman B" in [Scene] lines mark the same person every time they appear. Never say the label: use the character's name once the dialogue reveals it, otherwise a short natural description (e.g. the bearded man).
+- The transcript is machine-made: some dialogue may be misheard, and it does not say who is speaking. If the transcript does not make clear who a person is or who said a line, describe them by what is certain (e.g. "the man in the pinstriped suit") instead of guessing a name or a relationship.
+- Ignore the timestamps for now. A later step matches each line of your script to the footage.
+
+LENGTH BUDGET — this is the main constraint
+- The film runs ${clock(sourceDurationS)}. The whole script, read aloud, must total about ${clock(minS)}–${clock(maxS)} (${Math.round(RECAP_SHARE.min * 100)}–${Math.round(RECAP_SHARE.max * 100)}% of the film).
+- One line takes about ${RECAP_SECONDS_PER_LINE} seconds to read, so write about ${minLines}–${maxLines} lines. Never more than ${maxLines}.
+- The TOTAL reading time is the limit, not just the line count. A line that runs long eats into the budget: if your lines run over ${RECAP_SECONDS_PER_LINE} seconds, write fewer of them. Aim for the middle of the budget, not the top.
+
+STORY
+1. First work out the story: who the main characters are, what they want, the event that starts the story, the turning points, and the climax.
+2. Spend the lines on what the story needs most: the event that starts it, major turning points, reveals and twists, and the climax. Add only what is needed so it flows with no gap a viewer would notice. Skip small talk, filler, repeated scenes, and side details.
+3. Tell the story in the order it happens in the film, so each line can be matched to a later part of the footage than the line before it.
+4. ONE LINE = ONE ON-SCREEN MOMENT. Each line plays over a single clip, so it must describe one thing the viewer can see in one place at one time — one sentence of about ${RECAP_SECONDS_PER_LINE} seconds. Never join two scenes in one line (e.g. "she recovers, and later they leave for the city"). "Same moment" means the same continuous action within about ${RECAP_SECONDS_PER_LINE} seconds of film time — not just the same room or the same conversation. If both moments matter, give each its own line; otherwise keep the more important one.
+5. The transcript may be a complete film or only one part of a longer story. Narrate only what is shown. Do not invent an ending or resolve anything the source does not resolve.
+6. THE LAST LINE: if the story is resolved, end on that resolution. If it is not (the source is one part of a longer story), end on the open threat as a hook — remind the viewer who is still a danger, or what secret or rival is still waiting — so the viewer wants the next part. The hook must still describe something visible on screen near the end of the film (e.g. the rival watching, a threatening look), not only the narrator's comment.
+7. Do not add information that is not in the transcript.
+8. NO REPEATED BEATS. When the same kind of event happens more than once (a power is shown again, a threat is made again, a fight or a rescue happens again), keep the first time it happens and the strongest or most important later time (if different). Drop the other repeats — the viewer already understands.
+
+${NARRATION_STYLE}
+
+${NARRATION_WORDING}
+
+FINAL REVIEW (do this before you output)
+1. Read your draft as one recap. Remove any line that repeats an earlier beat or covers a side detail. Remove other lines, weakest first, only while the total stays at or above the minimum of the length budget. If the total falls under the minimum, add back a story moment you skipped — never filler.
+2. Shorten any line that runs over about ${RECAP_SECONDS_PER_LINE} seconds by cutting words, not moments.
+3. Never fix length by merging two lines into one — a merged line describes two moments but plays over one clip. Drop the weaker line instead, unless both are the same continuous action within about ${RECAP_SECONDS_PER_LINE} seconds.
+4. Check the total against the length budget once more.
+
+OUTPUT FORMAT
+- One Burmese narration line per row, in story order.
+- No timestamps, numbering, headings, notes, or explanations.
+
+${NARRATION_STYLE_REFERENCE}
+
+TRANSCRIPT:
+${sourceText.trim()}`;
+}
+
+function buildRecapClipPrompt(sourceText: string, script: string) {
+  return `Match each line of a Burmese movie-recap script to the moment in the film's transcript where its footage should start.
+
+INPUTS
+- TRANSCRIPT: timestamped lines from the film. Lines tagged [Scene] describe what is on screen; other lines are dialogue.
+- SCRIPT: the recap, one Burmese line per row, in story order.
+
+RULES
+1. For each script line, choose the ONE transcript timestamp whose footage best shows what that line is about. Prefer a [Scene] line, because its timestamp is where that action starts on screen. The footage only needs to fit the line, not show every word of it.
+2. Copy that timestamp exactly as it appears in the transcript. Never invent or adjust a timestamp.
+3. Timestamps must strictly increase from one script line to the next.
+4. Leave at least ${RECAP_SECONDS_PER_LINE} seconds between consecutive timestamps, because each line plays over about ${RECAP_SECONDS_PER_LINE} seconds of footage from its timestamp. If the best match is too close to the previous one, take the next suitable moment after it.
+5. Never use the same timestamp twice.
+6. Keep every script line exactly as written: do not translate, reword, merge, split, add, or drop lines.
+
+OUTPUT FORMAT
+- One line per script line, in the same order: MM:SS  Burmese line (use H:MM:SS when the transcript does).
+- Two spaces between the timestamp and the text.
+- Output only these lines — no headings, notes, or explanations.
+
+SCRIPT:
+${script.trim()}
+
+TRANSCRIPT:
 ${sourceText.trim()}`;
 }
 
@@ -145,22 +268,36 @@ function TranscriptImportDialog({
 }
 
 /**
- * The source's dialogue and its Burmese retelling, both typed in by hand.
- *
- * The automatic read (subtitle track / Whisper) and the AI retelling are
- * disconnected for now — the pipeline and its route are still there, and
- * nothing calls them. See history/movie-recap.md.
+ * The source transcript, typed in by hand or read off the source (dialogue plus
+ * scene descriptions), and the Burmese story, which is always the user's. See
+ * history/movie-recap.md.
  */
 export function MovieRecapTranscript({
   project,
   onChange,
+  onReadSource,
+  onCancelRead,
+  cancellingRead,
 }: {
   project: MovieRecapProject;
   /** Edits land in the wizard's project draft; Continue is what writes them. */
-  onChange: (patch: { transcriptText?: string; transcriptStory?: string; voiceProfileId?: MovieRecapProject["voiceProfileId"] }) => void;
+  onChange: (patch: {
+    transcriptText?: string;
+    transcriptScript?: string;
+    transcriptStory?: string;
+    voiceProfileId?: MovieRecapProject["voiceProfileId"];
+  }) => void;
+  onReadSource: () => void;
+  onCancelRead: () => void;
+  cancellingRead: boolean;
 }) {
+  const reading = project.transcriptStatus === "running" && !project.transcriptStoryOnly;
+  const [mode, setMode] = useState<TranscriptMode>(
+    reading || project.transcriptScript?.trim() || project.transcriptText?.includes(MOVIE_RECAP_SCENE_TAG) ? "auto" : "manual"
+  );
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const text = project.transcriptText ?? "";
+  const script = project.transcriptScript ?? "";
   const story = project.transcriptStory ?? "";
   const audioRef = useRef<HTMLAudioElement>(null);
   const previewUrls = useRef(new Map<string, string>());
@@ -207,12 +344,26 @@ export function MovieRecapTranscript({
     };
   }, []);
 
-  async function copyTranslationPrompt() {
+  function confirmReadSource() {
+    if (!text.trim()) {
+      onReadSource();
+      return;
+    }
+    ConfirmDialog.show({
+      title: "Replace the source transcript?",
+      content: "The automatic read writes a new source transcript over the one in this step. The Burmese story is not touched.",
+      confirmButtonLabel: "Read and replace",
+      cancelButtonLabel: "Keep current",
+      onConfirm: onReadSource,
+    });
+  }
+
+  async function copyPrompt(prompt: string, label: string) {
     try {
-      await navigator.clipboard.writeText(buildMovieRecapTranslationPrompt(text));
-      toast.success("Translation prompt copied.");
+      await navigator.clipboard.writeText(prompt);
+      toast.success(`${label} copied.`);
     } catch {
-      toast.error("Could not copy the translation prompt.");
+      toast.error(`Could not copy the ${label.toLowerCase()}.`);
     }
   }
 
@@ -221,44 +372,84 @@ export function MovieRecapTranscript({
       <h2 className="mb-1 text-lg font-semibold">Transcript</h2>
       <p className="mb-3 text-sm text-fg-2">
         Paste the Burmese story, with a timestamp on each line. The source transcript is optional — it is kept for
-        reference and nothing downstream reads it.
+        reference and as the text the translation prompt copies.
       </p>
-      <div className="mb-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-col items-start gap-2">
-            <LinkButton
-              href="https://www.youtube-transcript.io/"
-              target="_blank"
-              rel="noreferrer"
-              variant="primary"
-              className="inline-flex items-center gap-2"
-            >
-              Get YouTube Transcript
-              <ExternalLink size={15} aria-hidden="true" />
-            </LinkButton>
-            <LinkButton
-              href="https://captioner.io/en/rednote"
-              target="_blank"
-              rel="noreferrer"
-              variant="secondary"
-              className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
-            >
-              Get RedNote Transcript
-              <ExternalLink size={15} aria-hidden="true" />
-            </LinkButton>
-          </div>
-          <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+      <div className="mb-4 inline-flex rounded-lg border border-line bg-panel-2 p-1">
+        {([
+          { id: "manual", label: "Manual" },
+          { id: "auto", label: "Auto (speech + scenes)" },
+        ] as const).map((option) => (
           <AppButton
-            variant="secondary"
-            className="inline-flex items-center gap-2"
-            onClick={() => showTranscriptImport((imported) => {
-              onChange({ transcriptText: imported });
-            })}
+            key={option.id}
+            onClick={() => setMode(option.id)}
+            className={`!h-8 !border-0 !px-3 !text-sm ${mode === option.id ? "!bg-accent !text-on-accent" : "!bg-transparent !text-fg-2"}`}
           >
-            Import
+            {option.label}
           </AppButton>
-        </div>
+        ))}
       </div>
+      {mode === "manual" ? (
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col items-start gap-2">
+              <LinkButton
+                href="https://www.youtube-transcript.io/"
+                target="_blank"
+                rel="noreferrer"
+                variant="primary"
+                className="inline-flex items-center gap-2"
+              >
+                Get YouTube Transcript
+                <ExternalLink size={15} aria-hidden="true" />
+              </LinkButton>
+              <LinkButton
+                href="https://captioner.io/en/rednote"
+                target="_blank"
+                rel="noreferrer"
+                variant="secondary"
+                className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
+              >
+                Get RedNote Transcript
+                <ExternalLink size={15} aria-hidden="true" />
+              </LinkButton>
+            </div>
+            <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+            <AppButton
+              variant="secondary"
+              className="inline-flex items-center gap-2"
+              onClick={() => showTranscriptImport((imported) => {
+                onChange({ transcriptText: imported });
+              })}
+            >
+              Import
+            </AppButton>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6 rounded-xl border border-line bg-panel-2 p-4">
+          <p className="mb-3 text-sm text-fg-2">
+            Reads the uploaded video&apos;s dialogue (its subtitle track, or speech recognition) and describes every
+            detected scene, then writes both into the source transcript as timestamped lines. Scene lines are tagged
+            [Scene]. Then: copy the script prompt, paste the recap script below, copy the clip prompt, and paste its
+            timestamped result into the Burmese story.
+          </p>
+          {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
+            <div className="mb-4">
+              <MovieRecapTranscriptProgress project={project} />
+            </div>
+          )}
+          {project.transcriptStatus === "failed" && project.transcriptError && !reading && (
+            <p className="mb-3 text-sm text-danger">{project.transcriptError}</p>
+          )}
+          <div className="flex items-center gap-2">
+            <LoadingButton variant="primary" loading={reading} disabled={reading} className="inline-flex items-center gap-2" onClick={confirmReadSource}>
+              <Sparkles size={15} aria-hidden="true" />
+              {project.transcriptStatus === "done" && !project.transcriptStoryOnly ? "Read again" : "Read source"}
+            </LoadingButton>
+            {reading && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-5">
         <div className="overflow-hidden rounded-xl border border-line bg-panel-2">
@@ -284,13 +475,58 @@ export function MovieRecapTranscript({
               placeholder="Paste the source transcript here."
             />
             <div className="mt-3 flex justify-end">
-              <AppButton variant="secondary" className="inline-flex items-center gap-2" onClick={() => void copyTranslationPrompt()}>
-                <Copy size={15} aria-hidden="true" />
-                Copy translation prompt
-              </AppButton>
+              {mode === "auto" ? (
+                <AppButton
+                  variant="secondary"
+                  className="inline-flex items-center gap-2"
+                  disabled={!text.trim()}
+                  onClick={() => void copyPrompt(buildRecapScriptPrompt(text, project.sourceDurationSeconds), "Script prompt")}
+                >
+                  <Copy size={15} aria-hidden="true" />
+                  Copy script prompt
+                </AppButton>
+              ) : (
+                <AppButton
+                  variant="secondary"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => void copyPrompt(buildMovieRecapTranslationPrompt(text), "Translation prompt")}
+                >
+                  <Copy size={15} aria-hidden="true" />
+                  Copy translation prompt
+                </AppButton>
+              )}
             </div>
           </div>
         </div>
+
+        {mode === "auto" && (
+          <div className="overflow-hidden rounded-xl border border-line bg-panel-2">
+            <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+              <ScrollText size={14} className="text-fg-3" />
+              <span className="text-sm font-medium">Recap script</span>
+              <span className="text-xs text-fg-3">no timestamps{script.trim() ? ` · ${script.trim().split(/\n+/).length} lines` : ""}</span>
+            </div>
+            <div className="p-4">
+              <Textarea
+                value={script}
+                onChange={(event) => onChange({ transcriptScript: event.target.value })}
+                rows={10}
+                placeholder="Paste the recap script from the script prompt here, one line per row."
+              />
+              <div className="mt-3 flex justify-end">
+                <AppButton
+                  variant="secondary"
+                  className="inline-flex items-center gap-2"
+                  disabled={!script.trim() || !text.trim()}
+                  onClick={() => void copyPrompt(buildRecapClipPrompt(text, script), "Clip prompt")}
+                >
+                  <Copy size={15} aria-hidden="true" />
+                  Copy clip prompt
+                </AppButton>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-hidden rounded-xl border border-line bg-panel-2">
           <div className="flex items-center gap-2 border-b border-line px-4 py-3">

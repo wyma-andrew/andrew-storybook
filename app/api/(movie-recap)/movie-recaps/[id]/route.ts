@@ -200,9 +200,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.render_script = edited;
   }
   // Typed in by hand at the Transcript step. Deliberately does NOT set
-  // changesConfiguration: the render does not read either of these, so editing
+  // changesConfiguration: the render does not read any of these, so editing
   // them is no reason to demote an approved project to draft.
-  for (const [client, column] of [["transcriptText", "transcript_text"], ["transcriptStory", "transcript_story"]] as const) {
+  for (const [client, column] of [
+    ["transcriptText", "transcript_text"],
+    ["transcriptScript", "transcript_script"],
+    ["transcriptStory", "transcript_story"],
+  ] as const) {
     if (body?.[client] !== undefined) {
       if (typeof body[client] !== "string") return NextResponse.json({ error: `${client} must be text.` }, { status: 400 });
       patch[column] = body[client].trim() || null;

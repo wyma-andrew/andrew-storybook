@@ -7,6 +7,257 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-10-01 — Transcript step has Manual and Auto source transcripts
+
+**Decision, by the user:** the Transcript step offers two modes for the source
+transcript. Manual is the existing paste/import flow. Auto re-enables the parked
+`POST movie-recaps/:id/transcript` read and extends it with scene analysis.
+Dialogue comes from the source's subtitle track or Whisper. PySceneDetect then
+detects scenes, and the existing three-keyframe vision pass describes each one.
+Both are merged into `MM:SS text` lines in `transcript_text`, with scene lines
+tagged `[Scene]`. Auto never writes the Burmese story: the user still produces
+it with the copied translation prompt.
+
+**Why not have Auto write the Burmese story too:** the parked retelling writes
+untimed prose, and Build Script needs one timestamped line per beat. A timed
+Burmese pass would be a new prompt with its own cost; the user chose to keep the
+existing translator flow.
+
+**Why scenes are interleaved with dialogue:** a film's dialogue alone is what
+characters say, not what a recap narrator describes. Scene lines give the
+translator the on-screen action. The translation prompt now keeps `[Scene]`
+lines as their own lines (they are not sound tags). It narrates their action,
+and when scene lines are present, it retells the other lines as dialogue instead
+of quoting them.
+
+**Does not reverse "Build Script prepares audio, not picture selection"
+(2026-09-21):** scene analysis runs here only to write source text. Build Script
+and the render still never detect or describe scenes.
+
+**Consequences:**
+- An Auto run overwrites the source transcript on the row, after a confirm when
+  the field is not empty. While it runs, the wizard keeps the user's unsaved
+  Burmese story and voice draft instead of adopting the polled row's.
+- The run is synchronous with `maxDuration = 300`, like Build Script.
+  PySceneDetect plus the vision pass over a feature-length film can exceed that
+  on a host that enforces it.
+- The stepper shows Source / Dialogue / Scenes, with Burmese story struck
+  through as skipped. A `storyOnly` retell (still not reachable from the UI)
+  skips the first three instead.
+- PySceneDetect must be installed (`.venv-scenedetect`, see README); without
+  it, Auto fails at the Scenes step and shows the error.
+
+**Update, same day: the Auto scene pass is its own vision call**
+(`describeMovieRecapTranscriptScenes`, `lib/prompts/movie-recap-transcript-vision.ts`).
+The render-era `describeMovieRecapScenes` prompt is left unchanged. The new pass
+differs in three ways:
+- **Empty descriptions are allowed.** Shot/reverse-shot conversations produced a
+  `[Scene]` line per cut that said only that someone was talking. The model now
+  returns an empty visual for a scene that adds nothing to the previous one, and
+  empty lines are dropped. Batches run sequentially and carry the last non-empty
+  description forward for that comparison.
+- **A cast list carries across batches.** Every batch receives the cast so far
+  and returns it updated, so a recurring person keeps one label ("Man A") for the
+  whole film instead of being "a man" in every scene. The translation prompt
+  tells the translator never to say the label, and to use the real name once the
+  dialogue reveals it.
+- **The dialogue under each scene is sent as context** (clipped to 400
+  characters), so the model can tell who is speaking. The prompt still forbids
+  summarizing it or guessing plot. The render-era reason stands: a vision pass
+  that invents plot poisons what is written from it.
+
+`peakFrame` is not requested. Timestamps stay at the scene start, which the user
+did not ask to change.
+
+**Update, same day: Auto mode is two prompts, story first (supersedes the
+condensed recap prompt below, approved by the user).** One prompt that selected
+moments, condensed them, held timestamps, obeyed timing rules and translated
+kept growing rules that contradicted each other. For example, a coverage rule
+about the window up to the next timestamp disagreed with how the render
+actually takes footage, and "keep the ending" disagreed with sources that are
+only part of a story. Recap channels work the other way round: narration
+first, then footage to match.
+
+- **Prompt A, "Copy script prompt"** (`buildRecapScriptPrompt`): writes the
+  Burmese recap from the transcript with no timestamps. It carries the 12–15%
+  length budget, story priorities, an open-thread rule (do not invent an ending
+  for a partial source), and story-order lines.
+- **Prompt B, "Copy clip prompt"** (`buildRecapClipPrompt`): takes the
+  transcript and the script and returns `MM:SS  line`. Each timestamp is
+  copied from the transcript, with `[Scene]` lines preferred. Lines are never
+  reworded. Timestamps strictly increase and are at least 10s apart, and none
+  is reused. Both prompts embed everything they need, so B does not depend on
+  being sent in the same chat as A.
+- **Why strictly increasing:** `parseTimestampedBlocks` skips any block whose
+  timestamp is not after the previous one. A non-monotonic answer would
+  silently lose lines.
+- **Why 10s apart:** a beat's window ends at the next timestamp, and a short
+  window under a ~10s line is slowed with no floor (see "No slow-down floor").
+  Changing the render to take footage from the timestamp for the narration's
+  length, regardless of the next stamp, would remove both rules. It was not
+  done; revisit if the clip prompt struggles to obey them.
+- **The script is stored** in `transcript_script` (new column). It appears as a
+  "Recap script" box in Auto mode, saved with the other Transcript fields. The
+  render and Build Script do not read it. Only the timestamped Burmese story
+  drives them.
+- Manual mode's translation prompt is back to exactly its pre-Auto text. The
+  style, wording and style-reference blocks are shared constants, so the three
+  prompts keep one voice.
+
+**Update, same day: second review of the script (wording by the user).**
+- **"Same moment" is defined as one continuous action within about 10s of film
+  time,** in rule 4 and in FINAL REVIEW item 3. "Same place" was read
+  loosely: lines still joined moments 20–50s apart in one room.
+- **The hook line must describe something visible near the end** (the rival
+  watching, a threatening look). A narrator-only comment ("the villains are
+  still close by") had no shot for the clip step to match.
+- **Uncertain identity:** the transcript is machine-made and has no speaker
+  labels. A line's speaker or a person's relationship ("二叔" could be the
+  father himself) can be wrong. When it is not clear, the script describes
+  the person by what is certain instead of guessing. FunASR has no speaker
+  diarization in this setup. Adding it (`spk_model`) is the code-side fix if
+  this keeps coming up.
+
+**Update, same day: no repeated beats, and a final review (wording by the
+user).** An outside review of the first script found a third display of the
+same power, two near-identical threats, and suggested merges. Prompt A now:
+- **Rule 8:** for the same kind of event, keep the first time and the
+  strongest or most important later time. Drop the rest.
+- **FINAL REVIEW:** always drop repeats and side details. Drop other lines
+  weakest first, only while the total stays at or above the budget minimum.
+  If it falls under, add back a skipped story moment, never filler. Shorten
+  long lines by cutting words, not moments. Never merge two lines; drop the
+  weaker one unless both happen in the same place at the same time.
+- **Every rule and example stays genre-neutral,** because the feature takes
+  any film. The earlier example ("drinks the water … the auction") came from
+  the test film and was replaced with a generic one.
+
+**Update, same day: script prompt tightened after the first real run** (25:20
+source). The script came back at 23 lines, the top of the 18–23 line budget.
+Some lines ran 12–13s, so the total was about 4 minutes against a 3:02–3:48
+target. Three changes to Prompt A:
+- The total reading time is stated as the limit, not the line count: long
+  lines mean fewer lines, aiming for the middle of the budget.
+- **One line = one on-screen moment.** Lines had joined two scenes ("recovers
+  after drinking water + is taken to the auction"), and a line plays over one
+  clip, so the second scene could never be shown. Split into two lines or keep
+  the more important one.
+- **The last line:** end on the resolution if there is one. Otherwise end on
+  the open threat as a hook for the next part. The first run's ending was weak
+  because "do not invent an ending" alone gave it no target.
+
+**Update, same day (SUPERSEDED same day — two prompts above): Auto mode copies a condensed recap prompt.** Manual mode
+uploads a source that is already cut to recap length, so its prompt translates
+every line. Auto mode reads a raw, uncut film, so its "Copy recap prompt" adds
+a STEP 2 that keeps only the moments the story needs (setup, turning points,
+reveals, climax, ending), drops filler, and prefers a `[Scene]` line as each
+moment's anchor. The step also folds nearby dialogue into that line. The 1:1
+rules then apply to the selected lines. The user's scene directive is changed
+only to say "selected" in place of "cleaned".
+
+- **Length is a ratio of the source, not fixed minutes (revised same day).**
+  A fixed number of minutes would cut key moments from a longer film. The first
+  version only asked for "a strict cut". On a 25:20 film it returned 115 lines,
+  about 18–22 minutes of narration (70–80% of the source). The prompt now
+  states a budget computed from `sourceDurationSeconds`: 12–15% of the film
+  (25:20 gives about 3:02–3:48), converted to a line count at 10s per line, plus
+  a final count-and-drop check. The 10s per line is the user's measured average
+  for a translated Burmese line. It is deliberately not the codebase's TTS
+  `CHARS_PER_SECOND`.
+- **The render needed no change.** A beat's footage starts at its timestamp
+  and runs only as long as its narration. Footage between selected moments
+  therefore never appears, and the output length is roughly the narration's.
+- **Accepted consequence:** a moment shows from its own timestamp onward. If
+  the action peaks late in a long window, the payoff can be trimmed. Anchoring
+  on `[Scene]` lines, which stamp the start of the action, keeps this small.
+- The step opens in Auto mode when the saved source transcript contains
+  `[Scene]`, so a reload does not switch it to the full-translation prompt.
+
+**Update, same day: the copied prompt carries a strict scene-handling block,**
+written by the user, placed just before the style reference. It says `[Scene]`
+lines are visual actions to narrate, not dialogue. The tag must never be
+output, and dialogue lines are retold without quote markers or "ဟုပြောသည်".
+It replaces the one-line `[Scene]` narration rule added earlier today. The
+cleaning rule (keep a `[Scene]` line on its own line) and the cast-label rule
+stay, because the block does not cover them.
+
+**Whisper segments are filtered** (`dropUnreliableSegments`) using Whisper's own
+failure thresholds: compression ratio > 2.4, or no-speech probability > 0.6 with
+average log-probability < -1. The second rule removes invented lines like "Thank
+you for watching." over music or silence. `transcribeSource` is shared, so the
+render's fallback read is filtered too.
+
+## 2026-10-01 — Speech recognition moves from Whisper to FunASR Paraformer-zh (supersedes the Whisper worker below)
+
+**Decision, by the user:** both Movie Recap transcription and Translate Auto Sync
+use FunASR (`paraformer-zh` + `fsmn-vad` + `ct-punc`) on Modal
+(`workers/funasr/modal_app.py`, env `ASR_WORKER_URL` / `ASR_WORKER_TOKEN`). The
+Whisper worker and `workers/whisper` are removed. There is still no OpenAI
+fallback.
+
+**Why:** the sources are Chinese videos. Whisper's own benchmark puts
+`large-v3` at 12.8% CER on Mandarin (Common Voice 15), and `turbo` is worse.
+Whisper also mixes Traditional and Simplified characters, which breaks the
+character matching against a Simplified SRT. On a test clip Paraformer
+returned all 24 characters correctly, in Simplified, with a timestamp per
+character.
+
+**Constraints a later reader would otherwise "fix":**
+- Models load from **ModelScope**, not Hugging Face. The HF `paraformer-zh`
+  alias resolved to a model without a timestamp predictor, and generation
+  failed with `KeyError: 'timestamp'`.
+- The worker keeps the Whisper response shape (`segments`, and `words` with
+  `?words=true`), so callers did not change. A "word" is one CJK character or
+  one Latin word. It is paired with Paraformer's stamps after removing
+  punctuation, and a count mismatch is logged rather than failing the request.
+- FunASR sends no confidence fields, so `dropUnreliableSegments` passes every
+  segment. The Whisper hallucination filter has nothing to act on.
+- Paraformer-zh is a Mandarin model. English or other-language sources will
+  transcribe poorly. That was accepted, because the user works with Chinese
+  videos.
+- Cold start, including the first model download, was measured at about
+  2.5 minutes.
+- `transcript_source` still stores `"whisper"` for a transcribed source. It is
+  a column value constrained by the schema, not a label anyone reads.
+
+## 2026-10-01 — Whisper runs self-hosted on Modal when configured (SUPERSEDED same day — FunASR above)
+
+**Decision, by the user:** transcription uses open-source Whisper
+(`openai-whisper`, `turbo` model) on Modal (`workers/whisper/modal_app.py`, T4,
+one container, weights cached in the `whisper-cache` volume) when
+`WHISPER_WORKER_URL` is set.
+
+**Update, same day, by the user: no OpenAI fallback.** If the worker is not
+configured, transcription throws instead of calling `whisper-1`, to avoid
+unplanned API cost. This removes the 25MB upload check and its Opus-ceiling
+reasoning from the 2026-09-17 entry. The Opus compression stays, so the POST
+stays small. The source's own subtitle track is still read first, which costs
+nothing.
+
+- The worker returns the same `verbose_json` segment fields
+  (`no_speech_prob`, `avg_logprob`, `compression_ratio`), so
+  `dropUnreliableSegments` filters both paths the same way.
+- It runs with `condition_on_previous_text=False`. Conditioning on its own
+  output is how one invented line gets repeated across a quiet stretch.
+- A long source runs past Modal's 150s HTTP window. Modal then answers with a
+  303 to a result URL, and `fetch` follows it. The request is still bounded by
+  the transcript route's `maxDuration`.
+- A cold start loads the model before the first request is served. Measured at
+  58s on a fresh container (first download included).
+
+## 2026-10-01 — No slow-down floor and no freeze for short footage (records ea47837; supersedes the 0.65x/0.60x floor entries)
+
+**Decision, confirmed by the user as final:** when a beat's footage is shorter
+than its narration, the beat's speed is solved to whatever fills the narration
+exactly (`buildMovieRecapSceneTimingPlan`). There is no minimum speed, and the
+last frame is never frozen. `MOVIE_RECAP_MIN_PLAYBACK_SPEED` was removed in
+ea47837, but no entry recorded it at the time. This entry records it.
+
+**Consequence a later reader might "fix":** a short window under a long line
+plays in very slow motion. A 5s window under 20s of narration plays at about
+0.19x. This is accepted. Do not reintroduce a floor or a freeze without the
+user's approval. The surplus side is unchanged: speed up to 1.1x, then trim.
+
 ## 2026-09-29 — Build script blocks without per-block database writes
 
 **Decision:** turn timestamped story blocks into narration beats in memory, then report the completed Script stage once. Keep cancellation checks before and after the mapping.
@@ -5892,7 +6143,7 @@ the actual render boundary: one shared cumulative 30fps frame grid and an exact
 frame count per encoded segment. The previous 25-second grouping changed the
 picture allocation policy and is no longer the chosen behavior.
 
-## 2026-09-21 (later) — shortage beats may slow to a bounded minimum
+## 2026-09-21 (later) — shortage beats may slow to a bounded minimum (SUPERSEDED 2026-10-01 — no floor, no freeze)
 
 **Decision:** keep `0.75x` as the baseline, but when a beat's retained footage
 would leave more than the configurable tiny-freeze threshold (`0.15s`), solve a
@@ -6541,7 +6792,7 @@ move toward slow-down/freeze rather than trim.
 
 **Supersedes:** "Narration playback returns to 1.2x after the 0.8x test".
 
-## 2026-09-24 — Shortage slow-down floor 0.65x -> 0.60x
+## 2026-09-24 — Shortage slow-down floor 0.65x -> 0.60x (SUPERSEDED 2026-10-01 — no floor, no freeze)
 
 **Decision, confirmed by the user:** `MOVIE_RECAP_MIN_PLAYBACK_SPEED` is 0.60.
 With per-beat speeds now solved in both directions (0.60x-1.1x), the 0.75x

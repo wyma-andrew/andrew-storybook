@@ -314,12 +314,14 @@ export const MOVIE_RECAP_SCRIPT_STEPS = [
 export const MOVIE_RECAP_TRANSCRIPT_STEPS = [
   { id: "download", label: "Source", stages: ["downloading_source"] },
   { id: "dialogue", label: "Dialogue", stages: ["reading_captions", "extracting_audio", "transcribing"] },
+  { id: "scenes", label: "Scenes", stages: ["detecting_scenes", "describing_scenes"] },
   { id: "story", label: "Burmese story", stages: ["translating"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly MovieRecapTranscriptStage[] }[];
 
-// Retelling alone reuses the stored transcript, so these two genuinely do not
-// run — shown as skipped for the same reason a mock render's are.
-export const MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS = ["download", "dialogue"] as const;
+// Retelling alone reuses the stored transcript, and the automatic read stops at
+// the source transcript, so each skips what it genuinely does not run.
+export const MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS = ["download", "dialogue", "scenes"] as const;
+export const MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS = ["story"] as const;
 
 // No parked work is displayed: the bars list only the independent audio and
 // full-source footage stages that still run.
