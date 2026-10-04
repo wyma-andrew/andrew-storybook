@@ -42,7 +42,7 @@ type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
 
 const SETTINGS_FIELDS = ["name", "outputLanguage"] as const satisfies readonly PatchableField[];
 
-const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptScript", "transcriptStory", "voiceProfileId"] as const satisfies readonly PatchableField[];
+const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptScript", "transcriptStory", "recapShare", "voiceProfileId"] as const satisfies readonly PatchableField[];
 
 const CUSTOMIZE_FIELDS = [
   "aspectRatio",
@@ -64,6 +64,18 @@ const CUSTOMIZE_FIELDS = [
   "logoWatermarkText",
   "blurRegions",
 ] as const satisfies readonly PatchableField[];
+
+// recapShare's null means "recommended", so it is sent as is; the text fields
+// are cleared with "" rather than null.
+function transcriptPatch(project: MovieRecapProject): MovieRecapProjectPatch {
+  return {
+    transcriptText: project.transcriptText ?? "",
+    transcriptScript: project.transcriptScript ?? "",
+    transcriptStory: project.transcriptStory ?? "",
+    voiceProfileId: project.voiceProfileId,
+    recapShare: project.recapShare,
+  };
+}
 
 function pick(project: MovieRecapProject, fields: readonly PatchableField[]) {
   return Object.fromEntries(fields.map((field) => [field, project[field]])) as MovieRecapProjectPatch;
@@ -333,7 +345,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     // Transcript fields edit the project draft and this writes them together,
     // including the voice Build Script will read in the next step.
     if (step === 2) {
-      for (const field of TRANSCRIPT_FIELDS) body[field] = project[field] ?? "";
+      Object.assign(body, transcriptPatch(project));
     }
     if (step === 4) {
       if (!project.name.trim()) {
@@ -362,7 +374,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   async function saveTranscript() {
     if (!project) return;
     const body: MovieRecapProjectPatch = {};
-    for (const field of TRANSCRIPT_FIELDS) body[field] = project[field] ?? "";
+    Object.assign(body, transcriptPatch(project));
     const result = await updateProject({ params: { id: project.id }, body });
     if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save the transcript.");
     else {
@@ -371,17 +383,17 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
   }
 
-  async function readSourceTranscript() {
+  async function readSourceTranscript(dialogueOnly: boolean) {
     if (!project) return;
-    merge({ transcriptStatus: "running", transcriptStoryOnly: false, transcriptError: null, transcriptStage: null, transcriptProgressCurrent: null, transcriptProgressTotal: null });
-    const result = await readTranscript({ params: { id: project.id }, body: {} });
+    merge({ transcriptStatus: "running", transcriptStoryOnly: false, transcriptDialogueOnly: dialogueOnly, transcriptError: null, transcriptStage: null, transcriptProgressCurrent: null, transcriptProgressTotal: null });
+    const result = await readTranscript({ params: { id: project.id }, body: { dialogueOnly } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not read the source.");
       const refreshed = await pollProject({ params: { id: project.id }, force: true });
       if (refreshed.data) adoptRow(refreshed.data);
       return;
     }
-    adoptRow(result.data, ["transcriptScript", "transcriptStory", "voiceProfileId"]);
+    adoptRow(result.data, ["transcriptScript", "transcriptStory", "recapShare", "voiceProfileId"]);
     if (result.data.transcriptStatus === "done") toast.success("Source transcript ready.");
     else if (result.data.transcriptStatus === "failed") toast.error(result.data.transcriptError ?? "Could not read the source.");
   }
@@ -827,7 +839,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             <MovieRecapTranscript
               project={project}
               onChange={merge}
-              onReadSource={() => void readSourceTranscript()}
+              onReadSource={(dialogueOnly) => void readSourceTranscript(dialogueOnly)}
               onCancelRead={() => void cancelTranscriptRead()}
               cancellingRead={cancellingTranscript}
             />
@@ -926,7 +938,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                         {project.subtitleSize === null && <p className="mt-1 text-xs text-fg-3">Default for {project.aspectRatio}: {MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}%.</p>}
                       </div>
                       <div><div className="mb-2 text-xs font-medium text-fg-2">Position</div><div className="grid grid-cols-3 gap-2">{MOVIE_RECAP_SUBTITLE_POSITIONS.map((item) => <Button key={item.id} onClick={() => merge({ subtitlePosition: item.id })} className={project.subtitlePosition === item.id ? "!border-accent !bg-accent-dim !text-fg" : ""}>{item.name}</Button>)}</div></div>
-                      {project.subtitlePosition !== "middle" && <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Edge distance</span><span>{Math.round(project.subtitleOffset)}%</span></span><input aria-label="Subtitle edge distance" type="range" min={0} max={45} value={project.subtitleOffset} onChange={(event) => merge({ subtitleOffset: Number(event.target.value) })} className="w-full accent-accent" /></label>}
+                      {project.subtitlePosition !== "middle" && <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Edge distance</span><span>{Math.round(project.subtitleOffset * 2) / 2}%</span></span><input aria-label="Subtitle edge distance" type="range" min={0} max={45} step={0.5} value={project.subtitleOffset} onChange={(event) => merge({ subtitleOffset: Number(event.target.value) })} className="w-full accent-accent" /></label>}
                     </div>
                   </div>}
                   {tab === "logo" && <div>

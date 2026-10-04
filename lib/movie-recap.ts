@@ -5,6 +5,7 @@ import {
   MOVIE_RECAP_SCRIPT_STEPS,
   MOVIE_RECAP_RENDER_STEPS,
   MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS,
+  MOVIE_RECAP_DIALOGUE_ONLY_SKIPPED_STEPS,
   MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS,
   MOVIE_RECAP_TRANSCRIPT_STEPS,
 } from "./constants/movie-recap";
@@ -213,12 +214,19 @@ export function movieRecapTranscriptStepStates({
   status,
   stage,
   storyOnly,
+  dialogueOnly = false,
 }: {
   status: MovieRecapProject["transcriptStatus"];
   stage: MovieRecapTranscriptStage | null;
   storyOnly: boolean;
+  dialogueOnly?: boolean;
 }) {
-  return stepStates(MOVIE_RECAP_TRANSCRIPT_STEPS, status, stage, storyOnly ? MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS : MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS);
+  const skipped = storyOnly
+    ? MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS
+    : dialogueOnly
+      ? MOVIE_RECAP_DIALOGUE_ONLY_SKIPPED_STEPS
+      : MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS;
+  return stepStates(MOVIE_RECAP_TRANSCRIPT_STEPS, status, stage, skipped);
 }
 
 /**

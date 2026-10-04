@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play, ScrollText, Sparkles } from "lucide-react";
-import { ConfirmDialog, Dialog, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import { AudioLines, Check, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play, ScrollText, Sparkles, Upload } from "lucide-react";
+import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { Button as AppButton, LinkButton, LoadingButton } from "@/components/ui/Button";
+import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
 import { MOVIE_RECAP_VOICES } from "@/lib/constants/movie-recap";
 import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
 import { useWrite } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
+import { RecapLengthMenu } from "./RecapLengthMenu";
+import { recommendedRecapShare } from "@/lib/movie-recap-recap-length";
 
 type TranscriptMode = "manual" | "auto";
 
@@ -52,7 +54,8 @@ STEP 1 — CLEAN THE SOURCE (do this internally; do not output it)
 2. Join the caption fragments and re-split them so that each line holds exactly ONE complete sentence (ending in ".", "?" or "!", including when followed by a closing quote).
 3. Give each sentence the timestamp of the caption line where its first word appears. Exception: if the sentence starts in the last 1–2 words of a caption line, use the NEXT caption line's timestamp.
 4. If a quote contains several sentences, split them into separate lines.
-5. Lines tagged [Scene] describe what is on screen, not speech. Keep each one as its own line with its own timestamp — never join it with dialogue, never drop it as a sound tag.
+5. If two cleaned lines would get the same timestamp, join them into one line. Every timestamp must be used only once.
+6. Lines tagged [Scene] describe what is on screen, not speech. Keep each one as its own line with its own timestamp — never join it with dialogue, never drop it as a sound tag.
 
 Example:
 Raw:
@@ -121,12 +124,10 @@ ${sourceText.trim()}`;
 // picks a source timestamp for each line. One prompt doing both kept growing
 // rules that contradicted each other. See history/movie-recap.md.
 //
-// The length is a ratio of the source so a longer film keeps more moments.
-// 22-26% is the user's target, raised in steps from 12-15% because shorter
-// recaps read as events rushing past; "be strict" in words alone came back at
-// 70-80%. 10s per line is the user's
-// measured average for a translated Burmese line, not the TTS rate.
-const RECAP_SHARE = { min: 0.22, max: 0.26 };
+// The length budget is the share picked in the Recap length menu, with 10%
+// either side. 10s per line is the user's measured average for a translated
+// Burmese line, not the TTS rate.
+const RECAP_SHARE_SPREAD = 0.1;
 const RECAP_SECONDS_PER_LINE = 10;
 
 function clock(seconds: number) {
@@ -134,9 +135,11 @@ function clock(seconds: number) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function buildRecapScriptPrompt(sourceText: string, sourceDurationS: number) {
-  const minS = sourceDurationS * RECAP_SHARE.min;
-  const maxS = sourceDurationS * RECAP_SHARE.max;
+function buildRecapScriptPrompt(sourceText: string, sourceDurationS: number, share: number) {
+  const minShare = share * (1 - RECAP_SHARE_SPREAD);
+  const maxShare = share * (1 + RECAP_SHARE_SPREAD);
+  const minS = sourceDurationS * minShare;
+  const maxS = sourceDurationS * maxShare;
   const minLines = Math.max(3, Math.round(minS / RECAP_SECONDS_PER_LINE));
   const maxLines = Math.max(minLines, Math.round(maxS / RECAP_SECONDS_PER_LINE));
   return `You are a Burmese movie-recap narrator. Read the transcript of a film below and write a SHORT spoken Burmese recap script of its story.
@@ -148,7 +151,7 @@ ABOUT THE TRANSCRIPT
 - Ignore the timestamps for now. A later step matches each line of your script to the footage.
 
 LENGTH BUDGET — this is the main constraint
-- The film runs ${clock(sourceDurationS)}. The whole script, read aloud, must total about ${clock(minS)}–${clock(maxS)} (${Math.round(RECAP_SHARE.min * 100)}–${Math.round(RECAP_SHARE.max * 100)}% of the film).
+- The film runs ${clock(sourceDurationS)}. The whole script, read aloud, must total about ${clock(minS)}–${clock(maxS)} (${Math.round(minShare * 100)}–${Math.round(maxShare * 100)}% of the film).
 - One line takes about ${RECAP_SECONDS_PER_LINE} seconds to read, so write about ${minLines}–${maxLines} lines. Never more than ${maxLines}.
 - The TOTAL reading time is the limit, not just the line count. A line that runs long eats into the budget: if your lines run over ${RECAP_SECONDS_PER_LINE} seconds, write fewer of them. Aim for the middle of the budget, not the top.
 
@@ -208,6 +211,11 @@ ${script.trim()}
 TRANSCRIPT:
 ${sourceText.trim()}`;
 }
+
+const TRANSCRIPT_SOURCES = [
+  { label: "YouTube Transcript", href: "https://www.youtube-transcript.io/" },
+  { label: "RedNote Transcript", href: "https://captioner.io/en/rednote" },
+];
 
 function showTranscriptImport(onImport: (text: string) => void) {
   Dialog.show({
@@ -286,15 +294,18 @@ export function MovieRecapTranscript({
     transcriptText?: string;
     transcriptScript?: string;
     transcriptStory?: string;
+    recapShare?: number | null;
     voiceProfileId?: MovieRecapProject["voiceProfileId"];
   }) => void;
-  onReadSource: () => void;
+  onReadSource: (dialogueOnly: boolean) => void;
   onCancelRead: () => void;
   cancellingRead: boolean;
 }) {
-  const reading = project.transcriptStatus === "running" && !project.transcriptStoryOnly;
+  const running = project.transcriptStatus === "running" && !project.transcriptStoryOnly;
+  const reading = running && !project.transcriptDialogueOnly;
+  const readingAudio = running && project.transcriptDialogueOnly;
   const [mode, setMode] = useState<TranscriptMode>(
-    reading || project.transcriptScript?.trim() || project.transcriptText?.includes(MOVIE_RECAP_SCENE_TAG) ? "auto" : "manual"
+    project.transcriptDialogueOnly ? "manual" : reading || project.transcriptScript?.trim() || project.transcriptText?.includes(MOVIE_RECAP_SCENE_TAG) ? "auto" : "manual"
   );
   const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const text = project.transcriptText ?? "";
@@ -345,9 +356,9 @@ export function MovieRecapTranscript({
     };
   }, []);
 
-  function confirmReadSource() {
+  function confirmReadSource(dialogueOnly: boolean) {
     if (!text.trim()) {
-      onReadSource();
+      onReadSource(dialogueOnly);
       return;
     }
     ConfirmDialog.show({
@@ -355,7 +366,7 @@ export function MovieRecapTranscript({
       content: "The automatic read writes a new source transcript over the one in this step. The Burmese story is not touched.",
       confirmButtonLabel: "Read and replace",
       cancelButtonLabel: "Keep current",
-      onConfirm: onReadSource,
+      onConfirm: () => onReadSource(dialogueOnly),
     });
   }
 
@@ -377,8 +388,8 @@ export function MovieRecapTranscript({
       </p>
       <div className="mb-4 inline-flex rounded-lg border border-line bg-panel-2 p-1">
         {([
-          { id: "manual", label: "Manual" },
-          { id: "auto", label: "Auto (speech + scenes)" },
+          { id: "manual", label: "Recap Video" },
+          { id: "auto", label: "Raw Video to Recap" },
         ] as const).map((option) => (
           <AppButton
             key={option.id}
@@ -390,40 +401,71 @@ export function MovieRecapTranscript({
         ))}
       </div>
       {mode === "manual" ? (
-        <div className="mb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-col items-start gap-2">
-              <LinkButton
-                href="https://www.youtube-transcript.io/"
-                target="_blank"
-                rel="noreferrer"
-                variant="primary"
-                className="inline-flex items-center gap-2"
-              >
-                Get YouTube Transcript
-                <ExternalLink size={15} aria-hidden="true" />
-              </LinkButton>
-              <LinkButton
-                href="https://captioner.io/en/rednote"
-                target="_blank"
-                rel="noreferrer"
-                variant="secondary"
-                className="inline-flex items-center gap-2 !border-rednote !bg-rednote !text-on-rednote hover:!bg-rednote"
-              >
-                Get RedNote Transcript
-                <ExternalLink size={15} aria-hidden="true" />
-              </LinkButton>
+        <div className="mb-6 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-line bg-panel-2 p-4">
+            <div className="mb-1 flex items-center gap-2 text-sm font-medium">
+              <Upload size={14} className="text-fg-3" aria-hidden="true" />
+              Manual transcript
             </div>
-            <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
-            <AppButton
-              variant="secondary"
-              className="inline-flex items-center gap-2"
-              onClick={() => showTranscriptImport((imported) => {
-                onChange({ transcriptText: imported });
-              })}
-            >
-              Import
-            </AppButton>
+            <p className="mb-3 text-xs text-fg-3">Download a transcript from YouTube or RedNote, then import the .txt file.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Menu menuClassName="min-w-[200px] p-1" placement="bottom-start" floatingStrategy="fixed">
+                <MenuTrigger>
+                  {({ toggleMenu }) => (
+                    <AppButton variant="primary" className="inline-flex items-center gap-2" onClick={toggleMenu}>
+                      Get Transcript
+                      <ChevronDown size={15} aria-hidden="true" />
+                    </AppButton>
+                  )}
+                </MenuTrigger>
+                {TRANSCRIPT_SOURCES.map((source) => (
+                  <MenuItem key={source.href} onClick={() => window.open(source.href, "_blank", "noreferrer")}>
+                    <span className="flex w-full items-center justify-between gap-3">
+                      {source.label}
+                      <ExternalLink size={14} className="text-fg-3" aria-hidden="true" />
+                    </span>
+                  </MenuItem>
+                ))}
+              </Menu>
+              <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+              <AppButton
+                variant="secondary"
+                className="inline-flex items-center gap-2"
+                onClick={() => showTranscriptImport((imported) => {
+                  onChange({ transcriptText: imported });
+                })}
+              >
+                Import
+              </AppButton>
+            </div>
+          </div>
+          <div className="rounded-xl border border-line bg-panel-2 p-4">
+            <div className="mb-1 flex items-center gap-2 text-sm font-medium">
+              <AudioLines size={14} className="text-fg-3" aria-hidden="true" />
+              Auto transcript
+            </div>
+            <p className="mb-3 text-xs text-fg-3">Transcribes the speech already in the uploaded video into the source transcript.</p>
+            <div className="flex items-center gap-2">
+              <LoadingButton
+                variant="primary"
+                loading={readingAudio}
+                disabled={running}
+                className="inline-flex items-center gap-2"
+                onClick={() => confirmReadSource(true)}
+              >
+                <AudioLines size={15} aria-hidden="true" />
+                {project.transcriptDialogueOnly && project.transcriptStatus === "done" ? "Generate again" : "Generate Transcript"}
+              </LoadingButton>
+              {readingAudio && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
+            </div>
+            {project.transcriptDialogueOnly && project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
+              <div className="mt-4">
+                <MovieRecapTranscriptProgress project={project} />
+              </div>
+            )}
+            {project.transcriptDialogueOnly && project.transcriptStatus === "failed" && project.transcriptError && (
+              <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
+            )}
           </div>
         </div>
       ) : (
@@ -434,18 +476,18 @@ export function MovieRecapTranscript({
             [Scene]. Then: copy the script prompt, paste the recap script below, copy the clip prompt, and paste its
             timestamped result into the Burmese story.
           </p>
-          {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
+          {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly && (
             <div className="mb-4">
               <MovieRecapTranscriptProgress project={project} />
             </div>
           )}
-          {project.transcriptStatus === "failed" && project.transcriptError && !reading && (
+          {project.transcriptStatus === "failed" && project.transcriptError && !project.transcriptDialogueOnly && (
             <p className="mb-3 text-sm text-danger">{project.transcriptError}</p>
           )}
           <div className="flex items-center gap-2">
-            <LoadingButton variant="primary" loading={reading} disabled={reading} className="inline-flex items-center gap-2" onClick={confirmReadSource}>
+            <LoadingButton variant="primary" loading={reading} disabled={running} className="inline-flex items-center gap-2" onClick={() => confirmReadSource(false)}>
               <Sparkles size={15} aria-hidden="true" />
-              {project.transcriptStatus === "done" && !project.transcriptStoryOnly ? "Read again" : "Read source"}
+              {project.transcriptStatus === "done" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly ? "Read again" : "Read source"}
             </LoadingButton>
             {reading && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
           </div>
@@ -477,15 +519,29 @@ export function MovieRecapTranscript({
             />
             <div className="mt-3 flex justify-end">
               {mode === "auto" ? (
-                <AppButton
-                  variant="secondary"
-                  className="inline-flex items-center gap-2"
-                  disabled={!text.trim()}
-                  onClick={() => void copyPrompt(buildRecapScriptPrompt(text, project.sourceDurationSeconds), "Script prompt")}
-                >
-                  <Copy size={15} aria-hidden="true" />
-                  Copy script prompt
-                </AppButton>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <RecapLengthMenu
+                    durationS={project.sourceDurationSeconds}
+                    share={project.recapShare}
+                    onChange={(recapShare) => onChange({ recapShare })}
+                  />
+                  <AppButton
+                    variant="secondary"
+                    className="inline-flex items-center gap-2"
+                    disabled={!text.trim()}
+                    onClick={() => void copyPrompt(
+                      buildRecapScriptPrompt(
+                        text,
+                        project.sourceDurationSeconds,
+                        project.recapShare ?? recommendedRecapShare(project.sourceDurationSeconds),
+                      ),
+                      "Script prompt",
+                    )}
+                  >
+                    <Copy size={15} aria-hidden="true" />
+                    Copy script prompt
+                  </AppButton>
+                </div>
               ) : (
                 <AppButton
                   variant="secondary"

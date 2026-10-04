@@ -322,6 +322,7 @@ export const MOVIE_RECAP_TRANSCRIPT_STEPS = [
 // the source transcript, so each skips what it genuinely does not run.
 export const MOVIE_RECAP_STORY_ONLY_SKIPPED_STEPS = ["download", "dialogue", "scenes"] as const;
 export const MOVIE_RECAP_AUTO_READ_SKIPPED_STEPS = ["story"] as const;
+export const MOVIE_RECAP_DIALOGUE_ONLY_SKIPPED_STEPS = ["scenes", "story"] as const;
 
 // No parked work is displayed: the bars list only the independent audio and
 // full-source footage stages that still run.
@@ -448,13 +449,13 @@ export function movieRecapBackfillBlurCssPx(frameWidthPx: number, aspectRatio: M
 export const MOVIE_RECAP_LOGO_BOX = { widthPct: 10, portraitWidthPct: 10, heightPct: 8, marginPct: 4 } as const;
 
 // Centred text mark burned under the logo. `sizePct` is of frame height, like
-// subtitles. 16:9 read large at 3.4% and 2.2%.
+// subtitles. 16:9 read large at 3.4% and 2.2%, 9:16 at 1.9%.
 export const MOVIE_RECAP_WATERMARK = {
   color: "#FFFFFF",
   opacityPct: 30,
   weight: 700,
   letterSpacingEm: 0.14,
-  sizePct: { "16:9": 1.5, "9:16": 1.9, "1:1": 1.9 } satisfies Record<MovieRecapAspectRatio, number>,
+  sizePct: { "16:9": 1.5, "9:16": 1.3, "1:1": 1.9 } satisfies Record<MovieRecapAspectRatio, number>,
 } as const;
 
 // The stand-in caption the step-3 preview draws. It is also the mock render's

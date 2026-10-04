@@ -43,6 +43,27 @@ describe("buildAutoSourceTranscript", () => {
     );
   });
 
+  it("joins dialogue lines that share a stamp, but never into a scene line", () => {
+    const text = buildAutoSourceTranscript(
+      [
+        { start: 0.2, text: "女人只是随手在路边买下一块石头，" },
+        { start: 2.1, text: "结果回家后，" },
+        { start: 2.8, text: "丈夫竟直接提出离婚，" },
+        { start: 5, text: "Wait." },
+        { start: 5.5, text: "Stop." },
+      ],
+      [{ start: 2, visual: "A man frowns." }]
+    );
+    expect(text).toBe(
+      [
+        "00:00 女人只是随手在路边买下一块石头，",
+        "00:02 [Scene] A man frowns.",
+        "00:02 结果回家后，丈夫竟直接提出离婚，",
+        "00:05 Wait. Stop.",
+      ].join("\n")
+    );
+  });
+
   it("survives the source transcript's own paste formatting", () => {
     const text = buildAutoSourceTranscript([{ start: 3700, text: "Late line." }], [{ start: 5, visual: "A door opens." }]);
     expect(formatMovieRecapSourceTranscript(text)).toBe(text);

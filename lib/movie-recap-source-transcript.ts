@@ -2,6 +2,10 @@ const TIMESTAMPED_LINE = /^\s*((?:(?:\d{1,3}:)?\d{1,2}:\d{2}))\s+(\S.*)\s*$/;
 
 export const MOVIE_RECAP_SCENE_TAG = "[Scene]";
 
+// Chinese and Japanese run on without spaces, so a line ending in one of their
+// characters or punctuation marks is joined to the next with no space.
+const CJK_END = /[\u3000-\u303f\u3040-\u30ff\u3400-\u9fff\uff00-\uffef]$/;
+
 /** Keep only source lines that carry both a timestamp and source text. */
 export function formatMovieRecapSourceTranscript(raw: string) {
   return raw
@@ -30,7 +34,8 @@ export function formatTranscriptStamp(seconds: number) {
  * Dialogue and scene descriptions as one timestamped source transcript, in the
  * same `MM:SS text` shape a pasted transcript has. A scene line sorts before
  * dialogue at the same second: the picture is on screen before anyone speaks
- * over it.
+ * over it. Dialogue lines that land on the same stamp are joined into one line;
+ * scene lines never are, so the [Scene] tag keeps its own line.
  */
 export function buildAutoSourceTranscript(
   dialogue: { start: number; text: string }[],
@@ -43,7 +48,18 @@ export function buildAutoSourceTranscript(
     .map((line) => ({ ...line, text: line.text.replace(/\s+/g, " ").trim() }))
     .filter((line) => line.text && line.text !== MOVIE_RECAP_SCENE_TAG);
   lines.sort((a, b) => Math.floor(a.start) - Math.floor(b.start) || a.order - b.order || a.start - b.start);
-  return lines.map((line) => `${formatTranscriptStamp(line.start)} ${line.text}`).join("\n");
+  const rows: { stamp: string; dialogue: boolean; text: string }[] = [];
+  for (const line of lines) {
+    const stamp = formatTranscriptStamp(line.start);
+    const dialogue = line.order === 1;
+    const previous = rows.at(-1);
+    if (previous && dialogue && previous.dialogue && previous.stamp === stamp) {
+      previous.text += CJK_END.test(previous.text) ? line.text : ` ${line.text}`;
+    } else {
+      rows.push({ stamp, dialogue, text: line.text });
+    }
+  }
+  return rows.map((row) => `${row.stamp} ${row.text}`).join("\n");
 }
 
 const DIALOGUE_CONTEXT_CHARS = 400;

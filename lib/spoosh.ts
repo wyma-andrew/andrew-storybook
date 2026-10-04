@@ -166,7 +166,7 @@ export type ApiSchema = {
   // stays open for the whole run, and the browser polls the project row for its
   // stage meanwhile. storyOnly: redo the parked Burmese retelling instead.
   "movie-recaps/:id/transcript": {
-    POST: { data: MovieRecapProject; body: { storyOnly?: boolean } };
+    POST: { data: MovieRecapProject; body: { storyOnly?: boolean; dialogueOnly?: boolean } };
   };
   "movie-recaps/:id/transcript/cancel": {
     POST: { data: { cancelled: boolean } };

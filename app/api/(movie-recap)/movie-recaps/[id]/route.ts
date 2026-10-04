@@ -82,6 +82,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     patch.subtitle_preset = body.subtitlePreset;
     changesConfiguration = true;
   }
+  if (body?.recapShare !== undefined) {
+    if (body.recapShare !== null && (typeof body.recapShare !== "number" || !Number.isFinite(body.recapShare) || body.recapShare < 0.03 || body.recapShare > 0.6)) {
+      return NextResponse.json({ error: "recapShare must be 0.03–0.6 or null." }, { status: 400 });
+    }
+    patch.recap_share = body.recapShare;
+  }
   if (body?.subtitleSize !== undefined) {
     if (body.subtitleSize !== null && (typeof body.subtitleSize !== "number" || !Number.isFinite(body.subtitleSize) || body.subtitleSize < 1 || body.subtitleSize > 10)) {
       return NextResponse.json({ error: "subtitleSize must be 1–10 or null." }, { status: 400 });

@@ -218,7 +218,7 @@ async function readSourceScenes(
  * Burmese story is still the user's — see history/movie-recap.md. With
  * `storyOnly`, the parked retelling is redone from the stored transcript.
  */
-export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject, { storyOnly = false } = {}) {
+export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject, { storyOnly = false, dialogueOnly = false } = {}) {
   const controller = new AbortController();
   activeRuns.set(project.id, controller);
   const signal = controller.signal;
@@ -263,9 +263,9 @@ export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject
     await downloadMovieRecapSource(project, localSource, { signal });
 
     const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal);
-    const scenes = await readSourceScenes(localSource, workDir, read.segments, setProgress, signal);
+    const scenes = dialogueOnly ? [] : await readSourceScenes(localSource, workDir, read.segments, setProgress, signal);
     const text = buildAutoSourceTranscript(read.segments, scenes);
-    if (!text) throw new Error("Nothing was read from the source: no speech and no scene descriptions.");
+    if (!text) throw new Error(dialogueOnly ? "No speech was found in the source." : "Nothing was read from the source: no speech and no scene descriptions.");
 
     await db
       .from("movie_recap_projects")

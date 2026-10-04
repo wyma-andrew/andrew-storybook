@@ -45,6 +45,7 @@ export function MovieRecapTranscriptProgress({ project }: { project: MovieRecapP
     status: project.transcriptStatus,
     stage: project.transcriptStage,
     storyOnly: project.transcriptStoryOnly,
+    dialogueOnly: project.transcriptDialogueOnly,
   });
   const steps = MOVIE_RECAP_TRANSCRIPT_STEPS;
   const total = project.transcriptProgressTotal ?? 0;

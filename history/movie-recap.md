@@ -7,6 +7,80 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-10-04 — 9:16 watermark text 1.9% -> 1.3%
+
+**Decision, by the user:** 9:16 watermark text read large at 1.9% of frame
+height (~36px at 1920). It is now 1.3% (~25px). 16:9 (1.5%) and 1:1 (1.9%) are
+unchanged. Preview and render share `MOVIE_RECAP_WATERMARK.sizePct`.
+
+## 2026-10-04 — Recap Video mode has an Audio mode read
+
+**Decision, by the user:** the mode tabs are renamed "Recap Video" (was
+Manual) and "Raw Video to Recap" (was Auto). Recap Video gets an "Audio mode"
+button beside Import. The uploaded video is already a recap with its own
+narration, so the button only transcribes that speech into the source
+transcript, as `MM:SS text` lines.
+
+- It is the same `POST movie-recaps/:id/transcript` run with
+  `dialogueOnly: true`: captions or FunASR, with no scene detection and no
+  vision pass. Scene lines would add nothing to a source that is already cut.
+- `movie_recap_projects.transcript_dialogue_only` records it. The stepper shows
+  Scenes as skipped, and a reload during or after the run stays on Recap Video
+  instead of opening Raw Video to Recap.
+- **One line per stamp (by the user):** FunASR splits at commas, so two
+  segments often land on the same second (`00:02 结果回家后，` /
+  `00:02 丈夫竟…`). `buildAutoSourceTranscript` joins consecutive dialogue
+  lines with the same stamp, with no space after CJK text. `[Scene]` lines are
+  never joined, so the tag keeps its own line. This applies to Raw Video to
+  Recap's read too.
+- **The translation prompt joins lines that share a stamp (approved by the
+  user; amends "Manual mode's translation prompt is back to exactly its
+  pre-Auto text").** STEP 1 re-splits into sentences, so two sentences
+  starting in the same second got the same stamp again, and
+  `parseTimestampedBlocks` silently drops a block whose stamp is not after the
+  previous one. New STEP 1 rule 5: join such lines, use each stamp once.
+- **Labels (by the user):** the cards are titled "Manual transcript" (import)
+  and "Auto transcript" (this read). Its button is "Generate Transcript".
+- **Layout (by the user):** Import and Audio mode are two separate cards, side
+  by side on desktop, not one row joined by "or". They are two different
+  sources.
+- **Helper links are one "Get Transcript" dropdown (by the user, supersedes
+  "Center Transcript import beside helper links" below):** the YouTube and
+  RedNote items open their sites in a new tab. The chevron and Import button
+  follow it.
+
+## 2026-10-03 — Recap length is chosen per project, recommended by source length
+
+**Decision, by the user:** Auto mode has a "Recap" dropdown next to "Copy
+script prompt". It replaces the fixed 22–26% budget. The options are:
+
+- **Recommended:** a share that follows the source's length:
+  `1.1 × √(source minutes)` minutes of recap. That is ~28% at 15 min, ~22% at
+  25 min, ~14% at 1 h, and ~10% at 2 h (`lib/movie-recap-recap-length.ts`). It is capped at 30%: below about 13 minutes the
+  curve climbs further (53% at 4 min), which is no longer a recap.
+- **Presets:** 10 / 15 / 20 / 25 / 30%. A preset within 2.5 points of the
+  recommendation is hidden, so the same choice never appears twice.
+- **Custom:** a dialog that takes a % (3–60), shows the resulting minutes, and
+  then appears in the menu with an edit button. There is only one custom
+  value; editing replaces it.
+
+Each option shows the narration time for this video, not just the %. The
+prompt budget is the chosen share ±10%.
+
+**Why a square-root curve, not a fixed %:** recap channels run 5–12 minutes
+for a 90–120 minute film (~5–12%), while 12–15% of a 25-minute source read as
+events rushing past, and 22–26% suited it. A fixed % that fits short sources
+would give a 2-hour film a ~29-minute recap.
+
+**Storage:** the project's choice is `movie_recap_projects.recap_share`
+(numeric, null = Recommended), saved with the other Transcript fields. The
+custom value is a per-browser preference in localStorage
+(`movie-recap:custom-recap-share`). It only pre-fills Custom on new projects;
+a project saved with a custom value shows it on any browser.
+
+**Limitation:** the prompt guides the length but cannot enforce it. A script
+can still land ±15–20% off the target.
+
 ## 2026-10-01 — Transcript step has Manual and Auto source transcripts
 
 **Decision, by the user:** the Transcript step offers two modes for the source
@@ -380,7 +454,7 @@ apply the render look. The first frame may be a black intro, as the old
 thumbnail decision warned. A capture failure leaves the completed upload
 usable and the card falls back to its source video frame.
 
-## 2026-09-29 — Center Transcript import beside helper links
+## 2026-09-29 — Center Transcript import beside helper links (SUPERSEDED 2026-10-04 — one Get Transcript dropdown)
 
 **Decision:** stack the YouTube and RedNote transcript links in one column and
 center the chevron and Import button beside that column.

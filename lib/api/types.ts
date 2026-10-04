@@ -91,6 +91,8 @@ export type MovieRecapProject = {
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapSubtitlePreset;
   subtitleSize: number | null;
+  // Auto mode's recap length as a share of the source; null = recommended.
+  recapShare: number | null;
   subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapSubtitlePosition;
   subtitleOffset: number;
@@ -131,6 +133,7 @@ export type MovieRecapProject = {
   // Whether the last run only redid the retelling, so the progress bar can show
   // the steps it skipped instead of claiming them.
   transcriptStoryOnly: boolean;
+  transcriptDialogueOnly: boolean;
   transcriptStage: MovieRecapTranscriptStage | null;
   transcriptProgressCurrent: number | null;
   transcriptProgressTotal: number | null;
@@ -293,6 +296,7 @@ export type MovieRecapProjectPatch = Partial<{
   copyrightZoom: number | null;
   subtitlePreset: MovieRecapProject["subtitlePreset"];
   subtitleSize: MovieRecapProject["subtitleSize"];
+  recapShare: MovieRecapProject["recapShare"];
   subtitlesEnabled: boolean;
   subtitlePosition: MovieRecapProject["subtitlePosition"];
   subtitleOffset: number;

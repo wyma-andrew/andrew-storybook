@@ -290,13 +290,18 @@ other action reads the stored beats, which is what makes an edit cost one beat.
 Project name, output language and voice moved into Customize Video as its first
 section; there is no separate settings step.
 
+Video Cutter (`/video-cutter`, `components/video-cutter/VideoCutter.tsx`) is a
+browser-only, lossless trim tool for preparing recap sources: it uses
+ffmpeg.wasm with stream copy, and nothing is uploaded or stored.
+
 The Transcript step's Burmese story is always typed or pasted by the user. The
-source transcript (`transcript_text`) has two modes: Manual (paste or import)
-and Auto, which calls `POST movie-recaps/:id/transcript`
+source transcript (`transcript_text`) has two modes: Recap Video (paste, import,
+or Audio mode — the same read with `dialogueOnly`, speech only, no scenes)
+and Raw Video to Recap, which calls `POST movie-recaps/:id/transcript`
 (`lib/movie-recap-transcript.ts`): subtitle track or Whisper for dialogue, plus
 PySceneDetect + a vision pass (`lib/movie-recap-scenes.ts`) for one `[Scene]`
 line per detected scene, merged into timestamped lines and written to
-`transcript_text`. Auto mode then works story-first: a copied script prompt
+`transcript_text`. Raw Video to Recap then works story-first: a copied script prompt
 yields an untimed Burmese recap script (`transcript_script`), and a copied clip
 prompt turns it into the timestamped story. The texts are saved via `PATCH movie-recaps/:id`
 (`components/movie-recap/MovieRecapTranscript.tsx`). The AI Burmese retelling
