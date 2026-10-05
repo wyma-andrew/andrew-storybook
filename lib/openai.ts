@@ -2,8 +2,8 @@ import OpenAI from "openai";
 import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
 import { REGENERATE_SCHEMA, REGENERATE_LOCATION_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
 import {
-  STORYBOARD_SCHEMA,
-  SCENE_SHOTS_SCHEMA,
+  storyboardSchema,
+  sceneShotsSchema,
   storyboardSystemPrompt,
   regenerateSceneSystemPrompt,
   type SceneRegenerationTarget,
@@ -25,6 +25,7 @@ import {
   movieRecapSceneSplitSystemPrompt,
 } from "./prompts/movie-recap-scene-split";
 import type { Region } from "./constants/regions";
+import type { StoryFormat } from "./constants/story-formats";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
 
@@ -124,6 +125,8 @@ export type GeneratedShot = {
   startState: string;
   endState: string;
   motionMode: string;
+  // Only present when the story's format generates sound (cozy-asmr).
+  soundPrompt?: string;
 };
 export type GeneratedScene = { title: string; slug: string; lighting: string; shots: GeneratedShot[] };
 // The pass returns the chapter's geography alongside its scenes: the model
@@ -138,9 +141,10 @@ export async function generateStoryboard(
   styleContext?: string | null,
   aspectRatio?: string,
   region: Region = "english",
-  motionStyleId?: string | null
+  motionStyleId?: string | null,
+  format: StoryFormat = "cinematic"
 ): Promise<GeneratedStoryboard> {
-  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId);
+  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId, format);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
@@ -149,7 +153,7 @@ export async function generateStoryboard(
     ],
     response_format: {
       type: "json_schema",
-      json_schema: { name: "storyboard", schema: STORYBOARD_SCHEMA, strict: true },
+      json_schema: { name: "storyboard", schema: storyboardSchema(format), strict: true },
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
@@ -198,9 +202,10 @@ export async function regenerateSceneShots(
   styleContext?: string | null,
   aspectRatio?: string,
   region: Region = "english",
-  motionStyleId?: string | null
+  motionStyleId?: string | null,
+  format: StoryFormat = "cinematic"
 ): Promise<GeneratedShot[]> {
-  const systemPrompt = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId);
+  const systemPrompt = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId, format);
   const res = await openai().chat.completions.create({
     model: "gpt-5.6-luna",
     messages: [
@@ -209,7 +214,7 @@ export async function regenerateSceneShots(
     ],
     response_format: {
       type: "json_schema",
-      json_schema: { name: "scene_shots", schema: SCENE_SHOTS_SCHEMA, strict: true },
+      json_schema: { name: "scene_shots", schema: sceneShotsSchema(format), strict: true },
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";

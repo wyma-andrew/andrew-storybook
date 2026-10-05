@@ -1,3 +1,4 @@
+import type { StoryFormat } from "@/lib/constants/story-formats";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { Region } from "@/lib/constants/regions";
 import type { ShotScale } from "@/lib/constants/shot-scales";
@@ -325,6 +326,7 @@ export type Story = {
   aspectRatio: string;
   region: Region;
   motionStyleId: string;
+  format: StoryFormat;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -448,6 +450,10 @@ export type Shot = {
   // still on the row and comes back by clearing the override.
   promptEdited: boolean;
   videoPromptEdited: boolean;
+  // Foley + ambience line. Only the cozy-ASMR format generates one; null on
+  // every other shot.
+  soundPrompt: string | null;
+  soundPromptEdited: boolean;
   // Continuity ledger: startState should match the previous shot's endState
   // unless the script changes something between them. Generated metadata —
   // read-only in the UI, so no *_override counterpart like the prompts have.

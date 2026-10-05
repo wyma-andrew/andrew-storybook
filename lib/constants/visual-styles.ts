@@ -48,6 +48,16 @@ const BUDDHA_ERA_3D_BASE =
   "Render light softly and naturally: gentle ambient illumination, controlled highlights, natural shadows, balanced contrast, and subtle atmospheric depth. The overall image should feel calm, contemplative, culturally grounded, and visually coherent without becoming overly mystical. " +
   "Avoid dramatic fantasy lighting, divine beams, excessive golden glow, artificial halos made of light, magical particles, hyper-real textures or skin, live-action realism, plastic toy appearance, exaggerated cartoon proportions, anime styling, overly decorative fantasy elements, luxurious modern-looking materials, or excessive visual effects.";
 
+// Rendering only. The POV framing, the cottage, and the rainy morning from the
+// cozy-ASMR reference belong to the shot, the location asset, and the scene's
+// [Lighting] line — a style naming them would fight every other story.
+const COZY_ANIME_BASE =
+  "Cozy hand-drawn anime-inspired illustration in the tradition of classic 2D animated feature films. Clean confident linework, soft cel shading, and richly detailed hand-painted backgrounds with visible gouache and watercolor texture. " +
+  "Warm, earthy, gently desaturated palette — wood browns, moss greens, cream, and muted terracotta — with a nostalgic, peaceful slice-of-life mood. " +
+  "Everyday objects, food, utensils, and natural materials are drawn with loving, tactile detail: wood grain, ceramic glaze, woven cloth, water, steam, and fresh produce read clearly and appetizingly. " +
+  "Render light softly and naturally: gentle ambient illumination, soft painted shadows, delicate atmospheric depth. " +
+  "Clearly illustrated and non-photorealistic. Avoid 3D rendering, CGI, photographic textures, harsh contrast, neon or oversaturated color, glossy plastic surfaces, and chibi or exaggerated cartoon proportions. ";
+
 export const VISUAL_STYLES: VisualStylePreset[] = [
   {
     id: "3d-animation",
@@ -137,6 +147,16 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
         referenceClause: "",
         tail: "",
       },
+    },
+  },
+  {
+    id: "cozy-hand-drawn-anime",
+    name: "Cozy Hand-drawn Anime",
+    swatch: "#9bb07a",
+    text: {
+      english: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
+      myanmar: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
+      buddha: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
     },
   },
 ];

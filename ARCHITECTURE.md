@@ -26,7 +26,10 @@ iconographically recognizable Buddha-era) guide AI generation. The literal style
 asset or shot prompt at copy time, keeping stored generated text reusable when
 the style changes. A story-wide motion style (Natural, Sacred Cinematic)
 does the same for movement: each shot is tagged with a motion mode and the
-matching predefined motion paragraph is appended at copy time. Aspect ratio
+matching predefined motion paragraph is appended at copy time. A story-wide
+format (Cinematic, Cozy POV ASMR) changes what the storyboard pass produces:
+the ASMR format appends first-person hands/process/pacing rules to the same
+prompt and adds a per-shot sound prompt. Aspect ratio
 defaults at story level and can be overridden by a chapter.
 
 ## Repository map
@@ -82,7 +85,7 @@ lib/
   spoosh.ts                    Typed client API schema and plugins
   openai.ts                    OpenAI client and structured generation calls
   prompts/                     Asset, regeneration, and storyboard instructions
-  constants/                   Styles, motion styles, system presets, regions, aspect ratios
+  constants/                   Styles, motion styles, story formats, system presets, regions, aspect ratios
   prompt-copy.ts               Final copied-prompt composition
   story-transfer.ts            Story bundle build/parse/import (cross-account transfer)
   tiptap-text.ts               Tiptap JSON -> role-tagged AI input
@@ -150,6 +153,7 @@ schemas. The operations are:
 - `extractAssets()` — characters, locations, and story-relevant props.
 - `regenerateAssetPrompt()` — one existing chapter asset.
 - `generateStoryboard()` — the chapter site map, then scenes and shots, from script plus known assets.
+  The story format picks the schema: only `cozy-asmr` adds `soundPrompt`.
 - `regenerateSceneShots()` — replacement shots for one existing scene.
 - `assignVoiceOvers()` — ordered, non-overlapping narration ranges over finalized shots.
 
@@ -438,8 +442,14 @@ model's motion mode passes through `resolveMotionMode()` (`lib/motion.ts`),
 which clamps it to a mode the story's motion style allows and reconciles it
 with whether the video prompt quotes a spoken line.
 
-User edits are stored in `prompt_override` and `video_prompt_override`; the
-generated originals remain intact. Clearing an override restores the original.
+User edits are stored in `prompt_override`, `video_prompt_override`, and
+`sound_prompt_override`; the generated originals remain intact. Clearing an
+override restores the original.
+
+When the story's format is `cozy-asmr`, `lib/prompts/storyboard-asmr.ts` is
+appended to the storyboard prompt (full and single-scene) and every shot also
+gets a `sound_prompt` (foley plus ambience), shown and copied separately in the
+Video tab. Cinematic stories get the unchanged prompt and no sound.
 
 When the script contains Voice Over blocks, a second model call maps each block
 to a contiguous start/end shot range after the visual shot list is finalized.
@@ -518,7 +528,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | Table | Responsibility |
 |---|---|
 | `profiles` | Mirrored email, admin flag, and one feature-access boolean per gated feature |
-| `stories` | Ownership, title, description, style slug, motion style slug, region, aspect, soft delete |
+| `stories` | Ownership, title, description, style slug, motion style slug, format, region, aspect, soft delete |
 | `chapters` | Episode order, Tiptap script, workflow status, aspect override, storyboard site map |
 | `chapter_assets` | Chapter-local extracted asset and bible match state |
 | `bible_entries` | Story-wide approved character/location/prop identity |
@@ -526,7 +536,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `chapter_asset_images` | Pending chapter-scoped location image URLs |
 | `bible_entry_images` | Promoted story-wide location image URLs |
 | `scenes` | Ordered storyboard scenes and their lighting line |
-| `shots` | Ordered prompts, overrides, references, beat, framing scale, motion mode, and continuity state |
+| `shots` | Ordered prompts (image, video, optional sound), overrides, references, beat, framing scale, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
 | `movie_recap_range_renders` | Saved output and beat bounds for standalone range renders |
@@ -586,6 +596,7 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Story regions and cultural/historical adaptation | `history/regions.md` |
 | Voice Over blocks, mapping, and range editing | `history/voice-over.md` |
 | Motion styles and per-shot motion modes | `history/motion-styles.md` |
+| Story formats (Cozy POV ASMR) and sound prompts | `history/story-formats.md` |
 | Per-scene storyboard regeneration | `history/storyboard-scene-regeneration.md` |
 | Chapter site map fed into shot generation | `history/storyboard-site-map.md` |
 | Copied-prompt order, style position, scene lighting | `history/shot-prompt-composition.md` |

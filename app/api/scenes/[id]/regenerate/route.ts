@@ -8,6 +8,7 @@ import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 import { resolveMotionMode } from "@/lib/motion";
 import { resolveShotScale } from "@/lib/constants/shot-scales";
+import { resolveStoryFormat } from "@/lib/constants/story-formats";
 import { formatSiteMap, parseSiteMap } from "@/lib/site-map";
 import { resolveCoverageMode } from "@/lib/constants/coverage-modes";
 
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", chapterId),
       db
         .from("stories")
-        .select("visual_style_id, aspect_ratio, region, motion_style_id")
+        .select("visual_style_id, aspect_ratio, region, motion_style_id, format")
         .eq("id", chapter.story_id)
         .single(),
       db
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .join("\n");
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
   const motionStyleId = (story?.motion_style_id as string | null) ?? null;
+  const format = resolveStoryFormat(story?.format);
 
   // Chapter geography comes from the full storyboard pass that produced these
   // scenes; this pass never re-derives it from one scene's slice of the script.
@@ -114,7 +116,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     styleContext,
     aspectRatio,
     region,
-    motionStyleId
+    motionStyleId,
+    format
   );
   if (!shots.length) {
     return NextResponse.json({ error: "The model returned no shots for this scene." }, { status: 502 });
@@ -174,6 +177,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     motion_mode: resolveMotionMode(sh.motionMode, sh.videoPrompt, motionStyleId),
     prompt: sh.prompt,
     video_prompt: sh.videoPrompt,
+    sound_prompt: sh.soundPrompt || null,
     assets_used: sh.assetsUsed,
     start_state: sh.startState,
     end_state: sh.endState,

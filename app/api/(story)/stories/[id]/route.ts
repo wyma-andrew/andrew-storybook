@@ -4,6 +4,7 @@ import { mapStory, mapChapter } from "@/lib/api/map";
 import { resolveVisualStyle } from "@/lib/visual-styles";
 import { isRegion } from "@/lib/constants/regions";
 import { MOTION_STYLES } from "@/lib/constants/motion-styles";
+import { isStoryFormat } from "@/lib/constants/story-formats";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,6 +37,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "Invalid motion style." }, { status: 400 });
     }
     patch.motion_style_id = body.motionStyleId;
+  }
+  if (body.format !== undefined) {
+    if (!isStoryFormat(body.format)) return NextResponse.json({ error: "Invalid format." }, { status: 400 });
+    patch.format = body.format;
   }
   const { data, error } = await db.from("stories").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

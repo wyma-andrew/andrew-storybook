@@ -125,6 +125,41 @@ export const MOTION_STYLES: MotionStylePreset[] = [
       "`normal` only when the script states clear physical action (walking, travelling, entering, handing something over, a crowd moving), " +
       "and `emotional` only on an explicit realization or emotional turn. When unsure, choose `micro`.",
   },
+  {
+    id: "cozy-asmr",
+    name: "Cozy ASMR",
+    defaultMode: "normal",
+    allowedModes: ["micro", "dialogue", "normal", "emotional"],
+    text: {
+      normal:
+        "MOTION:\nOne slow, careful hand action at a calm, unhurried pace — washing, slicing, stirring, pouring, or placing. " +
+        "Hands move with believable weight and grip; fingers, utensils, and food keep their shape throughout. " +
+        "Water, steam, flame, and ingredients respond naturally to the action. " +
+        "Camera locked: no camera shake, no zoom, no pan. " +
+        "No morphing, no extra hands or fingers, no objects appearing or disappearing. " +
+        HOLD_DESIGN,
+      micro:
+        "MOTION:\nAmbient motion only. Rain falls, steam rises, flames flicker, curtains and leaves stir gently in the air, light shifts softly. " +
+        "Nothing is picked up or moved by hand. " +
+        "Camera locked, or one barely perceptible slow push-in. " +
+        "No camera shake, no morphing, no fast motion. " +
+        HOLD_DESIGN,
+      dialogue:
+        "MOTION:\nQuiet, gentle speech. The speaker makes small, unhurried head and hand movements; " +
+        "anyone listening stays nearly still with soft eye reactions. " +
+        "Camera locked. No walking, no broad gestures, no morphing. " +
+        HOLD_DESIGN,
+      emotional:
+        "MOTION:\nA quiet, held moment of rest. Subtle breathing, a slow blink, a small settling of the hands or a cup lifted gently. " +
+        "Ambient elements — rain, steam, light — keep moving softly in the background. " +
+        "Very slow push-in or locked camera. No body relocation, no morphing. " +
+        HOLD_DESIGN,
+    },
+    selectionRule:
+      "Default to `normal` — in this style it covers every hand or process shot: washing, cutting, cooking, pouring, plating, eating. " +
+      "Use `micro` for establishing shots and environment cutaways with no hand action (rain on a window, steam over a pot, a sleeping cat). " +
+      "Use `emotional` for the quiet resting moment that closes a sequence, and `dialogue` only if someone actually speaks on camera.",
+  },
 ];
 
 // Explicit, not MOTION_STYLES[0] — history/visual-styles.md records the

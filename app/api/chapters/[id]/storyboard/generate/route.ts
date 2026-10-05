@@ -8,6 +8,7 @@ import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 import { resolveMotionMode } from "@/lib/motion";
 import { resolveShotScale } from "@/lib/constants/shot-scales";
+import { resolveStoryFormat } from "@/lib/constants/story-formats";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }] = await Promise.all([
     db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", id),
-    db.from("stories").select("visual_style_id, aspect_ratio, region, motion_style_id").eq("id", chapter.story_id).single(),
+    db.from("stories").select("visual_style_id, aspect_ratio, region, motion_style_id, format").eq("id", chapter.story_id).single(),
   ]);
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
   if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
@@ -40,13 +41,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
   const motionStyleId = (story?.motion_style_id as string | null) ?? null;
+  const format = resolveStoryFormat(story?.format);
   const { siteMap, scenes } = await generateStoryboard(
     scriptText,
     assetContext,
     styleContext,
     aspectRatio,
     region,
-    motionStyleId
+    motionStyleId,
+    format
   );
   const voiceOverSources = tiptapVoiceOvers(chapter.script).map((text, index) => ({
     sourceIndex: index + 1,
@@ -108,6 +111,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       motion_mode: resolveMotionMode(sh.motionMode, sh.videoPrompt, motionStyleId),
       prompt: sh.prompt,
       video_prompt: sh.videoPrompt,
+      sound_prompt: sh.soundPrompt || null,
       assets_used: sh.assetsUsed,
       start_state: sh.startState,
       end_state: sh.endState,

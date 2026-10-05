@@ -18,6 +18,8 @@ import {
 } from "./shared";
 import { DEFAULT_ASPECT_RATIO } from "../constants/aspect-ratios";
 import { coverageModeInstruction, type CoverageMode } from "../constants/coverage-modes";
+import type { StoryFormat } from "../constants/story-formats";
+import { cozyAsmrFormatBlock, SOUND_PROMPT_PROPERTY } from "./storyboard-asmr";
 
 export const SITE_MAP_SCHEMA = {
   type: "object",
@@ -198,11 +200,43 @@ export const STORYBOARD_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// Cinematic stories get STORYBOARD_SCHEMA unchanged; only the ASMR format adds
+// a required soundPrompt to every shot.
+function withSoundPrompt<T extends { properties: object; required: readonly string[] }>(shot: T) {
+  return {
+    ...shot,
+    properties: { ...shot.properties, soundPrompt: SOUND_PROMPT_PROPERTY },
+    required: [...shot.required, "soundPrompt"],
+  };
+}
+
+export function storyboardSchema(format: StoryFormat) {
+  if (format !== "cozy-asmr") return STORYBOARD_SCHEMA;
+  const scene = STORYBOARD_SCHEMA.properties.scenes.items;
+  return {
+    ...STORYBOARD_SCHEMA,
+    properties: {
+      ...STORYBOARD_SCHEMA.properties,
+      scenes: {
+        ...STORYBOARD_SCHEMA.properties.scenes,
+        items: {
+          ...scene,
+          properties: {
+            ...scene.properties,
+            shots: { ...scene.properties.shots, items: withSoundPrompt(scene.properties.shots.items) },
+          },
+        },
+      },
+    },
+  };
+}
+
 export function storyboardSystemPrompt(
   styleContext?: string | null,
   aspectRatio: string = DEFAULT_ASPECT_RATIO,
   region: Region = "english",
-  motionStyleId?: string | null
+  motionStyleId?: string | null,
+  format: StoryFormat = "cinematic"
 ) {
   return (
     "You break a script into scenes and numbered shots for a storyboard tool. Each shot needs a copyable image generation prompt, plus a Google Flow (image-to-video) prompt. " +
@@ -238,7 +272,8 @@ export function storyboardSystemPrompt(
     motionStyleBlock(motionStyleId) +
     styleContextBlock(styleContext) +
     regionAdaptationBlock(region) +
-    outputLanguageBlock()
+    outputLanguageBlock() +
+    (format === "cozy-asmr" ? cozyAsmrFormatBlock() : "")
   );
 }
 
@@ -251,6 +286,11 @@ export const SCENE_SHOTS_SCHEMA = {
   required: ["shots"],
   additionalProperties: false,
 } as const;
+
+export function sceneShotsSchema(format: StoryFormat) {
+  const shots = (storyboardSchema(format) as typeof STORYBOARD_SCHEMA).properties.scenes.items.properties.shots;
+  return { ...SCENE_SHOTS_SCHEMA, properties: { shots } };
+}
 
 export type SceneRegenerationTarget = {
   index: number;
@@ -282,11 +322,12 @@ export function regenerateSceneSystemPrompt(
   styleContext?: string | null,
   aspectRatio: string = DEFAULT_ASPECT_RATIO,
   region: Region = "english",
-  motionStyleId?: string | null
+  motionStyleId?: string | null,
+  format: StoryFormat = "cinematic"
 ) {
   const heading = [target.slug, target.title].filter(Boolean).join(" — ") || `scene ${target.index}`;
   return (
-    storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId) +
+    storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId, format) +
     "\n\nSCOPE — SINGLE SCENE REGENERATION:\n" +
     (target.siteMap
       ? "This chapter's SITE MAP is already settled — do NOT produce a new one, and do not renegotiate which place this scene plays in. Shoot the scene against it, including its establishing-coverage and travel-direction rules:\n" +

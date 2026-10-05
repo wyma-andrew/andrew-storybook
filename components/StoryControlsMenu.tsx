@@ -12,6 +12,7 @@ import { ASPECT_RATIOS } from "@/lib/constants/aspect-ratios";
 import { VISUAL_STYLES } from "@/lib/constants/visual-styles";
 import { REGIONS, type Region } from "@/lib/constants/regions";
 import { MOTION_STYLES, DEFAULT_MOTION_STYLE_ID } from "@/lib/constants/motion-styles";
+import { STORY_FORMATS, type StoryFormat } from "@/lib/constants/story-formats";
 
 export function StoryControlsMenu({
   storyId,
@@ -20,6 +21,7 @@ export function StoryControlsMenu({
   currentAspectRatio,
   currentRegion,
   currentMotionStyleId,
+  currentFormat,
 }: {
   storyId: string;
   storyTitle: string;
@@ -27,6 +29,7 @@ export function StoryControlsMenu({
   currentAspectRatio: string;
   currentRegion: Region;
   currentMotionStyleId: string;
+  currentFormat: StoryFormat;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -100,6 +103,16 @@ export function StoryControlsMenu({
     toast.info("Motion style updated — copied video prompts use it right away, no regeneration needed.");
   }
 
+  async function handleFormatChange(value: string) {
+    const format = value as StoryFormat;
+    await patchStory({
+      params: { id: storyId },
+      body: { format },
+      optimistic: (cache) => cache(`stories/${storyId}`).set((current) => ({ ...current, format })),
+    });
+    toast.info("Format updated — regenerate a chapter's storyboard to apply it.");
+  }
+
   function handleDelete() {
     setOpen(false);
     ConfirmDialog.show({
@@ -127,6 +140,14 @@ export function StoryControlsMenu({
         <Select value={resolvedStyleId ?? ""} onChange={handleStyleChange} placeholder="None set">
           {VISUAL_STYLES.map((s) => (
             <SelectOption key={s.id} value={s.id} label={s.name} />
+          ))}
+        </Select>
+      </div>
+      <div className="border-t border-line px-3.5 py-3">
+        <label className="mb-1.5 block text-[11px] tracking-wider text-fg-3 uppercase">Format</label>
+        <Select value={currentFormat} onChange={handleFormatChange}>
+          {STORY_FORMATS.map((f) => (
+            <SelectOption key={f.value} value={f.value} label={f.label} />
           ))}
         </Select>
       </div>

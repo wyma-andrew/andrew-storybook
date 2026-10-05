@@ -6,6 +6,18 @@ Covers: `lib/constants/motion-styles.ts`, `lib/motion.ts`,
 the motion controls in `components/StoryControlsMenu.tsx` and the storyboard
 page, and the read-only list in `app/settings`.
 
+## 2026-10-04 — Added "Cozy ASMR" motion style
+
+`id: "cozy-asmr"`, default mode `normal`. Companion to the Cozy Hand-drawn
+Anime visual style for POV cooking / daily-routine clips. Every mode keeps the
+camera locked and names the failure modes those clips show (morphing, extra
+fingers, objects popping in or out).
+
+The four existing modes were reused rather than adding a `process` mode: in
+this style `normal` *is* the hand-process shot, and `micro` is the ambient
+cutaway (rain, steam, flame). The selection rule says so. A new enum value would
+need a DB check-constraint change and a guard update for no gain.
+
 ## 2026-09-10 — Motion is a story-wide style plus a per-shot mode
 
 **Decision: motion behaviour is never written by the AI. The model classifies

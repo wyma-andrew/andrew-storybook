@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isRegion, DEFAULT_REGION, type Region } from "./constants/regions";
 import { isMotionMode, DEFAULT_MOTION_STYLE_ID, type MotionMode } from "./constants/motion-styles";
+import { resolveStoryFormat, type StoryFormat } from "./constants/story-formats";
 import { isShotScale, type ShotScale } from "./constants/shot-scales";
 import { DEFAULT_ASPECT_RATIO } from "./constants/aspect-ratios";
 import type { AssetKind, SpaceKind } from "./api/types";
@@ -61,6 +62,8 @@ export type BundleShot = {
   promptOverride: string | null;
   videoPrompt: string | null;
   videoPromptOverride: string | null;
+  soundPrompt: string | null;
+  soundPromptOverride: string | null;
   startState: string | null;
   endState: string | null;
   assetsUsed: { name: string; kind: AssetKind }[];
@@ -107,6 +110,7 @@ export type StoryBundle = {
     aspectRatio: string;
     region: Region;
     motionStyleId: string;
+    format: StoryFormat;
     bible: BundleBibleEntry[];
     chapters: BundleChapter[];
   };
@@ -212,6 +216,8 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
           promptOverride: str(shot.prompt_override),
           videoPrompt: str(shot.video_prompt),
           videoPromptOverride: str(shot.video_prompt_override),
+          soundPrompt: str(shot.sound_prompt),
+          soundPromptOverride: str(shot.sound_prompt_override),
           startState: str(shot.start_state),
           endState: str(shot.end_state),
           assetsUsed: Array.isArray(shot.assets_used) ? (shot.assets_used as BundleShot["assetsUsed"]) : [],
@@ -273,6 +279,7 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
         aspectRatio: str(story.aspect_ratio) ?? DEFAULT_ASPECT_RATIO,
         region: isRegion(story.region) ? story.region : DEFAULT_REGION,
         motionStyleId: str(story.motion_style_id) ?? DEFAULT_MOTION_STYLE_ID,
+        format: resolveStoryFormat(story.format),
         bible: bundleBible,
         chapters: bundleChapters,
       },
@@ -350,6 +357,8 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
         promptOverride: str(shot.promptOverride),
         videoPrompt: str(shot.videoPrompt),
         videoPromptOverride: str(shot.videoPromptOverride),
+        soundPrompt: str(shot.soundPrompt),
+        soundPromptOverride: str(shot.soundPromptOverride),
         startState: str(shot.startState),
         endState: str(shot.endState),
         assetsUsed: Array.isArray(shot.assetsUsed) ? (shot.assetsUsed as BundleShot["assetsUsed"]) : [],
@@ -384,6 +393,7 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
         aspectRatio: str(story.aspectRatio) ?? DEFAULT_ASPECT_RATIO,
         region: isRegion(story.region) ? story.region : DEFAULT_REGION,
         motionStyleId: str(story.motionStyleId) ?? DEFAULT_MOTION_STYLE_ID,
+        format: resolveStoryFormat(story.format),
         bible,
         chapters,
       },
@@ -434,6 +444,7 @@ export async function importStoryBundle(
       aspect_ratio: source.aspectRatio,
       region: source.region,
       motion_style_id: source.motionStyleId,
+      format: source.format,
     })
     .select("id")
     .single();
@@ -565,6 +576,8 @@ export async function importStoryBundle(
             prompt_override: shot.promptOverride,
             video_prompt: shot.videoPrompt,
             video_prompt_override: shot.videoPromptOverride,
+            sound_prompt: shot.soundPrompt,
+            sound_prompt_override: shot.soundPromptOverride,
             start_state: shot.startState,
             end_state: shot.endState,
             assets_used: shot.assetsUsed,

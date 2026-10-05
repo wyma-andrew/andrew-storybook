@@ -16,6 +16,22 @@ Covers: `lib/constants/visual-styles.ts`, `lib/visual-styles.ts`, `lib/api/map.t
   3D Animation must stay first in the array. Reordering silently restyles every
   story whose style was never set.
 
+## 2026-10-04 — Added "Cozy Hand-drawn Anime"
+
+`id: "cozy-hand-drawn-anime"`, swatch `#9bb07a`. First style for the cozy
+POV / cooking-ASMR format: classic 2D hand-drawn look, painted backgrounds,
+earthy palette, tactile food and utensil detail.
+
+The reference prompt it came from also named a wooden cottage, a rainy morning,
+first-person POV, and visible hands. Those were deliberately left out: the place
+is a location asset, the hour/weather is the scene's `[Lighting]` line, and the
+POV is a shot decision. Baked into the style they would contradict every scene
+that is not a rainy kitchen. Light wording is quality-only, per the 2026-09-11
+Buddha Era 3D entry.
+
+Same text for all three regions — nothing region-specific to adapt; cultural
+content comes from the region adaptation blocks.
+
 ## 2026-09-11 — Buddha Era 3D no longer dictates scale
 
 The base text's "Keep environments modest, functional, organic, and lived-in"

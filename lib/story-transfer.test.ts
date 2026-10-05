@@ -18,6 +18,7 @@ const bundle: StoryBundle = {
     aspectRatio: "16:9",
     region: "myanmar",
     motionStyleId: "sacred-cinematic",
+    format: "cozy-asmr",
     bible: [
       {
         key: 0,
@@ -71,6 +72,8 @@ const bundle: StoryBundle = {
                 promptOverride: "Edited prompt",
                 videoPrompt: "Generated video prompt",
                 videoPromptOverride: null,
+                soundPrompt: "Knife on wood, steady rain on the roof",
+                soundPromptOverride: null,
                 startState: "Door shut",
                 endState: "Door open",
                 assetsUsed: [{ name: "Lighthouse", kind: "location" }],
@@ -96,6 +99,18 @@ describe("parseStoryBundle", () => {
   it("round-trips a bundle unchanged", () => {
     const result = parseStoryBundle(JSON.parse(JSON.stringify(bundle)));
     expect(result).toEqual({ bundle });
+  });
+
+  it("reads an export from before story formats and sound prompts", () => {
+    const old = JSON.parse(JSON.stringify(bundle));
+    delete old.story.format;
+    delete old.story.chapters[0].scenes[0].shots[0].soundPrompt;
+    delete old.story.chapters[0].scenes[0].shots[0].soundPromptOverride;
+
+    const result = parseStoryBundle(old);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.bundle.story.format).toBe("cinematic");
+    expect(result.bundle.story.chapters[0].scenes[0].shots[0].soundPrompt).toBeNull();
   });
 
   it("rejects a file that is not a story export", () => {

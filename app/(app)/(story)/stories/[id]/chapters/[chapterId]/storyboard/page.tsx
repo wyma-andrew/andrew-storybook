@@ -241,6 +241,18 @@ function ShotPrompts({
           onRestore={async () => void (await write({ prompt: null }))}
         />
       )}
+      {showVideo && shot.soundPrompt && (
+        <PromptBox
+          key={`sound-${shot.id}-${shot.soundPrompt}-${shot.soundPromptEdited}`}
+          label="Sound"
+          text={shot.soundPrompt}
+          edited={shot.soundPromptEdited}
+          saving={saving}
+          onCopy={() => void copyText(shot.soundPrompt!, "Sound prompt")}
+          onSave={async (next) => void (await write({ soundPrompt: next }))}
+          onRestore={async () => void (await write({ soundPrompt: null }))}
+        />
+      )}
       {/* Temporarily hidden from the UI - the picker still writes shotScale and the
           optics line is still composed into copied prompts. */}
       <div hidden className="mt-2 rounded-lg border border-line-2 bg-sunken p-3">
