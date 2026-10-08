@@ -125,10 +125,12 @@ ${sourceText.trim()}`;
 // rules that contradicted each other. See history/movie-recap.md.
 //
 // The length budget is the share picked in the Recap length menu, with 10%
-// either side. 10s per line is the user's measured average for a translated
-// Burmese line, not the TTS rate.
+// either side. Lines written to the "about 10 seconds" wording measure ~6s read
+// aloud, so the count uses 6s while the wording keeps 10s — telling the model 6s
+// shortens the lines and undershoots again. See history/movie-recap.md.
 const RECAP_SHARE_SPREAD = 0.1;
 const RECAP_SECONDS_PER_LINE = 10;
+const RECAP_READ_SECONDS_PER_LINE = 6;
 
 function clock(seconds: number) {
   const total = Math.round(seconds);
@@ -140,8 +142,8 @@ function buildRecapScriptPrompt(sourceText: string, sourceDurationS: number, sha
   const maxShare = share * (1 + RECAP_SHARE_SPREAD);
   const minS = sourceDurationS * minShare;
   const maxS = sourceDurationS * maxShare;
-  const minLines = Math.max(3, Math.round(minS / RECAP_SECONDS_PER_LINE));
-  const maxLines = Math.max(minLines, Math.round(maxS / RECAP_SECONDS_PER_LINE));
+  const minLines = Math.max(3, Math.round(minS / RECAP_READ_SECONDS_PER_LINE));
+  const maxLines = Math.max(minLines, Math.round(maxS / RECAP_READ_SECONDS_PER_LINE));
   return `You are a Burmese movie-recap narrator. Read the transcript of a film below and write a SHORT spoken Burmese recap script of its story.
 
 ABOUT THE TRANSCRIPT
@@ -151,9 +153,9 @@ ABOUT THE TRANSCRIPT
 - Ignore the timestamps for now. A later step matches each line of your script to the footage.
 
 LENGTH BUDGET — this is the main constraint
-- The film runs ${clock(sourceDurationS)}. The whole script, read aloud, must total about ${clock(minS)}–${clock(maxS)} (${Math.round(minShare * 100)}–${Math.round(maxShare * 100)}% of the film).
-- One line takes about ${RECAP_SECONDS_PER_LINE} seconds to read, so write about ${minLines}–${maxLines} lines. Never more than ${maxLines}.
-- The TOTAL reading time is the limit, not just the line count. A line that runs long eats into the budget: if your lines run over ${RECAP_SECONDS_PER_LINE} seconds, write fewer of them. Aim for the middle of the budget, not the top.
+- The film runs ${clock(sourceDurationS)}. The recap should run about ${clock(minS)}–${clock(maxS)} read aloud (${Math.round(minShare * 100)}–${Math.round(maxShare * 100)}% of the film).
+- Write ${minLines}–${maxLines} lines. This count is already calibrated to the narrator's real reading speed, so meet it — do not cut lines to fit your own estimate of reading time. Never more than ${maxLines}, never fewer than ${minLines}. Aim for the middle.
+- Keep each line to one sentence of about ${RECAP_SECONDS_PER_LINE} seconds (see rule 4). A line much longer than that eats into the budget.
 
 STORY
 1. First work out the story: who the main characters are, what they want, the event that starts the story, the turning points, and the climax.
@@ -170,10 +172,10 @@ ${NARRATION_STYLE}
 ${NARRATION_WORDING}
 
 FINAL REVIEW (do this before you output)
-1. Read your draft as one recap. Remove any line that repeats an earlier beat or covers a side detail. Remove other lines, weakest first, only while the total stays at or above the minimum of the length budget. Never remove the line that sets up the main character's goal or what they stand to lose. If the total falls under the minimum, add back a story moment you skipped — never filler.
+1. Read your draft as one recap. Remove any line that repeats an earlier beat or covers a side detail. Remove other lines, weakest first, only while the count stays at or above ${minLines} lines. Never remove the line that sets up the main character's goal or what they stand to lose. If the count falls under ${minLines}, add back a story moment you skipped — never filler.
 2. Shorten any line that runs over about ${RECAP_SECONDS_PER_LINE} seconds by cutting words, not moments.
 3. Never fix length by merging two lines into one — a merged line describes two moments but plays over one clip. Drop the weaker line instead, unless both are the same continuous action within about ${RECAP_SECONDS_PER_LINE} seconds.
-4. Check the total against the length budget once more.
+4. Check the line count against the length budget (${minLines}–${maxLines}) once more.
 
 OUTPUT FORMAT
 - One Burmese narration line per row, in story order.

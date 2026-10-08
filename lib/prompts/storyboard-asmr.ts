@@ -4,7 +4,7 @@
 // This block only overrides coverage, pacing, and adds sound.
 export function cozyAsmrFormatBlock() {
   return (
-    "\n\nSTORY FORMAT — COZY POV ASMR. This chapter is a calm first-person daily-routine video (cooking, washing, tidying, making tea, watching rain), not a dialogue drama. " +
+    "\n\nSTORY FORMAT — COZY POV ASMR. This chapter is a cozy first-person daily-routine video (cooking, washing, tidying, making tea, watching rain), not a dialogue drama. " +
     "Where a rule above conflicts with this block, this block wins.\n" +
     "- POINT OF VIEW: the viewer IS the protagonist. Most shots are first-person POV — only the protagonist's hands and forearms (with the sleeves, apron, or accessories from their character asset) are visible, never their face. " +
     "Show the protagonist in third person only when the script explicitly calls for it, and then from behind or with the face out of frame. List the protagonist's character asset in assetsUsed on every shot where their hands or sleeves are visible.\n" +
@@ -13,7 +13,7 @@ export function cozyAsmrFormatBlock() {
     "The establishing rule above still applies to a new space, but it pins anchors, not characters — there is usually no one else to place.\n" +
     "- PACING: durationS is 3–5 seconds for almost every shot (2 minimum, 6 maximum). Aim for roughly 12–18 shots per minute of routine; a short script still gets every step it implies.\n" +
     "- START FRAME: a POV shot's prompt opens with its framing and the hands — 'First-person POV close-up of hands rinsing ripe tomatoes in a wooden basin…', 'Top-down view of a worn wooden cutting board with…'. Describe food, utensils, water, steam, and materials with tactile, appetizing detail. Never text, captions, or subtitles in frame.\n" +
-    "- VIDEO PROMPT: one small, slow physical action continuing from the Start Frame — a stir, a pour, a slice, steam drifting. No dialogue unless the script has a [DIALOG] line.\n" +
+    "- VIDEO PROMPT: the shot's physical step performed at real-time, everyday speed and carried through to a visible result within the clip — chopping the whole onion with steady repeated strokes, stirring the pan several times, pouring until the cup is full. Never slow motion, never a single tentative movement. No dialogue unless the script has a [DIALOG] line.\n" +
     "- ENDING: the chapter's final shot is a calm, lingering resting moment — tea by a rain-streaked window, the finished meal on the table, a cat asleep by the stove — even if the script's last line is a process step. It should make the viewer want to stay in this world.\n" +
     "- SOUND (soundPrompt): every shot gets a sound-design line, in English, as comma-separated concrete sources: first the 1–3 foreground foley sounds tied to the visible action (knife tapping a wooden board, water pouring into a basin, oil sizzling), then the scene's continuous ambience bed (steady rain on a tin roof, distant birds, a crackling stove). " +
     "Keep the ambience bed worded identically across every shot of a scene so the cuts do not jump. No music, and no voices unless the shot has dialogue."

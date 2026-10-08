@@ -73,6 +73,8 @@ export const SYSTEM_PROMPTS = {
   // junctions") was being applied to outdoor locations — a house compound with
   // a front and a rear view rendered as a room interior, because the preset
   // contradicted the prompt and the preset won.
+  // Its camera line (and locationInterior's) is restated as THE REFERENCE
+  // STATION in locationSpatialConsistencyBlock. Change one, change both.
   locationExterior:
     "Location reference image: a fully rendered eye-level exterior establishing view of the finished place — one frame, normal perspective, the whole subject readable. " +
     "Camera: standing eye height, roughly 1.6 m above the ground, positioned inside the grounds facing the main structure's front face as given in the FIXED LAYOUT below, far enough back that the structure reads whole from ground line to roof ridge, with the ground plane and the immediate surroundings visible. " +

@@ -81,6 +81,26 @@ a project saved with a custom value shows it on any browser.
 **Limitation:** the prompt guides the length but cannot enforce it. A script
 can still land ±15–20% off the target.
 
+## 2026-10-04 — Recap line count uses 6s per line, wording keeps 10s
+
+**Decision, by the user:** the script prompt's line count is computed at 6s per
+line, not 10s. A 6:05 source at 40% (menu showed ~2:26) came back as 1:34 of
+narration. Lines written to the "about 10 seconds" wording measure ~6s when
+read aloud in Burmese.
+
+- **Only the count changed.** The per-line wording ("one sentence of about
+  10 seconds", the shorten/merge rules) and the timing prompt's 10s timestamp
+  gap stay at 10s. Telling the model "6 seconds" would make it write shorter
+  lines, which would undershoot again.
+- **The line count is now the constraint the model checks, not total reading
+  time.** The old prompt said "the TOTAL reading time is the limit" and the
+  final review checked the total. The model estimates time with its own rate,
+  so it cut lines it thought ran over. The prompt now says the count is already
+  calibrated and must be met; the target minutes stay as context only.
+- **Supersedes** the "10s per line is the user's measured average" note in the
+  2026-10-01 auto-mode entry below for the count. The menu needed no change: it
+  shows the share × source duration, which the count now aims at.
+
 ## 2026-10-01 — Transcript step has Manual and Auto source transcripts
 
 **Decision, by the user:** the Transcript step offers two modes for the source

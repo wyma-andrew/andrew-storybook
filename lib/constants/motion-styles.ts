@@ -132,25 +132,26 @@ export const MOTION_STYLES: MotionStylePreset[] = [
     allowedModes: ["micro", "dialogue", "normal", "emotional"],
     text: {
       normal:
-        "MOTION:\nOne slow, careful hand action at a calm, unhurried pace — washing, slicing, stirring, pouring, or placing. " +
+        "MOTION:\nReal-time speed — hands work at the brisk, practiced pace of someone doing this every day, not slow motion. " +
+        "The action is continuous and carries through to a visible result: repeated knife strokes through the whole ingredient, several full stirs, a pour that fills the cup. " +
         "Hands move with believable weight and grip; fingers, utensils, and food keep their shape throughout. " +
         "Water, steam, flame, and ingredients respond naturally to the action. " +
         "Camera locked: no camera shake, no zoom, no pan. " +
         "No morphing, no extra hands or fingers, no objects appearing or disappearing. " +
         HOLD_DESIGN,
       micro:
-        "MOTION:\nAmbient motion only. Rain falls, steam rises, flames flicker, curtains and leaves stir gently in the air, light shifts softly. " +
+        "MOTION:\nAmbient motion at real-time speed. Rain falls, steam rises, flames flicker, curtains and leaves move in the air, light shifts. " +
         "Nothing is picked up or moved by hand. " +
-        "Camera locked, or one barely perceptible slow push-in. " +
-        "No camera shake, no morphing, no fast motion. " +
+        "Camera locked, or one slow push-in. " +
+        "No camera shake, no morphing, no slow motion. " +
         HOLD_DESIGN,
       dialogue:
-        "MOTION:\nQuiet, gentle speech. The speaker makes small, unhurried head and hand movements; " +
+        "MOTION:\nQuiet, natural speech at normal speed. The speaker makes small head and hand movements; " +
         "anyone listening stays nearly still with soft eye reactions. " +
         "Camera locked. No walking, no broad gestures, no morphing. " +
         HOLD_DESIGN,
       emotional:
-        "MOTION:\nA quiet, held moment of rest. Subtle breathing, a slow blink, a small settling of the hands or a cup lifted gently. " +
+        "MOTION:\nA quiet moment of rest at natural speed. Breathing, a blink, the hands settling or a cup lifted to drink. " +
         "Ambient elements — rain, steam, light — keep moving softly in the background. " +
         "Very slow push-in or locked camera. No body relocation, no morphing. " +
         HOLD_DESIGN,

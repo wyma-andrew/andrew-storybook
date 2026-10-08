@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { RefreshCw, ArrowRight, Clapperboard, Paperclip, User, MapPin, Package, Copy, Square, Loader2, MoreVertical, Pencil, Undo2, GitCommitHorizontal, Target, Mic, Clock, Sun, Focus, Minus, Plus, Sparkles, Image as ImageIcon, Video, Eye, EyeOff } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
@@ -12,6 +12,7 @@ import { Toolbar, ToolbarButton, ToolbarLoadingButton, toolbarSep } from "@/comp
 import { Body, Wrap } from "@/components/ui/Layout";
 import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
+import { startStoryboardGeneration, stopStoryboardGeneration, useStoryboardGenerating } from "@/lib/storyboard-generation";
 import { AttachedImages } from "@/components/AttachedImages";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
@@ -593,9 +594,17 @@ export default function StoryboardPage() {
     list.push(image);
     imagesByShot.set(image.shotId, list);
   }
-  const { trigger: generate, loading: generating, abort: abortGenerate } = useWrite((api) =>
-    api("chapters/:id/storyboard/generate").POST()
-  );
+  const generating = useStoryboardGenerating(chapterId);
+  // Also fires when this page remounts mid-generation and the job finishes
+  // afterwards — the instance that started it may be long gone.
+  const wasGenerating = useRef(generating);
+  useEffect(() => {
+    if (wasGenerating.current && !generating) {
+      refetchScenes();
+      refetchVoiceOvers();
+    }
+    wasGenerating.current = generating;
+  }, [generating, refetchScenes, refetchVoiceOvers]);
   const { trigger: regenerateScene } = useWrite((api) => api("scenes/:id/regenerate").POST());
   // Which scene is mid-regeneration — the shared `loading` flag can't say which
   // card fired, and only that card's button should spin.
@@ -692,12 +701,8 @@ export default function StoryboardPage() {
   }
 
   async function handleGenerate() {
-    const { data, error } = await generate({ params: { id: chapterId } });
-    if (data) {
-      refetchScenes();
-      refetchVoiceOvers();
-    }
-    if (error) toast.error(error.error);
+    const { error, aborted } = await startStoryboardGeneration(chapterId);
+    if (error && !aborted) toast.error(error);
   }
 
   // The mode only sizes the new shot list — the destructive part is identical
@@ -787,7 +792,7 @@ export default function StoryboardPage() {
 
       <Toolbar>
         {generating ? (
-          <ToolbarButton onClick={() => abortGenerate()} className="!text-danger">
+          <ToolbarButton onClick={() => stopStoryboardGeneration(chapterId)} className="!text-danger">
             <Loader2 size={13} className="animate-spin" />
             Generating…
             <span className="ml-1 inline-flex items-center gap-1 border-l border-danger/40 pl-2 text-[12.5px]">

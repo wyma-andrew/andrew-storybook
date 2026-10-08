@@ -6,6 +6,22 @@ Covers: `lib/constants/motion-styles.ts`, `lib/motion.ts`,
 the motion controls in `components/StoryControlsMenu.tsx` and the storyboard
 page, and the read-only list in `app/settings`.
 
+## 2026-10-06 — Cozy ASMR runs at real-time speed
+
+The first Cozy ASMR wording ("one slow, careful hand action at a calm,
+unhurried pace", "barely perceptible") plus the storyboard block's "one small,
+slow physical action" produced clips with almost no motion that read as slow
+motion. The target is a person doing ordinary daily work, which happens at
+normal speed. Every mode now says real-time speed, and `normal` asks for a
+continuous action carried through to a visible result (repeated strokes,
+several stirs, a full pour). The calm comes from framing, sound, and the
+resting ending, not from slowing the hands. Locked camera and the
+anti-morphing list are unchanged.
+
+Consequence: the motion paragraph changes on copy immediately, but
+AI-written videoPrompts in existing storyboards may still say "slow" until the
+storyboard is regenerated.
+
 ## 2026-10-04 — Added "Cozy ASMR" motion style
 
 `id: "cozy-asmr"`, default mode `normal`. Companion to the Cozy Hand-drawn
