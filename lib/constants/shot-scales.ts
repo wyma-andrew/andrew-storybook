@@ -26,13 +26,20 @@ export interface ShotScaleOption {
   optics: string;
 }
 
+// Perspective, not subject: with the camera at standing eye level, every
+// standing adult's head lands on the horizon whatever their distance. Without
+// it a wide shot scaled the attached character sheet up and the townspeople
+// down, so the lead stood a head taller than everyone around him.
+const HUMAN_SCALE =
+  " Eye-level camera: every adult standing on the camera's ground level has their head on the same horizon line, near or far, and anyone on a raised place (a roof, a wall, a rock) sits higher by that height alone — people are larger only because they are closer, never because they matter more, and the main character is the same normal adult height as the people around them, feet planted firmly on the ground.";
+
 export const SHOT_SCALE_OPTIONS: ShotScaleOption[] = [
   {
     value: "wide",
     label: "Wide",
     hint: "Establishing, full space legible",
     optics:
-      "Wide framing with deep focus — the whole space readable front to back, soft natural depth of field, background structures and their relative positions clearly legible, no background blur.",
+      "Wide framing with deep focus — the whole space readable front to back, soft natural depth of field, background structures and their relative positions clearly legible, no background blur." + HUMAN_SCALE,
   },
   {
     value: "medium",

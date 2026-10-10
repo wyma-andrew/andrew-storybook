@@ -5,6 +5,27 @@ Covers: `lib/constants/regions.ts`, `lib/prompts/shared.ts`
 `lib/prompts/regenerate-asset.ts`, and `lib/prompts/storyboard.ts`, story region
 API/types, region selectors, and the `stories.region` database constraint.
 
+## 2026-10-09 — Canonical historical detail for people, props, and episodes
+
+CANONICAL SITE DETAIL covered only named places. `buddhaAdaptationBlock()` now
+also carries CANONICAL HISTORICAL DETAIL: before writing a character, prop, or
+scene, recall what the Pali Canon and commentaries record about named figures
+(caste, occupation, wealth, lay/monastic status, life stage), recorded objects,
+and recorded episodes (setting, who was present, stated season or hour), and use
+that instead of generic period filler. Because the block is shared, this reaches
+asset extraction, asset regeneration, and storyboard passes alike.
+
+The script stays the authority on events — recalled history fills in looks only,
+never adds, removes, or reorders what happens. The no-invention guard from the
+site clause is restated for names, relationships, epithets, and Pali terms.
+
+Rejected for now: OpenAI web search (Responses API `web_search`, restricted to
+SuttaCentral / Access to Insight / palikanon.com) during Buddha-region asset
+passes. It means moving those calls off `chat.completions`, slower runs, and per
+search cost; model recall is tried first. Revisit if outputs show wrong facts
+or invented Pali names. The curated facts table rejected in the site entry below
+stays the other fallback.
+
 ## 2026-09-11 — Canonically named Buddha-era sites keep their historic scale
 
 The Buddha block's restraint default was flattening named, historically fixed

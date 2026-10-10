@@ -13,7 +13,12 @@ import { useWrite } from "@/lib/spoosh";
 // to R2) -> commit (our API). The bytes never pass through the app, which is
 // what removes any upload size limit, and a failed PUT leaves an orphaned object
 // rather than a row pointing at nothing.
-export type UploadLink = { chapterAssetId?: string | null; shotId?: string | null };
+export type UploadLink = {
+  chapterAssetId?: string | null;
+  shotId?: string | null;
+  lookKey?: string | null;
+  stationKey?: string | null;
+};
 
 export function useChapterImageUpload(chapterId: string, onUploaded?: () => void) {
   const { trigger: presign } = useWrite((api) => api("chapters/:id/images/presign").POST());

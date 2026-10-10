@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, ListPlus as AddToBible } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, Paperclip, Telescope, ListPlus as AddToBible } from "lucide-react";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
 import { useChapterImageUpload, useImagePickers } from "@/components/ChapterImageUpload";
@@ -29,6 +29,7 @@ import {
 import { copyText } from "@/lib/copy";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import type { ChapterAsset, ChapterImage } from "@/lib/api/types";
+import { composeLookPrompt, findLook, type CharacterLook } from "@/lib/character-looks";
 
 // Kind color lives on the icon tile alone. The three kinds are rendered as
 // three separate grids, but a card scrolled away from its section head has
@@ -44,19 +45,24 @@ const KIND_TILE: Record<"character" | "location" | "prop", string> = {
 function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss: () => void }) {
   const [info, setInfo] = useState(asset.meta ?? "");
   const [prompt, setPrompt] = useState(asset.realPrompt);
+  const [looks, setLooks] = useState<CharacterLook[]>(asset.looks);
   const { trigger: updateInfo, loading } = useWrite((api) => api("chapter-assets/:id").PATCH());
+
+  function setLookPrompt(key: string, value: string) {
+    setLooks((prev) => prev.map((l) => (l.key === key ? { ...l, prompt: value } : l)));
+  }
 
   async function save() {
     const updated = await updateInfo({
       params: { id: asset.id },
-      body: { meta: info.trim(), realPrompt: prompt.trim() },
+      body: { meta: info.trim(), realPrompt: prompt.trim(), looks: looks.map((l) => ({ ...l, prompt: l.prompt.trim() })) },
       invalidate: `chapters/${asset.chapterId}/assets`,
     });
     if (updated) dismiss();
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${looks.length ? "max-h-[85vh] overflow-y-auto" : ""}`}>
       <div>
         <h2 className="text-[16px] font-semibold text-fg">Edit character info</h2>
         <p className="mt-1 text-[12.5px] text-fg-3">
@@ -91,11 +97,31 @@ function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss:
         />
       </div>
 
+      {looks.map((look) => (
+        <div key={look.key}>
+          <label className="mb-1.5 block text-[11px] font-semibold tracking-wide text-fg-3 uppercase">
+            Look · {look.label}
+          </label>
+          <Textarea
+            value={look.prompt}
+            onChange={(event) => setLookPrompt(look.key, event.target.value)}
+            aria-label={`${look.label} look prompt for ${asset.name}`}
+            className="min-h-[160px] text-[14px] leading-relaxed"
+            disabled={loading}
+          />
+        </div>
+      ))}
+
       <div className="flex justify-end gap-2.5">
         <Button variant="secondary" onClick={dismiss} disabled={loading}>
           Cancel
         </Button>
-        <LoadingButton variant="primary" onClick={save} loading={loading} disabled={!prompt.trim()}>
+        <LoadingButton
+          variant="primary"
+          onClick={save}
+          loading={loading}
+          disabled={!prompt.trim() || looks.some((l) => !l.prompt.trim())}
+        >
           Save
         </LoadingButton>
       </div>
@@ -108,10 +134,12 @@ function CharacterInfoDialog({ asset, dismiss }: { asset: ChapterAsset; dismiss:
 // It lives behind "View prompt" now; editing is still the pencil in the header.
 function AssetPromptDialog({
   asset,
+  prompt,
   onCopy,
   dismiss,
 }: {
   asset: ChapterAsset;
+  prompt: string;
   onCopy: () => void;
   dismiss: () => void;
 }) {
@@ -133,7 +161,7 @@ function AssetPromptDialog({
         </MiniButton>
       </div>
       <div className="max-h-[60vh] overflow-auto rounded-lg border border-line-2 bg-sunken p-3.5">
-        <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{asset.realPrompt}</div>
+        <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{prompt}</div>
       </div>
       <div className="flex justify-end gap-2.5">
         <Button variant="secondary" onClick={dismiss}>
@@ -157,7 +185,7 @@ function AssetCard({
   // where that clause is exactly what should apply. See resolveStyleContext.
   angleStyleContext,
   chapterId,
-  images,
+  images: allImages,
   onImagesChanged,
 }: {
   asset: ChapterAsset;
@@ -176,7 +204,22 @@ function AssetCard({
 
   const { trigger: removeImage } = useWrite((api) => api("chapter-images/:id").DELETE());
   const { upload, uploading, progress } = useChapterImageUpload(chapterId, onImagesChanged);
-  const { inputs, openFiles } = useImagePickers((files) => void upload(files, { chapterAssetId: asset.id }));
+
+  const [lookKey, setLookKey] = useState<string | null>(null);
+  const activeLook = findLook(asset.looks, lookKey);
+  const isBaseLook = activeLook === asset.looks[0];
+  // An image whose look was dropped by a regenerate falls back to the first
+  // look, same as findLook does for an unknown key.
+  // Station plates (uploaded from the storyboard) come after the location's own
+  // renders, so the hero stays the reference view.
+  const images = activeLook
+    ? allImages.filter((image) => findLook(asset.looks, image.lookKey) === activeLook)
+    : [...allImages.filter((image) => !image.stationKey), ...allImages.filter((image) => image.stationKey)];
+  const promptText = activeLook ? composeLookPrompt(asset.realPrompt, asset.looks, activeLook.key) : asset.realPrompt;
+
+  const { inputs, openFiles } = useImagePickers(
+    (files) => void upload(files, { chapterAssetId: asset.id, lookKey: activeLook?.key ?? null })
+  );
 
   // Slider position. Clamped on render rather than synced in an effect: deleting
   // the last image leaves the index past the end, and clamping is the whole fix.
@@ -237,13 +280,15 @@ function AssetCard({
   // What the dialog's Copy does: for a location that is its wide view (the
   // same as "Copy view"), for everything else the single prompt copy.
   function copyDefaultPrompt() {
-    copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`);
+    copyText(withAssetContext(promptText, viewPreset, styleContext), `${asset.name} prompt`);
   }
 
   function openPromptDialog() {
     Dialog.show({
       className: "w-[calc(100vw-2rem)] max-w-[720px]",
-      content: ({ dismiss }) => <AssetPromptDialog asset={asset} onCopy={copyDefaultPrompt} dismiss={dismiss} />,
+      content: ({ dismiss }) => (
+        <AssetPromptDialog asset={asset} prompt={promptText} onCopy={copyDefaultPrompt} dismiss={dismiss} />
+      ),
     });
   }
 
@@ -354,7 +399,18 @@ function AssetCard({
           {/* leading-normal, not leading-tight: Burmese stacks marks above and below
               the baseline, and truncate's overflow-hidden clips them off a tight line
               box. Latin looks the same either way. */}
-          <div className="truncate text-[13.5px] leading-normal font-semibold">{asset.name}</div>
+          <div className="flex min-w-0 items-center gap-1">
+            <div className="truncate text-[13.5px] leading-normal font-semibold">{asset.name}</div>
+            <MiniButton
+              ghost
+              className="!h-5 !w-5 !min-w-0 shrink-0 justify-center !p-0 text-fg-3"
+              onClick={() => copyText(asset.name, `${asset.name} name`)}
+              aria-label={`Copy ${asset.name}`}
+              title="Copy name"
+            >
+              <Copy size={11} />
+            </MiniButton>
+          </div>
           <div className="truncate text-[11.5px] leading-normal text-fg-3">{asset.meta}</div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -377,6 +433,37 @@ function AssetCard({
           )}
         </div>
       </CardHeader>
+
+      {activeLook && (
+        <div className="px-3.5 pt-2">
+          <div role="tablist" aria-label={`Looks of ${asset.name}`} className="flex gap-1 overflow-x-auto">
+            {asset.looks.map((look) => (
+              <MiniButton
+                key={look.key}
+                role="tab"
+                aria-selected={look === activeLook}
+                ghost={look !== activeLook}
+                className="shrink-0 !rounded-full !px-2.5 whitespace-nowrap"
+                onClick={() => {
+                  setLookKey(look.key);
+                  setSlide(0);
+                }}
+                title={look.scenes.join(", ")}
+              >
+                {look.label}
+              </MiniButton>
+            ))}
+          </div>
+          {/* The base sheet is what keeps the face the same person across looks;
+              without it attached, each later sheet invents a new face. */}
+          {!isBaseLook && (
+            <div className="mt-1.5 flex gap-1.5 text-[11px] text-fg-3">
+              <Paperclip size={12} className="mt-[2px] shrink-0" />
+              <span>Attach the {asset.looks[0].label} sheet when generating this look.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {asset.matchStatus === "stale" ? (
         <CardFooter>
@@ -504,6 +591,22 @@ function AssetCard({
                     <Camera size={14} /> Copy angle
                   </span>
                 </MenuItem>
+                <MenuItem
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(
+                        asset.realPrompt,
+                        SYSTEM_PROMPTS.locationDistantView,
+                        angleStyleContext ?? styleContext
+                      ),
+                      `${asset.name} distant view prompt`
+                    )
+                  }
+                >
+                  <span className="flex items-center gap-2 text-[13px]">
+                    <Telescope size={14} /> Copy distant view
+                  </span>
+                </MenuItem>
                 <MenuItem disabled={regenerating} onClick={confirmRegenerate}>
                   <span className="flex items-center gap-2 text-[13px]">
                     <RefreshCw size={14} /> Regenerate
@@ -527,11 +630,9 @@ function AssetCard({
             <CardFooterWithMenu actions={1}>
               <MiniButton
                 className="!min-w-0 justify-center overflow-hidden"
-                onClick={() =>
-                  copyText(withAssetContext(asset.realPrompt, viewPreset, styleContext), `${asset.name} prompt`)
-                }
+                onClick={copyDefaultPrompt}
               >
-                <span className="truncate">Copy prompt</span>
+                <span className="truncate">{activeLook ? `Copy ${activeLook.label}` : "Copy prompt"}</span>
               </MiniButton>
               {/* Upload sits with the other card actions rather than as its own
                   strip: it is one more thing you do to this asset, and the

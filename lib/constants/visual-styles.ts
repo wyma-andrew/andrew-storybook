@@ -58,6 +58,16 @@ const COZY_ANIME_BASE =
   "Render light softly and naturally: gentle ambient illumination, soft painted shadows, delicate atmospheric depth. " +
   "Clearly illustrated and non-photorealistic. Avoid 3D rendering, CGI, photographic textures, harsh contrast, neon or oversaturated color, glossy plastic surfaces, and chibi or exaggerated cartoon proportions. ";
 
+// Rendering only, distilled from a Buddha sermon reference. That prompt's face,
+// age, earlobes, gesture, Sarnath grove, and morning light belong to the
+// character asset, the shot, the location, and the scene's [Lighting] line —
+// in the style they would restyle every character as the Buddha.
+const SACRED_HISTORICAL_DRAMA_BASE =
+  "Ultra photorealistic live-action cinematic still, shot like a premium historical drama film. Every figure is a real human being with natural, realistic skin texture, never a statue, painting, wax figure, or 3D render. " +
+  "Ancient South Asian Buddha-era setting, historically grounded, with period-appropriate clothing and robes showing realistic woven texture and natural folds, hand-crafted materials, and natural environments. Sacred, tranquil, reverent atmosphere. " +
+  "Render light naturally: soft, believable illumination with gentle highlights and realistic shadows. " +
+  "Avoid cartoon, anime, painterly or illustrated looks, CGI, plastic or waxy skin, exaggerated halos, fantasy costumes, distorted hands, and extra fingers. ";
+
 export const VISUAL_STYLES: VisualStylePreset[] = [
   {
     id: "3d-animation",
@@ -157,6 +167,16 @@ export const VISUAL_STYLES: VisualStylePreset[] = [
       english: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
       myanmar: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
       buddha: { base: COZY_ANIME_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
+    },
+  },
+  {
+    id: "sacred-historical-drama",
+    name: "Sacred Historical Drama",
+    swatch: "#c98a3c",
+    text: {
+      english: { base: SACRED_HISTORICAL_DRAMA_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
+      myanmar: { base: SACRED_HISTORICAL_DRAMA_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
+      buddha: { base: SACRED_HISTORICAL_DRAMA_BASE + SINGLE_FRAME_TAIL, referenceClause: "", tail: "" },
     },
   },
 ];

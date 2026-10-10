@@ -7,8 +7,9 @@ import { Undo2, Redo2, FileInput, Copy, Check } from "lucide-react";
 import { Dialog, Textarea } from "@geckoui/geckoui";
 import { Body, Wrap } from "@/components/ui/Layout";
 import { Button, MiniButton } from "@/components/ui/Button";
+import { copyText } from "@/lib/copy";
 import { screenplayNodes } from "@/lib/tiptap/screenplay-nodes";
-import { parseScreenplayText, SCREENPLAY_FORMAT_GUIDE } from "@/lib/tiptap/screenplay-parser";
+import { parseScreenplayText, serializeScreenplay, SCREENPLAY_FORMAT_GUIDE } from "@/lib/tiptap/screenplay-parser";
 
 const inactiveState = {
   focused: false,
@@ -97,6 +98,7 @@ export function ScriptEditor({
   onChange: (json: unknown) => void;
 }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copiedScript, setCopiedScript] = useState(false);
 
   const editor = useEditor({
     extensions: [StarterKit, ...screenplayNodes],
@@ -176,6 +178,12 @@ export function ScriptEditor({
     });
   }
 
+  function copyScript() {
+    copyText(serializeScreenplay(editor!.getJSON()), "Script");
+    setCopiedScript(true);
+    setTimeout(() => setCopiedScript(false), 1500);
+  }
+
   return (
     <>
       {/* One row, never two. The node-type buttons scroll sideways when they
@@ -214,6 +222,9 @@ export function ScriptEditor({
         <span className={sep}></span>
         <Button variant="ghost" className={iconBtn()} onClick={openImportDialog} title="Import script">
           <FileInput size={15} />
+        </Button>
+        <Button variant="ghost" className={iconBtn()} onClick={copyScript} title="Copy script">
+          {copiedScript ? <Check size={15} /> : <Copy size={15} />}
         </Button>
         <Button
           variant="ghost"

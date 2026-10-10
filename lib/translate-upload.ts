@@ -20,7 +20,7 @@ export function readTranslateVideo(file: File) {
   });
 }
 
-function putPart(url: string, blob: Blob, contentType: string, onProgress: (loaded: number) => void) {
+export function putPart(url: string, blob: Blob, contentType: string, onProgress: (loaded: number) => void) {
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let stallTimer: ReturnType<typeof setTimeout> | null = null;

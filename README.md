@@ -51,6 +51,21 @@ Then set `ASR_WORKER_URL` (the printed `FunAsr.transcribe` URL) and the same
 `ASR_WORKER_TOKEN` in `.env`. Models download from ModelScope on first use and
 are cached in the `funasr-cache` volume.
 
+## Burmese transcription (Whisper large-v3 on Modal)
+
+The Transcript menu uses `workers/whisper-mm` (openai-whisper `large-v3`,
+language fixed to Burmese). Without `WHISPER_MM_WORKER_URL` it fails; there is
+no OpenAI fallback.
+
+```bash
+modal secret create whisper-mm WHISPER_MM_WORKER_TOKEN=<random token>
+modal deploy workers/whisper-mm/modal_app.py
+```
+
+Then set `WHISPER_MM_WORKER_URL` (the printed `WhisperMyanmar.transcribe` URL)
+and the same `WHISPER_MM_WORKER_TOKEN` in `.env`. Weights (~3GB) download on
+first use and are cached in the `whisper-mm-cache` volume.
+
 ## Movie Recap rendering (ffmpeg with libass)
 
 The render pipeline shells out to ffmpeg, and burning styled Burmese subtitles

@@ -7,13 +7,71 @@ import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
 import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
+import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 import type { VoiceLabItem } from "@/lib/voice-lab";
 import type { TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
+import type { RecapV2Project, RecapV2ProjectListItem, RecapV2ProjectPatch } from "@/lib/recap-v2";
+import type { TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
 
 export type ApiSchema = {
+  "transcript-projects": {
+    GET: { data: TranscriptProjectListItem[] };
+    POST: { data: TranscriptProject; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "transcript-projects/:id": {
+    GET: { data: TranscriptProject };
+    DELETE: { data: null };
+  };
+  "transcript-projects/:id/cover": {
+    POST: { data: TranscriptProject; body: { sourceObjectKey: string; imageBase64: string } };
+  };
+  "transcript-projects/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: TranscriptProject };
+  };
+  "transcript-projects/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "transcript-projects/:id/source/multipart/complete": {
+    POST: { data: TranscriptProject; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "transcript-projects/:id/transcribe": { POST: { data: TranscriptProject } };
+  "recap-v2-projects": {
+    GET: { data: RecapV2ProjectListItem[] };
+    POST: { data: RecapV2Project; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "recap-v2-projects/:id": {
+    GET: { data: RecapV2Project };
+    PATCH: { data: RecapV2Project; body: RecapV2ProjectPatch };
+    DELETE: { data: null };
+  };
+  "recap-v2-projects/:id/cover": {
+    POST: { data: RecapV2Project; body: { sourceObjectKey: string; imageBase64: string } };
+  };
+  "recap-v2-projects/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: RecapV2Project };
+  };
+  "recap-v2-projects/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "recap-v2-projects/:id/source/multipart/complete": {
+    POST: { data: RecapV2Project; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "recap-v2-projects/:id/transcribe": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/resplit": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/translate": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/render": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/render/download": { GET: { data: { url: string } } };
   "translate-projects": {
     GET: { data: TranslateProjectListItem[] };
     POST: { data: TranslateProject; body: {
@@ -303,7 +361,10 @@ export type ApiSchema = {
     POST: { data: Chapter; body: { title?: string } };
   };
   "bible-entries/:id": {
-    PATCH: { data: BibleEntry; body: Partial<{ realPrompt: string; locked: boolean; name: string; meta: string }> };
+    PATCH: {
+      data: BibleEntry;
+      body: Partial<{ realPrompt: string; looks: CharacterLook[]; locked: boolean; name: string; meta: string }>;
+    };
   };
   "chapters/:id": {
     GET: { data: Chapter };
@@ -331,7 +392,7 @@ export type ApiSchema = {
     POST: { data: ChapterAsset[] };
   };
   "chapter-assets/:id": {
-    PATCH: { data: ChapterAsset; body: Partial<{ realPrompt: string; name: string; meta: string }> };
+    PATCH: { data: ChapterAsset; body: Partial<{ realPrompt: string; looks: CharacterLook[]; name: string; meta: string }> };
     DELETE: { data: null };
   };
   "chapter-assets/:id/promote": {
@@ -381,6 +442,10 @@ export type ApiSchema = {
         // At most one. Omitted from a gallery upload, which starts unused.
         chapterAssetId?: string | null;
         shotId?: string | null;
+        // Which look of the linked character this render is the sheet for.
+        lookKey?: string | null;
+        // Which site-map camera station of the linked location this render is the plate for.
+        stationKey?: string | null;
       };
     };
   };

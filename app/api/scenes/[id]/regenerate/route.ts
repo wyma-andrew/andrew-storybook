@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
+import { buildAssetContext, cleanShotAssets } from "@/lib/storyboard-assets";
 import { mapScene } from "@/lib/api/map";
 import { tiptapToText, tiptapVoiceOvers } from "@/lib/tiptap-text";
 import { assignVoiceOvers, regenerateSceneShots } from "@/lib/openai";
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }, { data: sceneRows, error: allErr }] =
     await Promise.all([
-      db.from("chapter_assets").select("kind, name, meta, real_prompt").eq("chapter_id", chapterId),
+      db.from("chapter_assets").select("kind, name, meta, real_prompt, looks").eq("chapter_id", chapterId),
       db
         .from("stories")
         .select("visual_style_id, aspect_ratio, region, motion_style_id, format")
@@ -83,12 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
   const styleContext = resolveStyleContext(region, story?.visual_style_id);
-  const assetContext = (assets ?? [])
-    .map(
-      (a) =>
-        `${a.kind === "character" ? "Character" : a.kind === "location" ? "Location" : "Prop"} — ${a.name} (${a.meta}): ${a.real_prompt}`
-    )
-    .join("\n");
+  const assetContext = buildAssetContext(assets ?? []);
   const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
   const motionStyleId = (story?.motion_style_id as string | null) ?? null;
   const format = resolveStoryFormat(story?.format);
@@ -178,7 +174,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     prompt: sh.prompt,
     video_prompt: sh.videoPrompt,
     sound_prompt: sh.soundPrompt || null,
-    assets_used: sh.assetsUsed,
+    assets_used: cleanShotAssets(sh.assetsUsed, assets ?? [], storedSiteMap),
     start_state: sh.startState,
     end_state: sh.endState,
   }));

@@ -4,6 +4,16 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-10-09 — GPT-5.6 models moved to GPT-6
+
+**Decision, by the user:** every `gpt-5.6-luna` call is now `gpt-6-luna` and
+every `gpt-5.6-sol` call is `gpt-6-sol` (all in `lib/openai.ts` and
+`lib/recap-v2-translate.ts`). Both were checked against the account's model
+list and accept strict JSON-schema Chat Completions. The Luna/Sol split stays:
+Sol for Burmese prose, Luna for structured passes. `gpt-5.4-mini` (Movie
+Recap vision/split) is unchanged: it is not a 5.6 model and was chosen for the
+free tier. Output quality on the new models has not been re-reviewed.
+
 ## 2026-10-01 — Speech recognition moves from Whisper to FunASR Paraformer-zh (supersedes the Whisper worker below)
 
 **Decision, by the user:** both Movie Recap transcription and Translate Auto Sync

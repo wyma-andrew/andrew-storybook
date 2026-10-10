@@ -119,6 +119,15 @@ export default function SettingsPage() {
                 {locationExterior}
               </div>
             </AdminBlock>
+
+            <AdminBlock title="Location preset — distant view" badge="LOCKED" className="mt-3.5">
+              <div className="mb-3.5 flex items-center gap-2 rounded-lg border border-line-2 bg-sunken px-3 py-2.5 text-xs text-fg-3">
+                <Lock size={13} /> Copied from a location&apos;s menu, with its approved view attached.
+              </div>
+              <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">
+                {SYSTEM_PROMPTS.locationDistantView}
+              </div>
+            </AdminBlock>
           </section>
         </Wrap>
       </Body>

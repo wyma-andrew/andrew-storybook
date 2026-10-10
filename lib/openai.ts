@@ -1,6 +1,12 @@
 import OpenAI from "openai";
 import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
-import { REGENERATE_SCHEMA, REGENERATE_LOCATION_SCHEMA, regenerateAssetSystemPrompt } from "./prompts/regenerate-asset";
+import {
+  REGENERATE_SCHEMA,
+  REGENERATE_LOCATION_SCHEMA,
+  REGENERATE_CHARACTER_SCHEMA,
+  regenerateAssetSystemPrompt,
+} from "./prompts/regenerate-asset";
+import { parseLooks, type CharacterLook } from "./character-looks";
 import {
   storyboardSchema,
   sceneShotsSchema,
@@ -36,11 +42,12 @@ export function openai() {
 }
 
 export type SpaceKind = "interior" | "exterior";
-export type ExtractedAsset = { name: string; meta: string; realPrompt: string };
+export type ExtractedAsset = { name: string; meta: string; scenes: string[]; evidence: string; realPrompt: string };
 // Locations additionally carry spaceKind — it selects the reference-image
 // preset (interior view + floor plan vs exterior view + site plan).
 export type ExtractedLocation = ExtractedAsset & { spaceKind: SpaceKind };
-export type ExtractedAssets = { characters: ExtractedAsset[]; locations: ExtractedLocation[]; props: ExtractedAsset[] };
+export type ExtractedCharacter = ExtractedAsset & { looks: CharacterLook[] };
+export type ExtractedAssets = { characters: ExtractedCharacter[]; locations: ExtractedLocation[]; props: ExtractedAsset[] };
 
 export async function extractAssets(
   scriptText: string,
@@ -62,7 +69,8 @@ export async function extractAssets(
         .join("\n")}\n\nScript:\n${scriptText}`
     : scriptText;
   const res = await openai().chat.completions.create({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
+    reasoning_effort: "high",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
@@ -73,7 +81,9 @@ export async function extractAssets(
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  return JSON.parse(raw) as ExtractedAssets;
+  const { storyAnalysis, ...assets } = JSON.parse(raw) as ExtractedAssets & { storyAnalysis?: unknown };
+  console.info("[extractAssets] storyAnalysis", JSON.stringify(storyAnalysis));
+  return { ...assets, characters: assets.characters.map((c) => ({ ...c, looks: parseLooks(c.looks) })) };
 }
 
 // Regenerates a single already-extracted asset's realPrompt (per-card "Regenerate"
@@ -85,11 +95,13 @@ export async function regenerateAssetPrompt(
   meta: string,
   styleContext?: string | null,
   region: Region = "english"
-): Promise<{ realPrompt: string; spaceKind: SpaceKind | null }> {
+): Promise<{ realPrompt: string; spaceKind: SpaceKind | null; looks: CharacterLook[] }> {
   const systemPrompt = regenerateAssetSystemPrompt(kind, styleContext, region);
   const isLocation = kind === "location";
+  const isCharacter = kind === "character";
   const res = await openai().chat.completions.create({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
+    reasoning_effort: "high",
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -101,17 +113,21 @@ export async function regenerateAssetPrompt(
       type: "json_schema",
       json_schema: {
         name: "regenerated_asset",
-        schema: isLocation ? REGENERATE_LOCATION_SCHEMA : REGENERATE_SCHEMA,
+        schema: isLocation ? REGENERATE_LOCATION_SCHEMA : isCharacter ? REGENERATE_CHARACTER_SCHEMA : REGENERATE_SCHEMA,
         strict: true,
       },
     },
   });
   const raw = res.choices[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(raw) as { realPrompt: string; spaceKind?: SpaceKind };
-  return { realPrompt: parsed.realPrompt, spaceKind: isLocation ? parsed.spaceKind ?? null : null };
+  const parsed = JSON.parse(raw) as { realPrompt: string; spaceKind?: SpaceKind; looks?: unknown };
+  return {
+    realPrompt: parsed.realPrompt,
+    spaceKind: isLocation ? parsed.spaceKind ?? null : null,
+    looks: isCharacter ? parseLooks(parsed.looks) : [],
+  };
 }
 
-export type GeneratedShotAsset = { name: string; kind: "character" | "location" | "prop" };
+export type GeneratedShotAsset = { name: string; kind: "character" | "location" | "prop"; look: string; station: string };
 export type GeneratedShot = {
   label: string;
   beat: string;
@@ -146,7 +162,7 @@ export async function generateStoryboard(
 ): Promise<GeneratedStoryboard> {
   const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId, format);
   const res = await openai().chat.completions.create({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
@@ -179,7 +195,7 @@ export async function assignVoiceOvers(
     }))
   );
   const res = await openai().chat.completions.create({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     messages: [
       { role: "system", content: voiceOverAssignmentSystemPrompt },
       { role: "user", content: JSON.stringify({ voiceOvers, shots }) },
@@ -207,7 +223,7 @@ export async function regenerateSceneShots(
 ): Promise<GeneratedShot[]> {
   const systemPrompt = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId, format);
   const res = await openai().chat.completions.create({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
@@ -398,7 +414,7 @@ export async function generateMovieRecapNarration(
 ): Promise<{ sceneIndexes: number[]; text: string }[]> {
   const res = await openai().chat.completions.create(
     {
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       messages: [
         { role: "system", content: movieRecapNarrationSystemPrompt },
         { role: "user", content: JSON.stringify({ scenes }) },
@@ -417,7 +433,7 @@ export async function generateMovieRecapNarration(
 // The retelling runs on Sol rather than the Luna model every other pass uses:
 // this is the one pass whose output a person reads as prose, so it is judged on
 // how the Burmese sounds, not on filling a schema.
-const STORY_MODEL = "gpt-5.6-sol";
+const STORY_MODEL = "gpt-6-sol";
 
 // One passage of the source's dialogue, retold in Burmese as a story rather
 // than translated line by line. Chunking is the caller's job

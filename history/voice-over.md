@@ -8,6 +8,16 @@ Covers: `components/ScriptEditor.tsx`, `lib/tiptap/screenplay-nodes.ts`,
 `app/stories/[id]/chapters/[chapterId]/storyboard/page.tsx`, and
 `supabase/migrations/*_voice_over_segments.sql`.
 
+## 2026-10-09 — Script copy uses the labelled import format
+
+The script toolbar's Copy button writes `serializeScreenplay` output — one
+`Label: text` line per block, the same format `parseScreenplayText` documents —
+so a copy pasted into Import reproduces the blocks exactly, Voice Over included,
+in any language. Rejected copying plain screenplay text: unlabelled import is
+heuristic, and uncased scripts (Myanmar) would come back with cues and dialog
+misread. Accepted consequence: line breaks inside a block become spaces, since
+the parser is line-based.
+
 ## 2026-09-10 — Anonymous narration is a separate shot-range overlay
 
 **Decision:** Voice Over is an anonymous Tiptap screenplay block, flattened as

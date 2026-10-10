@@ -88,6 +88,34 @@ is on rigs, not on the hour — these do not conflict.
 - The line is shown read-only under the scene header (`Sun` icon). It is not
   editable yet — open work, not an oversight.
 
+## 2026-10-10 — Wide and medium framing carry a human-scale line
+
+From a reviewed render: a wide street shot made the lead monk a head taller than
+the townspeople beside him. The character sheet fills its frame, and the model
+carried that size into the shot, while the background people were placed with
+no size rule at all. The wide and medium optics lines now end with an eye-level
+perspective rule: every standing adult's head is on the horizon, size follows
+distance only, and the lead is a normal adult height with feet planted on the ground (no "shadow" wording — lighting stays in `[Lighting]`, which the scale test guards).
+This is perspective, which fits the "optics only" rule for these lines. Because
+the line is composed at copy time, every existing shot gets it with no
+regeneration. Close and extreme-close are unchanged: no horizon is in frame.
+
+The second half of the same failure was the shot text itself. "Wide shot of
+ANGULIMALA entering the main street … walks in from the entrance at frame right"
+gave no distance, so the model put him large in the foreground. `shotScaleBlock`
+now requires every named character on a wide or medium shot to have a distance
+in metres and a frame share, in the sentence that places them. That is stored
+shot text, so unlike the optics line it reaches existing shots only on
+regeneration, or by editing a shot's prompt by hand.
+
+The horizon rule is limited to people at the camera's ground level. A shot with
+villagers on roof terraces showed that the first wording ("every standing
+adult's head on the horizon") contradicted anyone standing on something raised.
+Their heads sit higher by exactly that height.
+
+Both rules, the human-scale optics line and the distance requirement, now
+apply to `wide` only, by the user's choice. They were first on `medium` too.
+
 ## 2026-09-11 — Framing optics are per shot, composed from a constant
 
 Prompted by a suggested set of per-shot-type prompt templates (wide /

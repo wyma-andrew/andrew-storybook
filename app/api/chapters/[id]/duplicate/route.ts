@@ -46,6 +46,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         name: a.name,
         meta: a.meta,
         real_prompt: a.real_prompt,
+        looks: a.looks,
         match_status: a.match_status,
       }))
     );

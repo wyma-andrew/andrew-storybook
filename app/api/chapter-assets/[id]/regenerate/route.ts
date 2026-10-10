@@ -37,7 +37,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
   const styleContext = resolveStyleContext(region, story?.visual_style_id);
 
-  const { realPrompt, spaceKind } = await regenerateAssetPrompt(
+  const { realPrompt, spaceKind, looks } = await regenerateAssetPrompt(
     scriptText,
     asset.kind,
     asset.name,
@@ -53,6 +53,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       // Locations only; a regenerate can move a location from a room to a
       // compound, and the reference preset has to follow the new text.
       ...(spaceKind ? { space_kind: spaceKind } : {}),
+      ...(asset.kind === "character" ? { looks } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)

@@ -14,6 +14,8 @@ import { SkeletonCards } from "@/components/ui/Skeleton";
 import { useRead, useWrite } from "@/lib/spoosh";
 import { startStoryboardGeneration, stopStoryboardGeneration, useStoryboardGenerating } from "@/lib/storyboard-generation";
 import { AttachedImages } from "@/components/AttachedImages";
+import { CameraPlates } from "@/components/CameraPlates";
+import { REFERENCE_STATION } from "@/lib/site-map";
 import { withStyle, withFrameDescription } from "@/lib/prompt-copy";
 import { copyText } from "@/lib/copy";
 import { TRUNCATE_SELECT_VALUE } from "@/lib/constants/select-truncate";
@@ -474,6 +476,10 @@ function characterReferenceHints(scenes: Scene[], sceneIdx: number, shotIdx: num
   const shot = scenes[sceneIdx].shots[shotIdx];
   const characters = shot.assetsUsed.filter((a) => a.kind === "character").map((a) => a.name);
   if (!characters.length) return [];
+  // A shot of the same character in a different look is not continuity for
+  // this one — it shows another stage of them.
+  const lookOf = (s: Shot, name: string) =>
+    s.assetsUsed.find((a) => a.kind === "character" && a.name === name)?.look ?? null;
 
   const here = new Set(characters);
   const prior: { sceneIndex: number; shot: Shot }[] = [];
@@ -487,6 +493,7 @@ function characterReferenceHints(scenes: Scene[], sceneIdx: number, shotIdx: num
     const candidates = prior.filter(
       ({ shot: s }) =>
         s.assetsUsed.some((a) => a.kind === "character" && a.name === name) &&
+        lookOf(s, name) === lookOf(shot, name) &&
         s.assetsUsed.every((a) => a.kind !== "character" || here.has(a.name))
     );
     if (!candidates.length) continue;
@@ -574,7 +581,7 @@ export default function StoryboardPage() {
   const { id, chapterId } = useParams<{ id: string; chapterId: string }>();
 
   const { data: story } = useRead((api) => api("stories/:id").GET({ params: { id } }));
-  const { data: chapter } = useRead((api) => api("chapters/:id").GET({ params: { id: chapterId } }));
+  const { data: chapter, trigger: refetchChapter } = useRead((api) => api("chapters/:id").GET({ params: { id: chapterId } }));
   const { data: scenes, trigger: refetchScenes } = useRead((api) =>
     api("chapters/:id/storyboard").GET({ params: { id: chapterId } })
   );
@@ -587,6 +594,20 @@ export default function StoryboardPage() {
   const { data: chapterImages, trigger: refetchImages } = useRead((api) =>
     api("chapters/:id/images").GET({ params: { id: chapterId } })
   );
+  const { data: chapterAssets } = useRead((api) => api("chapters/:id/assets").GET({ params: { id: chapterId } }));
+  const lookLabels = new Map<string, string>();
+  for (const asset of chapterAssets ?? []) {
+    for (const look of asset.looks) lookLabels.set(`${asset.name}\u0000${look.key}`, look.label);
+  }
+  const stationLabels = new Map<string, string>();
+  for (const place of chapter?.siteMap?.places ?? []) {
+    for (const station of place.stations) {
+      // The reference station's plate is the location card's own image, so the
+      // chip names it that way rather than by the model's label for the view.
+      const label = station.key === REFERENCE_STATION ? "Reference" : `${station.label} plate`;
+      stationLabels.set(`${place.location}\u0000${station.key}`, label);
+    }
+  }
   const imagesByShot = new Map<string, ChapterImage[]>();
   for (const image of chapterImages ?? []) {
     if (!image.shotId) continue;
@@ -602,9 +623,11 @@ export default function StoryboardPage() {
     if (wasGenerating.current && !generating) {
       refetchScenes();
       refetchVoiceOvers();
+      // The site map, and with it the camera stations, is rewritten by every full generation.
+      refetchChapter();
     }
     wasGenerating.current = generating;
-  }, [generating, refetchScenes, refetchVoiceOvers]);
+  }, [generating, refetchScenes, refetchVoiceOvers, refetchChapter]);
   const { trigger: regenerateScene } = useWrite((api) => api("scenes/:id/regenerate").POST());
   // Which scene is mid-regeneration — the shared `loading` flag can't say which
   // card fired, and only that card's button should spin.
@@ -876,6 +899,17 @@ export default function StoryboardPage() {
             </EmptyCta>
           )}
 
+          {!!scenes?.length && (
+            <CameraPlates
+              chapterId={chapterId}
+              siteMap={chapter?.siteMap ?? null}
+              assets={chapterAssets ?? []}
+              images={chapterImages ?? []}
+              styleContext={styleContext}
+              onUploaded={refetchImages}
+            />
+          )}
+
           {!!voiceOvers?.length && !!shotOptions.length && (
             <section className="mb-4.5 rounded-xl border border-style-badge-border bg-panel-2 p-3 md:p-4.5">
               <button
@@ -1125,6 +1159,12 @@ export default function StoryboardPage() {
                                       <Package size={11} className="shrink-0 text-fg-3" />
                                     )}
                                     {a.name}
+                                    {a.look && lookLabels.has(`${a.name}\u0000${a.look}`) && (
+                                      <span className="text-fg-3">· {lookLabels.get(`${a.name}\u0000${a.look}`)}</span>
+                                    )}
+                                    {a.station && stationLabels.has(`${a.name}\u0000${a.station}`) && (
+                                      <span className="text-fg-3">· {stationLabels.get(`${a.name}\u0000${a.station}`)}</span>
+                                    )}
                                   </span>
                                 ))}
                               </div>

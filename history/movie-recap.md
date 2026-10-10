@@ -7,6 +7,16 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-10-09 — GPT-5.6 models moved to GPT-6
+
+**Decision, by the user:** every `gpt-5.6-luna` call is now `gpt-6-luna` and
+every `gpt-5.6-sol` call is `gpt-6-sol` (all in `lib/openai.ts` and
+`lib/recap-v2-translate.ts`). Both were checked against the account's model
+list and accept strict JSON-schema Chat Completions. The Luna/Sol split stays:
+Sol for Burmese prose, Luna for structured passes. `gpt-5.4-mini` (Movie
+Recap vision/split) is unchanged: it is not a 5.6 model and was chosen for the
+free tier. Output quality on the new models has not been re-reviewed.
+
 ## 2026-10-04 — 9:16 watermark text 1.9% -> 1.3%
 
 **Decision, by the user:** 9:16 watermark text read large at 1.9% of frame

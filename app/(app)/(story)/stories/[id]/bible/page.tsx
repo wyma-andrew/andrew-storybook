@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Grid2x2, Camera, Columns2, Image as ImageIcon } from "lucide-react";
+import { Grid2x2, Camera, Columns2, Image as ImageIcon, Telescope } from "lucide-react";
 import { Card, CardHeader, CardFooter } from "@/components/ui/Card";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { MiniButton, MiniLoadingButton } from "@/components/ui/Button";
@@ -23,6 +23,7 @@ import {
   locationPromptHints,
 } from "@/lib/constants/system-prompts";
 import { copyText } from "@/lib/copy";
+import { composeLookPrompt, fullCharacterPrompt } from "@/lib/character-looks";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 // `angleStyleContext` (locations only): the wide view is copied with the
@@ -78,7 +79,9 @@ function BibleCard({
           <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-[90px] text-[14px] leading-relaxed" />
         </div>
       ) : (
-        <div className="p-3.5 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{entry.realPrompt}</div>
+        <div className="p-3.5 text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">
+          {fullCharacterPrompt(entry.realPrompt, entry.looks)}
+        </div>
       )}
 
 
@@ -125,6 +128,20 @@ function BibleCard({
                   <ImageIcon size={12} /> View
                 </MiniButton>
               </PromptHint>
+            ) : entry.looks.length ? (
+              entry.looks.map((look) => (
+                <MiniButton
+                  key={look.key}
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(composeLookPrompt(entry.realPrompt, entry.looks, look.key), viewPreset, styleContext),
+                      `${entry.name} ${look.label} prompt`
+                    )
+                  }
+                >
+                  Copy {look.label}
+                </MiniButton>
+              ))
             ) : (
               <MiniButton
                 onClick={() =>
@@ -163,6 +180,24 @@ function BibleCard({
                   }
                 >
                   <Camera size={12} /> Angle
+                </MiniButton>
+              </PromptHint>
+            )}
+            {entry.kind === "location" && (
+              <PromptHint hint={hints.distant}>
+                <MiniButton
+                  onClick={() =>
+                    copyText(
+                      withAssetContext(
+                        entry.realPrompt,
+                        SYSTEM_PROMPTS.locationDistantView,
+                        angleStyleContext ?? styleContext
+                      ),
+                      `${entry.name} distant view prompt`
+                    )
+                  }
+                >
+                  <Telescope size={12} /> Distant
                 </MiniButton>
               </PromptHint>
             )}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Beaker, BookOpen, Clapperboard, Languages, Menu, Scissors, Shield } from "lucide-react";
+import { Beaker, BookOpen, Clapperboard, Languages, Menu, FileText, Scissors, Shield, Sparkles } from "lucide-react";
 import { Drawer } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -22,6 +22,8 @@ import type { FeatureKey } from "@/lib/constants/features";
 const NAV_ITEMS = [
   { href: "/stories", label: "Stories", icon: BookOpen, hidden: false, feature: "stories" },
   { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false, feature: "movie_recap" },
+  { href: "/recap-v2", label: "Recap V2", icon: Sparkles, hidden: false, feature: "movie_recap" },
+  { href: "/transcript", label: "Transcript", icon: FileText, hidden: false, feature: "movie_recap" },
   { href: "/translate", label: "Translate", icon: Languages, hidden: false, feature: "translate" },
   // A local helper for Movie Recap sources, so it shares that feature's access.
   { href: "/video-cutter", label: "Video Cutter", icon: Scissors, hidden: false, feature: "movie_recap" },

@@ -4,10 +4,24 @@
 // from one to the next. The storyboard pass derives that once per chapter,
 // and single-scene regeneration reads it back instead of re-deriving chapter
 // geography from the one scene it is re-shooting.
+// A camera position this chapter shoots the place from. Each one needs its own
+// empty plate image; one reference image cannot show the far side of a path.
+// See history/camera-stations.md.
+export type SiteMapStation = {
+  key: string;
+  label: string;
+  view: string;
+};
+
+// The location reference image's own camera position. Its plate already
+// exists — it is the reference image — so the UI asks for no copy of it.
+export const REFERENCE_STATION = "reference";
+
 export type SiteMapPlace = {
   location: string;
   sceneSlugs: string[];
   note: string;
+  stations: SiteMapStation[];
 };
 
 export type SiteMapConnection = {
@@ -32,6 +46,22 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function parseStations(value: unknown): SiteMapStation[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const stations: SiteMapStation[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    const key = asString(raw.key).trim().toLowerCase();
+    const view = asString(raw.view).trim();
+    if (!key || !view || seen.has(key)) continue;
+    seen.add(key);
+    stations.push({ key, label: asString(raw.label).trim() || key, view });
+  }
+  return stations;
+}
+
 // The column is jsonb and rows predate it, so every read goes through this
 // rather than a cast — a malformed or partial map degrades to "no map", which
 // the prompts already handle, instead of throwing mid-generation.
@@ -45,6 +75,7 @@ export function parseSiteMap(value: unknown): SiteMap | null {
           location: asString(p.location),
           sceneSlugs: asStringArray(p.sceneSlugs),
           note: asString(p.note),
+          stations: parseStations(p.stations),
         }))
         .filter((p) => p.location || p.sceneSlugs.length)
     : [];
@@ -69,7 +100,8 @@ export function formatSiteMap(map: SiteMap): string {
   const places = map.places.map((place) => {
     const scenes = place.sceneSlugs.length ? place.sceneSlugs.map((s) => `"${s}"`).join(", ") : "no scene heading";
     const note = place.note ? ` — ${place.note}` : "";
-    return `- ${place.location || "(no location asset)"}: ${scenes}${note}`;
+    const stations = place.stations.map((st) => `\n  - station "${st.key}" (${st.label}): ${st.view}`).join("");
+    return `- ${place.location || "(no location asset)"}: ${scenes}${note}${stations}`;
   });
   const connections = map.connections.map((c) => {
     const via = c.via ? ` via ${c.via}` : "";

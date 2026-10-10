@@ -1,3 +1,5 @@
+import { parseSiteMap } from "@/lib/site-map";
+import { findLook, parseLooks } from "@/lib/character-looks";
 import type {
   Story,
   Chapter,
@@ -162,6 +164,7 @@ export function mapChapter(r: Row): Chapter {
     status: r.status as Chapter["status"],
     script: r.script ?? null,
     aspectRatio: (r.aspect_ratio as string) ?? null,
+    siteMap: parseSiteMap(r.site_map),
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
@@ -183,8 +186,12 @@ export function mapChapterImage(r: Row): ChapterImage {
   const asset = r.chapter_assets as Row | null;
   const shot = r.shots as Row | null;
   const scene = (shot?.scenes as Row | null) ?? null;
+  const looks = asset ? parseLooks(asset.looks) : [];
+  const look = looks.length ? findLook(looks, r.look_key as string | null) : null;
   const linkedLabel = asset
-    ? (asset.name as string)
+    ? look
+      ? `${asset.name as string} · ${look.label}`
+      : (asset.name as string)
     : shot && scene
       ? `${scene.index}.${shot.index}`
       : null;
@@ -200,6 +207,8 @@ export function mapChapterImage(r: Row): ChapterImage {
     createdAt: r.created_at as string,
     chapterAssetId: (r.chapter_asset_id as string) ?? null,
     shotId: (r.shot_id as string) ?? null,
+    lookKey: (r.look_key as string) ?? null,
+    stationKey: (r.station_key as string) ?? null,
     linkedLabel,
   };
 }
@@ -213,6 +222,7 @@ export function mapBibleEntry(r: Row): BibleEntry {
     meta: (r.meta as string) ?? null,
     spaceKind: (r.space_kind as SpaceKind) ?? null,
     realPrompt: r.real_prompt as string,
+    looks: parseLooks(r.looks),
     seed: (r.seed as string) ?? null,
     locked: r.locked as boolean,
     images: ((r.bible_entry_images as Row[]) ?? []).map(mapReferenceImage),
@@ -229,6 +239,7 @@ export function mapChapterAsset(r: Row): ChapterAsset {
     meta: (r.meta as string) ?? null,
     spaceKind: (r.space_kind as SpaceKind) ?? null,
     realPrompt: r.real_prompt as string,
+    looks: parseLooks(r.looks),
     matchStatus: r.match_status as ChapterAsset["matchStatus"],
     images: ((r.chapter_asset_images as Row[]) ?? []).map(mapReferenceImage),
   };

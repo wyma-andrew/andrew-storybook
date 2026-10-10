@@ -147,6 +147,43 @@ export function parseScreenplayText(input: string): ScreenplayBlock[] {
   return blocks;
 }
 
+const EXPORT_LABELS: Record<ScreenplayBlock["type"], string> = {
+  title: "Title",
+  sceneHeading: "Scene",
+  paragraph: "Action",
+  character: "Character",
+  parenthetical: "Parenthetical",
+  dialog: "Dialog",
+  voiceOver: "Voice Over",
+  transition: "Transition",
+};
+
+type DocNode = { type?: string; text?: string; content?: DocNode[] };
+
+function nodeText(node: DocNode): string {
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return " ";
+  return (node.content ?? []).map(nodeText).join("");
+}
+
+/**
+ * Inverse of parseScreenplayText: writes the editor document back out in the
+ * labelled import format, so the copy re-imports block-for-block. The parser
+ * is line-based, so line breaks inside a block are flattened to spaces.
+ */
+export function serializeScreenplay(doc: unknown): string {
+  const blocks = (doc as DocNode | null)?.content ?? [];
+  const lines: string[] = [];
+  for (const block of blocks) {
+    const text = nodeText(block).replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    const label = EXPORT_LABELS[block.type as ScreenplayBlock["type"]] ?? "Action";
+    if (block.type === "sceneHeading" && lines.length > 0) lines.push("");
+    lines.push(`${label}: ${text}`);
+  }
+  return lines.join("\n");
+}
+
 /**
  * The documented import format, shown (and copyable) in the import dialog.
  * `Label: text`, one block per line — script-agnostic, so English and Myanmar

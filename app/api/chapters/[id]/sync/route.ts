@@ -51,8 +51,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   );
   const extractedAssets = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const, spaceKind: null })),
-    ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),
-    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null })),
+    ...extracted.locations.map((a) => ({ ...a, kind: "location" as const, looks: [] })),
+    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null, looks: [] })),
   ];
   const extractedKeys = new Set(extractedAssets.map((a) => `${a.kind}:${normalizeName(a.name)}`));
   const existingKeys = new Set((existing ?? []).map((e) => `${e.kind}:${normalizeName(e.name)}`));
@@ -75,6 +75,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       meta: a.meta,
       space_kind: match ? match.space_kind ?? null : a.spaceKind,
       real_prompt: match ? match.real_prompt : a.realPrompt,
+      looks: match ? match.looks ?? [] : a.looks,
       match_status: match ? "matched" : "new",
     };
   });

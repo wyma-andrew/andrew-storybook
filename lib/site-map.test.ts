@@ -17,7 +17,7 @@ describe("parseSiteMap", () => {
       ],
     });
     expect(map).toEqual({
-      places: [{ location: "Nori's Yard", sceneSlugs: ["EXT. YARD — DAY"], note: "she waits" }],
+      places: [{ location: "Nori's Yard", sceneSlugs: ["EXT. YARD — DAY"], note: "she waits", stations: [] }],
       connections: [
         { from: "Nori's Yard", to: "Nori's House", via: "front stair", screenDirection: "exits frame right" },
       ],
@@ -30,7 +30,7 @@ describe("parseSiteMap", () => {
       connections: [{ from: "Market" }, { from: "Market", to: "Road" }],
     });
     expect(map).toEqual({
-      places: [{ location: "Market", sceneSlugs: ["EXT. MARKET — DAY"], note: "" }],
+      places: [{ location: "Market", sceneSlugs: ["EXT. MARKET — DAY"], note: "", stations: [] }],
       connections: [{ from: "Market", to: "Road", via: "", screenDirection: "" }],
     });
   });
@@ -40,8 +40,8 @@ describe("formatSiteMap", () => {
   it("renders places and connections for the regeneration prompt", () => {
     const text = formatSiteMap({
       places: [
-        { location: "Nori's Yard", sceneSlugs: ["EXT. YARD — DAY", "EXT. YARD — NIGHT"], note: "she waits" },
-        { location: "", sceneSlugs: ["EXT. ROAD — DAY"], note: "" },
+        { location: "Nori's Yard", sceneSlugs: ["EXT. YARD — DAY", "EXT. YARD — NIGHT"], note: "she waits", stations: [] },
+        { location: "", sceneSlugs: ["EXT. ROAD — DAY"], note: "", stations: [] },
       ],
       connections: [
         { from: "Nori's Yard", to: "Nori's House", via: "front stair", screenDirection: "exits frame right" },
@@ -61,8 +61,48 @@ describe("formatSiteMap", () => {
   });
 
   it("omits an empty section", () => {
-    expect(formatSiteMap({ places: [{ location: "Hut", sceneSlugs: [], note: "" }], connections: [] })).toBe(
+    expect(formatSiteMap({ places: [{ location: "Hut", sceneSlugs: [], note: "", stations: [] }], connections: [] })).toBe(
       "PLACES:\n- Hut: no scene heading"
     );
+  });
+});
+
+describe("camera stations", () => {
+  it("keeps stations with a key and a view, lowercasing and de-duplicating keys", () => {
+    const map = parseSiteMap({
+      places: [
+        {
+          location: "Trail",
+          sceneSlugs: ["EXT. TRAIL — DAY"],
+          note: "",
+          stations: [
+            { key: "Reference", label: "Reference", view: "From the town end looking north." },
+            { key: "reverse", label: "", view: "From past the boulder looking back south." },
+            { key: "reverse", label: "Dup", view: "x" },
+            { key: "empty", label: "No view", view: " " },
+          ],
+        },
+      ],
+      connections: [],
+    });
+    expect(map?.places[0].stations).toEqual([
+      { key: "reference", label: "Reference", view: "From the town end looking north." },
+      { key: "reverse", label: "reverse", view: "From past the boulder looking back south." },
+    ]);
+  });
+
+  it("lists stations under their place for scene regeneration", () => {
+    const text = formatSiteMap({
+      places: [
+        {
+          location: "Trail",
+          sceneSlugs: ["EXT. TRAIL — DAY"],
+          note: "",
+          stations: [{ key: "reverse", label: "Reverse", view: "Looking back south." }],
+        },
+      ],
+      connections: [],
+    });
+    expect(text).toBe('PLACES:\n- Trail: "EXT. TRAIL — DAY"\n  - station "reverse" (Reverse): Looking back south.');
   });
 });

@@ -5,6 +5,47 @@ Covers: `lib/prompts/extract-assets.ts`, `lib/openai.ts` (`extractAssets`,
 `app/api/chapters/[id]/sync`, `app/api/chapter-assets/[id]/regenerate`,
 `app/stories/[id]/chapters/[chapterId]/assets/page.tsx`.
 
+## 2026-10-10 — Extraction reads the story before writing assets
+
+Extraction was keying off surface words: a `[SCENE]` heading or an object noun
+became an asset. On the Angulimala chapter it merged the forest path and the
+separate forest clearing into one `DENSE FOREST` and dropped the forest
+monastery (scene 8) entirely.
+
+Decision: `ASSET_SCHEMA` now opens with `storyAnalysis` (`sceneMap`, `places`,
+`characterArcs`), and every asset carries `scenes` + `evidence` ahead of
+`realPrompt`. Strict JSON output is written in schema order, so the model maps
+scenes to physical places and justifies each grouping before any asset exists.
+`storyComprehensionBlock()` (shared with single-asset regenerate) holds the
+rules: headings are not proof of a separate place, build each asset from every
+scene it appears in, mention-only entities are not assets, props need a story
+role. Both calls run at `reasoning_effort: "high"`. Single call, not a separate
+analysis pass — cheaper, and the analysis stays in context.
+
+Same chapter after: path / clearing / monastery / town / countryside as five
+locations, each with its scene list. `storyAnalysis` is logged
+(`[extractAssets] storyAnalysis`) and never stored; `scenes` and `evidence` are
+not stored either — routes map columns explicitly.
+
+Rejected, by the user: splitting the script into eras (a modern frame story vs.
+the Buddha-era flashback) so region adaptation applies per era. A Buddha-region
+story is Buddha-era content throughout.
+
+Consequences: extraction took ~137 s on an 11-scene chapter. `characterArcs` is
+analysis-only for now; it does not yet produce per-stage character looks (one
+IDENTITY/WARDROBE LOCK per character is unchanged). Bible-matched assets still
+inherit the bible prompt, so they don't benefit until regenerated.
+
+## 2026-10-09 — GPT-5.6 models moved to GPT-6
+
+**Decision, by the user:** every `gpt-5.6-luna` call is now `gpt-6-luna` and
+every `gpt-5.6-sol` call is `gpt-6-sol` (all in `lib/openai.ts` and
+`lib/recap-v2-translate.ts`). Both were checked against the account's model
+list and accept strict JSON-schema Chat Completions. The Luna/Sol split stays:
+Sol for Burmese prose, Luna for structured passes. `gpt-5.4-mini` (Movie
+Recap vision/split) is unchanged: it is not a 5.6 model and was chosen for the
+free tier. Output quality on the new models has not been re-reviewed.
+
 ## 2026-09-10 — Known real identities are prompt context, not asset names
 
 Character prompts may include a `KNOWN IDENTITY` line for an unambiguously

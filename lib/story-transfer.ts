@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isRegion, DEFAULT_REGION, type Region } from "./constants/regions";
+import { parseLooks, type CharacterLook } from "./character-looks";
 import { isMotionMode, DEFAULT_MOTION_STYLE_ID, type MotionMode } from "./constants/motion-styles";
 import { resolveStoryFormat, type StoryFormat } from "./constants/story-formats";
 import { isShotScale, type ShotScale } from "./constants/shot-scales";
@@ -33,6 +34,7 @@ export type BundleBibleEntry = {
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
+  looks: CharacterLook[];
   seed: string | null;
   locked: boolean;
   images: BundleReferenceImage[];
@@ -45,6 +47,7 @@ export type BundleChapterAsset = {
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
+  looks: CharacterLook[];
   matchStatus: "matched" | "new" | "local" | "stale";
   images: BundleReferenceImage[];
 };
@@ -66,7 +69,7 @@ export type BundleShot = {
   soundPromptOverride: string | null;
   startState: string | null;
   endState: string | null;
-  assetsUsed: { name: string; kind: AssetKind }[];
+  assetsUsed: { name: string; kind: AssetKind; look?: string; station?: string }[];
 };
 
 export type BundleScene = {
@@ -169,6 +172,7 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
       meta: str(entry.meta),
       spaceKind: isSpaceKind(entry.space_kind) ? entry.space_kind : null,
       realPrompt: (str(entry.real_prompt) ?? "").toString(),
+      looks: parseLooks(entry.looks),
       seed: str(entry.seed),
       locked: Boolean(entry.locked),
       images: mapBundleImages(entry.bible_entry_images as Row[] | null),
@@ -257,6 +261,7 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
         meta: str(asset.meta),
         spaceKind: isSpaceKind(asset.space_kind) ? asset.space_kind : null,
         realPrompt: str(asset.real_prompt) ?? "",
+        looks: parseLooks(asset.looks),
         matchStatus: ["matched", "new", "local", "stale"].includes(asset.match_status as string)
           ? (asset.match_status as BundleChapterAsset["matchStatus"])
           : "local",
@@ -313,6 +318,7 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
     meta: str(entry.meta),
     spaceKind: isSpaceKind(entry.spaceKind) ? entry.spaceKind : null,
     realPrompt: str(entry.realPrompt) ?? "",
+    looks: parseLooks(entry.looks),
     seed: str(entry.seed),
     locked: Boolean(entry.locked),
     images: parseImages(entry.images),
@@ -334,6 +340,7 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
       meta: str(asset.meta),
       spaceKind: isSpaceKind(asset.spaceKind) ? asset.spaceKind : null,
       realPrompt: str(asset.realPrompt) ?? "",
+      looks: parseLooks(asset.looks),
       matchStatus: ["matched", "new", "local", "stale"].includes(asset.matchStatus as string)
         ? (asset.matchStatus as BundleChapterAsset["matchStatus"])
         : "local",
@@ -463,6 +470,7 @@ export async function importStoryBundle(
           meta: entry.meta,
           space_kind: entry.spaceKind,
           real_prompt: entry.realPrompt,
+          looks: entry.looks,
           seed: entry.seed,
           locked: entry.locked,
         }))
@@ -520,6 +528,7 @@ export async function importStoryBundle(
             meta: asset.meta,
             space_kind: asset.spaceKind,
             real_prompt: asset.realPrompt,
+            looks: asset.looks,
             match_status:
               asset.matchStatus === "matched" && (asset.bibleKey == null || !bibleIdByKey.has(asset.bibleKey))
                 ? "new"

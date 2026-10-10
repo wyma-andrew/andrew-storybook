@@ -38,8 +38,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const rows = [
     ...extracted.characters.map((a) => ({ ...a, kind: "character" as const, spaceKind: null })),
-    ...extracted.locations.map((a) => ({ ...a, kind: "location" as const })),
-    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null })),
+    ...extracted.locations.map((a) => ({ ...a, kind: "location" as const, looks: [] })),
+    ...extracted.props.map((a) => ({ ...a, kind: "prop" as const, spaceKind: null, looks: [] })),
   ].map((a) => {
     const match = findMatch(bible.filter((b) => b.kind === a.kind), a.name);
     return {
@@ -53,6 +53,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       // sources, or the preset stops matching the text.
       space_kind: match ? match.space_kind ?? null : a.spaceKind,
       real_prompt: match ? match.real_prompt : a.realPrompt,
+      looks: match ? match.looks ?? [] : a.looks,
       match_status: match ? "matched" : "new",
     };
   });

@@ -1,0 +1,205 @@
+# Recap V2
+
+Covers: `app/(app)/(recap-v2)/**`, `app/api/(recap-v2)/**`,
+`components/recap-v2/**`, `lib/recap-v2*.ts`,
+`lib/prompts/recap-v2-translation.ts`, and the `recap_v2_projects` migration.
+
+## 2026-10-09 — Lines can be muted, keeping their picture
+
+**Decision, by the user:** some ASR lines say nothing worth narrating. A line
+can be muted (and restored) from the Lines list. Chosen over two rejected
+options: handing its picture to the neighbouring lines (their narration would
+not change, so their picture would slow down), and cutting its picture out
+(a jump cut, and a shorter video).
+
+- A muted line's picture plays at 1.0x over silence of the same length, with
+  no caption, so cuts and every other line's sync are unchanged.
+- Translate skips muted lines (story memory included) and leaves their old
+  text in place, so restoring a line brings its Burmese back. Render needs
+  text only for unmuted lines.
+- Mutes are saved per unit (`muted` on the units JSON) with the line edits;
+  Transcribe and Re-split rebuild units and clear them.
+
+## 2026-10-09 — Captions are timed from the measured voice
+
+**Bug (reported by the user — captions a little early):** each line's first
+caption started at the clip's start, ahead of the voice's own lead silence,
+and later pieces switched at a length-proportional estimate, which ran ahead
+of the speech. Now the first piece waits for the voice onset (−50dB, 10ms
+blocks) and each later piece switches where the voice resumes after the pause
+(≥0.12s) nearest its estimate; TTS pauses at "။"/"၊", which is where pieces
+are cut. With no pause within max(1s, 25% of the speech) the estimate stands.
+The preview (source timing, not rendered) was early for the same kind of
+reason: it showed a line from its picture window's start — the middle of the
+silence before the speech. It now shows a line from its Chinese speech start,
+splits it by length across that speech, and shows a faint sample when
+nothing is being said (so it can be dragged).
+
+**Captions clear when the voice stops (by the user — text stayed on after the
+line was said):** render and preview both clear a line's caption 0.3s after
+its speech ends instead of holding it through the following silence.
+
+## 2026-10-09 — Raw speech transcript is kept; lines can be re-split
+
+**Decision, by the user:** the comma bug showed that units alone cannot be
+re-split — they keep text and unit bounds but not the per-character stamps,
+and spreading characters evenly would put cuts where nobody is speaking.
+Transcribe now saves FunASR's raw segments and stamps to
+`recap-v2/<id>/asr/transcript.json` (tagged with the source object key), and
+"Re-split lines from saved transcript" (`POST …/resplit`) rebuilds units from
+it with the current rules, without calling the worker. It shares the
+transcribe job slot and, like Transcribe, clears translations and the render
+(IDs change). Projects transcribed before this have no saved transcript and
+must be transcribed once more.
+
+## 2026-10-09 — Step progress: coalesced writes, indeterminate stages
+
+**Bug (reported by the user):** progress bars stalled and skipped stages. The
+job dropped every progress write within 1.5s of the last one, with no trailing
+write, so a new stage could be lost and the bar sat on an old value. Now a new
+stage is written at once and repeats are coalesced into one trailing write;
+pending writes are flushed before the job's final save.
+
+Stages that cannot be measured — FunASR, a single ffmpeg pass, the upload —
+report a null fraction and show an indeterminate bar instead of a frozen one.
+Downloads report bytes; Translate reports each batch twice (translated,
+audited). Each step shows its own bar under its button, with an elapsed timer
+that restarts on reload (it is client-side).
+
+## 2026-10-09 — Bug fixed: commas inside a FunASR segment were dropped; captions split by sentence
+
+**Bug (found on a real render):** FunASR often returns one segment with several
+"，" inside (`我饱了，先去学校问妈妈，慢用二十岁了，…`, 5.3s). Only the segment's
+closing mark was put back on the stamped characters, so the tool's "close on a
+clause mark past 1.68s" rule never saw the inner commas and the unit ran to the
+5.6s cap — its Burmese came out as four sentences. Every mark in the segment
+text is now put back on the character before it; stamps that do not line up
+with the text fall back to the closing mark only. Projects transcribed before
+this keep their old units until transcribed again.
+
+**Captions (by the user, from the same render):** a line's whole translation
+was one 6-row caption. It is now shown a sentence at a time (split after "။";
+a piece over 40 characters splits after "၊" or at spaces), each for its share
+of the line's audio by length. The preview splits across the line's picture
+window the same way. The tool itself burns no captions, so this is not a port.
+
+## 2026-10-09 — Translation audit added; models are GPT-6
+
+**Decision, by the user:** the tool's `audit_and_repair_batch` runs after
+every translation batch, on `gpt-6-sol` (the translation model — repaired
+lines are heard, so they need the same prose quality). Each ID is checked for
+omissions, events borrowed from neighbours, shifted chains and adjacent
+duplicates; a failing ID is rewritten, a passing one kept byte-for-byte. Two
+attempts, then the same rows are re-audited in halves; an unvalidated window
+fails the step, as the tool does. Roughly doubles the Translate step's cost.
+The story-memory pass is `gpt-6-luna`.
+
+## 2026-10-09 — Smart Sync timing is recap-en-to-mm's, rule for rule (supersedes parts of the entry below)
+
+**Decision, by the user ("exactly like the original tool"):** three
+deviations from the tool in the first build were reverted.
+
+- **Segmentation** is the tool's `atomicize_timestamp_segments` on FunASR's
+  character stamps: close on a ≥1s pause, on a sentence mark, on a clause mark
+  once past 1.68s, past 1.68s with a ≥0.5s gap, past 4.2s with a ≥0.16s gap,
+  or at 5.6s; then fold ≤0.5s, ≤2-token units into the next one (dropping a
+  repeated name). FunASR's stamps carry no punctuation, so each segment's
+  closing mark is put back on its last stamped character. *Superseded:* the
+  first build's segment merging with an equal-share split of long segments.
+- **Picture past 1.25× is cut**, as the tool's `_sync_filter` does: play at
+  1.25× and trim the window to the line. *Superseded:* padding every short
+  line with unlimited silence so no picture was ever cut, plus a fixed 0.25s
+  gap after every line.
+- **Short pauses** is the tool's `trim_edge_silence`: RMS over 10ms at −50dB,
+  keep 0.05s before and 0.20s after the speech, but not below window/1.25 —
+  only as far as the raw clip reaches, so a cut can still happen. It is a
+  per-project switch, on by default (the tool's UI default). The R2 cache now
+  holds the voice's **raw** clip (24kHz mono) so the switch needs no new TTS.
+- Part filter order, `tpad` 0.5s and `-shortest` at the mux match the tool.
+
+- **ASR loop filter** (2026-10-09, by the user — FunASR produces the same
+  "我我我…" loops as Whisper): the tool's `_filter_local_whisper_artifact_units`
+  with its thresholds (segment ≥4s, ≥24 letters, top letter ≥72%, unique
+  ≤18%; unit dropped only if all its segments are such loops and it is
+  low-information), but without the tool's Whisper-only gate. Dropped units'
+  picture goes to their neighbours via full coverage. It is deliberately
+  conservative: shorter or phrase-level loops pass through.
+- **Voice rate is +0%** (2026-10-09, by the user): the tool speaks at Edge
+  TTS's default +0%, and Edge's Thiha/Nilar are the same Microsoft neural
+  voices Azure serves. The catalog's +20% (Movie Recap's measured pace) is
+  overridden for Recap V2 only.
+
+**Still different from the tool (not timing):** Azure instead of Edge TTS as
+the service, blur boxes on the source frame rather
+than the output frame, concurrent translation batches (source-only context),
+ no voice volume, no title/logo/extra text.
+
+## 2026-10-08 — Recap V2 is a separate menu built on recap-en-to-mm's Smart Sync
+
+**Decision, by the user:** port the timing approach of the user's Windows tool
+`recap-en-to-mm` as its own menu ("Recap V2") instead of changing Movie Recap.
+Source is a **Chinese**-narrated recap video; translation is in-app AI; voices
+are the existing Azure catalog.
+
+**Why a separate feature:** Movie Recap's planner was built for raw movies —
+shot borrowing, motion scoring, a 3s-kept/1s-skipped cadence — and its Recap
+Video mode inherits all of it, which is where picture and narration drifted
+apart. Smart Sync is much simpler and owns no shared code paths, so a new
+feature avoids re-arguing ~7000 lines of `history/movie-recap.md`.
+
+**The pipeline (three requests, one shared job slot on the row):**
+
+1. **Transcribe** — FunASR worker with `words=true`. Sentence/clause segments
+   are merged into units of ~4.2s (cap 5.6s); a segment longer than the cap is
+   split into equal shares on its character timestamps. Equal shares, not
+   greedy 4.2s pieces: greedy left a short tail whose only fix was pushing a
+   piece past the cap (caught by the test).
+2. **Translate** — a story-memory pass (Chinese name → fixed Burmese name),
+   then ID-locked batches of 40 with 6 units of read-only context either side.
+   A batch whose IDs come back wrong is retried with a correction, then split
+   in half. Batches run three at a time with **source-only** context, unlike
+   recap-en-to-mm's sequential batches, so a long source fits the request.
+   *(Superseded 2026-10-09 — the audit pass is now ported.)* recap-en-to-mm's separate audit pass was **not** ported (it doubles cost);
+   every line is editable instead.
+3. **Render (Smart Sync)** — every unit owns a window of source picture; the
+   silence between two units is split at its middle, so windows tile the whole
+   source. Narration leads: each window's picture is `setpts`-retimed to its
+   line. Picture never plays faster than **1.25×**; a line shorter than
+   window/1.25 is **padded with silence** instead of cutting picture (the
+   tool's "short pauses" rule), and every line gets 0.25s of trailing room.
+   Frame counts come from the cumulative narration clock at 30fps, so hundreds
+   of units stay within half a frame of the audio.
+
+**Accepted consequences:**
+
+- No slow-down cap: a long Burmese line slows its window as far as needed.
+  recap-en-to-mm's freeze fallback was off by default there too.
+- Blur areas are drawn and applied on the **source** frame, before framing,
+  zoom and mirror, because their job is covering the source's burned-in
+  Chinese subtitles.
+- Only 16:9 / 9:16 / 1:1 (Movie Recap's output sizes and `buildShotFilter`);
+  the tool's "Original" ratio is not offered.
+- Gated by the `movie_recap` feature flag, like Video Cutter.
+- Jobs run inside their request (`maxDuration` 300 committed) and ignore client
+  disconnects, so a reload keeps polling the same job. A row stuck `running`
+  for over 2 hours is treated as orphaned.
+- Not yet ported: logo, title/extra text, voice volume, per-line re-render.
+
+## 2026-10-09 — Output preview with a draggable subtitle
+
+**Decision, by the user:** the editor shows the output frame before rendering,
+and the subtitle height is set by dragging it there (the 80–93% select is
+gone). The user's condition: nothing about Smart Sync changes — this is
+editor-only.
+
+- `RecapV2OutputPreview` draws the render's order in CSS: blur boxes on the
+  source picture, fit into the frame, zoom the fitted picture, mirror, colour
+  grade, then the caption on the finished frame. Its caption sizing is the
+  same mapping Translate uses for the same ASS style.
+- Blur boxes are edited inside the output preview too (2026-10-09, by the
+  user — switching to a separate source view with native video controls read
+  as the preview resetting). They sit in the mirrored picture box and are
+  stored in source coordinates; a drag is flipped when mirrored. With "Crop to
+  fill", parts of the source outside the frame cannot be reached.
+- **Known gap:** the preview plays at source timing and shows the line under
+  the source playhead; only the render retimes picture to narration.

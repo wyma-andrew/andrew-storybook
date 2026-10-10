@@ -43,6 +43,16 @@ export const SYSTEM_PROMPTS = {
     "Everything in STRUCTURE SHELL below is already visible in the attached reference image — reproduce it identically from that image: same storey height, footprint and scale, same roof form, pitch, material and colour, same wall material, finish, colour and weathering, same time of day, light source direction, and colour palette. " +
     "Use the attached plan to place doorways, windows, stairs, and fixed props on the correct side for this view. The VIEWS bullet you paste above states what belongs at frame left and at frame right — follow it exactly and do not mirror the layout. " +
     "Render the finished place in the story's visual style, as it would be photographed from this position. No characters present unless specified. No text, captions, labels, watermarks, or UI overlays anywhere in the image.",
+  // The same view from farther back: the camera dollies straight out along the
+  // reference's own line of sight, so every landmark keeps its frame side and
+  // only shrinks. For shots where characters have walked on and the place's
+  // landmark should read as distant. Wording approved by the user 2026-10-10.
+  locationDistantView:
+    "Distant view of a location that already exists. ATTACH the approved reference image of this location, and its site plan if available. This is the SAME place in the same story — only the camera moves; the place itself is unchanged. " +
+    "Camera: move straight back along the reference image's own line of sight, about 30–40 metres farther away, keeping the same eye-level height (roughly 1.6 m), the same viewing direction, and the same lens. One frame, normal perspective. " +
+    "Every landmark in the reference keeps its frame side — what was at frame left stays at frame left, what was at frame right stays at frame right, nothing is mirrored — but now appears smaller and farther away, nearer the centre of the frame and the horizon. " +
+    "The ground between the new camera position and the old one is new foreground: fill it only with more of the same terrain, vegetation, path, and materials already visible in the reference, continuing the same ground plane and any path toward the camera. Do not add new landmarks, buildings, structures, or props. " +
+    "Reproduce the reference exactly in everything else: same time of day, light source direction, weather, colour palette, and visual style. No characters present. No text, captions, labels, watermarks, or UI overlays anywhere in the image.",
   // Second copy variant for locations (not a `kind` — locations have two
   // reference outputs), and the one generated FIRST. Geometry errors are
   // obvious on a plan and invisible in a perspective render, so the plan is
@@ -158,7 +168,7 @@ export type PromptHintText = { what: string; attach: string };
 // mid-task.
 export function locationPromptHints(
   spaceKind: SpaceKind | null | undefined
-): Record<"plan" | "view" | "sheet" | "angle", PromptHintText> {
+): Record<"plan" | "view" | "sheet" | "angle" | "distant", PromptHintText> {
   const plan = locationPlanLabel(spaceKind).toLowerCase();
   return {
     plan: {
@@ -177,7 +187,20 @@ export function locationPromptHints(
       what: "One more view, as a camera move on the place you already approved. Fill in which VIEW to render.",
       attach: `Re-attach the approved view & the ${plan} image.`,
     },
+    distant: {
+      what: "The approved view from 30–40 m farther back: same direction, every landmark smaller and more distant. Edit the distance in the copy if needed.",
+      attach: `Re-attach the approved view & the ${plan} image.`,
+    },
   };
 }
 
 export type SystemPromptKind = keyof typeof SYSTEM_PROMPTS;
+
+const ALT_ANGLE_VIEW_SLOT = "<paste the matching bullet from the VIEWS list below, e.g. 'Rear (from north)'>";
+
+// The plate for one site-map camera station: locationAltAngle with the view
+// line filled from the station instead of pasted by hand. Same construction —
+// the approved reference image is attached and the camera moves on it.
+export function locationStationPreset(view: string) {
+  return SYSTEM_PROMPTS.locationAltAngle.replace(ALT_ANGLE_VIEW_SLOT, view.replace(/\.\s*$/, ""));
+}

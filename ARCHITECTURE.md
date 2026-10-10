@@ -52,6 +52,8 @@ app/
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
     (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
+    (recap-v2)/recap-v2-projects/ Recap V2 CRUD, upload, transcribe, translate, Smart Sync render
+    (transcript)/transcript-projects/ Burmese video upload and speech-to-text
     labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
   (app)/                       Shared layout.tsx: renders MobileNavProvider, Sidebar and the
                                rounded panel once, so they survive client-side navigation here
@@ -61,6 +63,10 @@ app/
       movie-recap/             Recap project list + five-step editor (URL: /movie-recap)
     (translate)/
       translate/               Translate project list, upload and editor (URL: /translate)
+    (recap-v2)/
+      recap-v2/                Recap V2 project list, upload and editor (URL: /recap-v2)
+    (transcript)/
+      transcript/              Burmese transcript list, upload and viewer (URL: /transcript)
     account/                   Email display and password change
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
@@ -70,7 +76,7 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Translate, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Recap V2, Transcript, Translate, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -95,6 +101,8 @@ lib/
 
 supabase/migrations/           Ordered, authoritative database schema history
 workers/voice-lab/             Optional Python VoxCPM2 inference service for lab tests
+workers/funasr/                FunASR Paraformer-zh speech worker (Chinese, character stamps)
+workers/whisper-mm/            Whisper large-v3 speech worker (Burmese)
 history/                       Feature decisions and rejected alternatives
 demo/                          Static visual references; not part of the app
 proxy.ts                       Session refresh and page-route auth redirects
@@ -147,7 +155,7 @@ is granted by default, including to accounts that predate the feature — see
 
 ### API to AI
 
-`lib/openai.ts` calls `gpt-5.6-luna` through Chat Completions with strict JSON
+`lib/openai.ts` calls `gpt-6-luna` through Chat Completions with strict JSON
 schemas. The operations are:
 
 - `extractAssets()` — characters, locations, and story-relevant props.
@@ -345,6 +353,38 @@ their original timing. Users can switch between original and synced timing witho
 discarding either; an explicit delete removes synced timing. The server downloads the original video, burns the blur
 and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 
+### Recap V2
+
+- UI: `app/(app)/(recap-v2)/recap-v2/` and `components/recap-v2/RecapV2Editor.tsx`
+- API: `app/api/(recap-v2)/recap-v2-projects/`
+- Storage: `recap_v2_projects` (gated by `movie_recap`) and `recap-v2/<id>/` in R2
+
+A Chinese-narrated recap video becomes a Burmese-narrated one. **Transcribe**
+(`lib/recap-v2-transcribe.ts`) reads the speech with the FunASR worker's
+character timestamps and `buildRecapV2Units()` cuts it into ~4.2s units whose
+picture windows tile the whole source; units live as JSONB on the row, and the
+raw speech transcript is kept in R2 so `…/resplit` can rebuild units for free.
+**Translate** (`lib/recap-v2-translate.ts`) builds a story memory, then
+translates ID-locked batches with OpenAI; each line stays editable. **Render**
+(`lib/recap-v2-render.ts`) synthesizes each line through `lib/tts/` (raw clip
+cached by content in R2), optionally trims its edge silence ("Short pauses"),
+retimes each window's picture to its line (max 1.25×, then the window's tail
+is cut; frame-locked to the cumulative narration clock), applies source-frame blur and
+Movie Recap's `buildShotFilter` look, concatenates, burns captions, and muxes.
+All three share one job slot (`job_*` columns) that the editor polls.
+
+### Transcript
+
+- UI: `app/(app)/(transcript)/transcript/` and `components/transcript/TranscriptEditor.tsx`
+- API: `app/api/(transcript)/transcript-projects/`
+- Storage: `transcript_projects` (gated by `movie_recap`) and `transcripts/<id>/` in R2
+- Worker: `workers/whisper-mm/` (Whisper large-v3 on Modal, `lib/transcript-worker.ts`)
+
+A Burmese video uploads to R2 (same multipart flow as Recap V2); Transcribe
+extracts Opus audio and sends it to the Whisper worker; the segments become
+plain text (`transcript_text`), shown in a Transcript tab with copy and .txt
+download. No timestamps are kept.
+
 ### Burmese Voice Lab
 
 - UI: `app/(app)/labs/voice/`
@@ -415,6 +455,14 @@ inherits the bible prompt and location `space_kind`; an unmatched asset starts
 as `new`. Promotion creates a `bible_entries` row and changes the chapter asset
 to `matched`.
 
+Extraction fills a `storyAnalysis` (scene → place map, place groupings,
+character arcs) before any asset; it is logged, not stored. A character whose
+appearance changes lastingly gets `looks` (jsonb on `chapter_assets` and
+`bible_entries`): IDENTITY LOCK in `real_prompt` holds the shared traits, each
+look its own appearance and wardrobe and its own sheet copy
+(`lib/character-looks.ts`). Storyboard shots pick a look in
+`assets_used[].look`; uploaded renders carry `chapter_images.look_key`.
+
 Locations use structured `STRUCTURE SHELL`, `FIXED LAYOUT`, optional `VIEWS`,
 and `SPATIAL RULES`. One physical place is merged during extraction. Location
 reference images are URL-only and move into the bible only through explicit
@@ -434,7 +482,11 @@ then replaces the chapter's existing scenes and shots. The model first returns a
 **site map** — which physical place each `[SCENE]` heading plays in, and how the
 places connect (the layout anchor a move passes through, and its screen
 direction across the cut) — and shoots the chapter against it. The map is stored
-on `chapters.site_map` (`lib/site-map.ts` parses and renders it). Every shot stores its
+on `chapters.site_map` (`lib/site-map.ts` parses and renders it). Each place in
+it lists camera stations (`reference` = the location reference image's own
+position, plus any reverse or raised view the shots need); every shot names its
+station in `assets_used[].station`, and the storyboard's Camera plates panel
+copies and stores one empty plate per extra station (`chapter_images.station_key`). Every shot stores its
 beat, duration, aspect, camera, framing scale, motion mode, image prompt, video
 prompt, assets used, and start/end continuity state. Each scene also stores a `lighting` line
 shared by its shots, composed into copied prompts rather than baked into them. Duration is clamped to 1–10 seconds. The
@@ -591,6 +643,8 @@ location/character reference-image rows remain URL-only and unrelated to it. The
 | Feature | Decision record |
 |---|---|
 | Asset extraction, sync, props, location merging | `history/asset-extraction.md` |
+| Character looks (per-stage sheets) | `history/character-looks.md` |
+| Camera stations and plates | `history/camera-stations.md` |
 | Prompt-hint tooltip behavior | `history/prompt-hint-tooltip.md` |
 | Visual styles and regional text | `history/visual-styles.md` |
 | Story regions and cultural/historical adaptation | `history/regions.md` |

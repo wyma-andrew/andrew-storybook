@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
+import { parseLooks } from "@/lib/character-looks";
 import { mapChapterAsset } from "@/lib/api/map";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -8,6 +9,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await supabaseRoute();
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (body.realPrompt !== undefined) patch.real_prompt = body.realPrompt;
+  if (body.looks !== undefined) patch.looks = parseLooks(body.looks);
   if (body.name !== undefined) patch.name = body.name;
   if (body.meta !== undefined) patch.meta = body.meta;
   const { data, error } = await db.from("chapter_assets").update(patch).eq("id", id).select("*").single();

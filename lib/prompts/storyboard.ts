@@ -46,8 +46,27 @@ export const SITE_MAP_SCHEMA = {
             description:
               "One short line on what happens here — never how it looks, which the location asset's realPrompt already carries.",
           },
+          stations: {
+            type: "array",
+            description:
+              "CAMERA STATIONS (see siteMapBlock): the camera positions this chapter's shots of this place use. The first is always key 'reference'. Empty array only when location is empty.",
+            items: {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "'reference' for the first; otherwise a short lowercase ascii slug, unique within the place" },
+                label: { type: "string", description: "1-4 English words naming the view" },
+                view: {
+                  type: "string",
+                  description:
+                    "Where the camera stands and which way it looks, named against fixed features of the location, then what sits at frame left, centre, frame right, and in the background from there, with how near or far each landmark is.",
+                },
+              },
+              required: ["key", "label", "view"],
+              additionalProperties: false,
+            },
+          },
         },
-        required: ["location", "sceneSlugs", "note"],
+        required: ["location", "sceneSlugs", "note", "stations"],
         additionalProperties: false,
       },
     },
@@ -157,8 +176,16 @@ export const STORYBOARD_SCHEMA = {
                     properties: {
                       name: { type: "string", description: "exact name from Known Assets" },
                       kind: { type: "string", enum: ["character", "location", "prop"] },
+                      look: {
+                        type: "string",
+                        description: "for a character listed with LOOKS in Known Assets: the key of the look this shot shows. Empty string for every other asset.",
+                      },
+                      station: {
+                        type: "string",
+                        description: "for a location: the key of the site-map station this shot's camera stands at. Empty string for characters and props.",
+                      },
                     },
-                    required: ["name", "kind"],
+                    required: ["name", "kind", "look", "station"],
                     additionalProperties: false,
                   },
                 },
@@ -257,7 +284,8 @@ export function storyboardSystemPrompt(
     "ASSETS MATCHING:\n" +
     "- You are provided with a list of Known Assets (characters, locations, and/or props, given below) — this tells the user which reference images/prompts to attach when generating.\n" +
     "- When generating a shot's `prompt`, check which Known Assets appear in your text description.\n" +
-    "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene." +
+    "- Every asset mentioned or depicted MUST be strictly listed in the assetsUsed array by its exact name. Cross-check before finalizing. Only include assets truly present in the shot's content, not every asset in the scene.\n" +
+    "- A character listed with LOOKS has one reference sheet per stage of the story. Set its assetsUsed.look to the key of the look whose scenes include this shot's scene; when the script changes the character's appearance mid-scene, use the look the shot actually shows. Never mix two looks' hair or wardrobe in one shot, and write startState/endState wardrobe from the chosen look." +
     siteMapBlock() +
     lightingBlock() +
     shotScaleBlock() +
@@ -330,7 +358,7 @@ export function regenerateSceneSystemPrompt(
     storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId, format) +
     "\n\nSCOPE — SINGLE SCENE REGENERATION:\n" +
     (target.siteMap
-      ? "This chapter's SITE MAP is already settled — do NOT produce a new one, and do not renegotiate which place this scene plays in. Shoot the scene against it, including its establishing-coverage and travel-direction rules:\n" +
+      ? "This chapter's SITE MAP is already settled — do NOT produce a new one, and do not renegotiate which place this scene plays in. Shoot the scene against it, including its establishing-coverage and travel-direction rules, and put every shot at one of the stations it lists for that place — their plates may already be rendered, so never invent a new station key:\n" +
         target.siteMap +
         "\n"
       : "This chapter has no stored site map, so judge this scene's place and any establishing coverage from the script alone.\n") +

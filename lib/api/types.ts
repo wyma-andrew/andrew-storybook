@@ -3,6 +3,8 @@ import type { UserFeatures } from "@/lib/constants/features";
 import type { Region } from "@/lib/constants/regions";
 import type { ShotScale } from "@/lib/constants/shot-scales";
 import type { MotionMode } from "@/lib/constants/motion-styles";
+import type { CharacterLook } from "@/lib/character-looks";
+import type { SiteMap } from "@/lib/site-map";
 import type {
   MovieRecapAspectRatio,
   MovieRecapFitMode,
@@ -344,6 +346,7 @@ export type Chapter = {
   status: "script" | "assets" | "storyboard" | "done";
   script: unknown | null;
   aspectRatio: string | null; // null = use the story's default
+  siteMap: SiteMap | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -376,6 +379,8 @@ export type ChapterImage = {
   // regenerating a scene drops the link on its own and the image becomes unused.
   chapterAssetId: string | null;
   shotId: string | null;
+  lookKey: string | null;
+  stationKey: string | null;
   // What it is attached to, resolved server-side for display: the asset's name,
   // or "1.2" for a shot. Null means unused — never linked, or the target is gone.
   linkedLabel: string | null;
@@ -395,6 +400,7 @@ export type BibleEntry = {
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
+  looks: CharacterLook[];
   seed: string | null;
   locked: boolean;
   images: ReferenceImage[];
@@ -409,6 +415,7 @@ export type ChapterAsset = {
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
+  looks: CharacterLook[];
   matchStatus: "matched" | "new" | "local" | "stale";
   images: ReferenceImage[];
 };
@@ -462,7 +469,9 @@ export type Shot = {
   assetsUsed: ShotAsset[]; // which known characters/locations to attach as reference when generating this shot
 };
 
-export type ShotAsset = { name: string; kind: AssetKind };
+// look: the character look this shot shows, for a character that has looks.
+// station: the site-map camera station a location is shot from.
+export type ShotAsset = { name: string; kind: AssetKind; look?: string; station?: string };
 
 export type Scene = {
   id: string;

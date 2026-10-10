@@ -16,6 +16,27 @@ Covers: `lib/constants/visual-styles.ts`, `lib/visual-styles.ts`, `lib/api/map.t
   3D Animation must stay first in the array. Reordering silently restyles every
   story whose style was never set.
 
+## 2026-10-09 — Added "Sacred Historical Drama"
+
+`id: "sacred-historical-drama"`, swatch `#c98a3c`. Ultra photorealistic
+live-action historical-film look for Buddha-era stories: real human figures,
+realistic skin and woven robe texture, sacred tranquil atmosphere.
+
+This is the first photoreal Buddha-era style. The 2026-09-10 decision that made
+Mythic Fantasy's Buddha variant non-photorealistic still stands for that style;
+this one is photoreal on purpose. If its characters read as contemporary
+people, tighten the period wording here rather than editing the other styles.
+
+Distilled from a Buddha sermon reference prompt. Left out on purpose: the
+Buddha's face, age, skin tone, earlobes, curls, teaching gesture, the Sarnath
+grove, and golden morning light — those are the character asset, the shot, the
+location, and the scene's `[Lighting]` line, and in the style they would turn
+every character into the Buddha. "Cinematic depth of field" also dropped (per
+shot, see 2026-09-11). From the negative prompt only style-level items were kept;
+face items (aged, wrinkles, "Burmese-looking") and crowns/jewelry were dropped
+because kings and laypeople appear in these stories. Same text for all three
+regions.
+
 ## 2026-10-04 — Added "Cozy Hand-drawn Anime"
 
 `id: "cozy-hand-drawn-anime"`, swatch `#9bb07a`. First style for the cozy

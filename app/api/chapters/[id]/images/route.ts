@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // an unused image, not a missing join.
   const { data, error } = await db
     .from("chapter_images")
-    .select("*, chapter_assets(name), shots(index, scenes(index))")
+    .select("*, chapter_assets(name, looks), shots(index, scenes(index))")
     .eq("chapter_id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -58,6 +58,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // unused, which is the honest state — nothing generated them.
   const chapterAssetId = typeof body?.chapterAssetId === "string" ? body.chapterAssetId : null;
   const shotId = typeof body?.shotId === "string" ? body.shotId : null;
+  const lookKey = chapterAssetId && typeof body?.lookKey === "string" ? body.lookKey : null;
+  const stationKey = chapterAssetId && typeof body?.stationKey === "string" ? body.stationKey : null;
   if (chapterAssetId && shotId) {
     return NextResponse.json({ error: "An image attaches to an asset or a shot, not both." }, { status: 400 });
   }
@@ -71,6 +73,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     size_bytes: typeof item.sizeBytes === "number" ? item.sizeBytes : null,
     chapter_asset_id: chapterAssetId,
     shot_id: shotId,
+    look_key: lookKey,
+    station_key: stationKey,
   }));
   if (rows.some((r: (typeof rows)[number]) => !r.file_name || !r.object_key || !r.url)) {
     return NextResponse.json({ error: "Each image needs fileName, objectKey and url." }, { status: 400 });

@@ -27,6 +27,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       meta: asset.meta,
       space_kind: asset.space_kind ?? null,
       real_prompt: asset.real_prompt,
+      looks: asset.looks ?? [],
       locked: false,
     })
     .select("*")

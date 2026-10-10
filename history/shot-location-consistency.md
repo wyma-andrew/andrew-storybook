@@ -157,5 +157,6 @@ form that works.
   field per shot, so the app knows which plate to attach. Deliberately not
   built yet; the prompt-side rules were tried first because they cost no extra
   image generation.
+  **Built 2026-10-10** — see `history/camera-stations.md`.
 - Shots generated before this change keep their text; the rules apply on the
   next generation or scene regeneration.
