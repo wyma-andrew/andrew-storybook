@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject, mapMovieRecapRangeRender } from "@/lib/api/map";
 import { runMovieRecapRender } from "@/lib/movie-recap-render";
+import { dispatchRecapJob, remoteRecapJobsEnabled } from "@/lib/recap-job-dispatch";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export const runtime = "nodejs";
@@ -42,20 +43,62 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }).eq("id", id).neq("render_status", "running").select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "A render is already in progress." }, { status: 409 });
 
+  const restorePreviousRenderState = () => db.from("movie_recap_projects").update({
+    render_status: project.renderStatus,
+    render_is_mock: project.renderIsMock,
+    render_error: project.renderError,
+    render_stage: project.renderStage,
+    render_progress_current: project.renderProgressCurrent,
+    render_progress_total: project.renderProgressTotal,
+    render_started_at: project.renderStartedAt,
+  }).eq("id", id);
+
   const { data: rangeRow, error: insertError } = await db.from("movie_recap_range_renders")
     .insert({ project_id: id, start_beat: startBeat, end_beat: endBeat })
     .select("*").single();
   if (insertError || !rangeRow) {
-    await db.from("movie_recap_projects").update({
-      render_status: project.renderStatus,
-      render_is_mock: project.renderIsMock,
-      render_error: project.renderError,
-      render_stage: project.renderStage,
-      render_progress_current: project.renderProgressCurrent,
-      render_progress_total: project.renderProgressTotal,
-      render_started_at: project.renderStartedAt,
-    }).eq("id", id);
+    await restorePreviousRenderState();
     return NextResponse.json({ error: insertError?.message ?? "Could not start range render." }, { status: 500 });
+  }
+
+  if (remoteRecapJobsEnabled()) {
+    // Queued on GitHub Actions; the poller watches the row and the ranges list
+    // from here. See lib/recap-job-dispatch.ts.
+    try {
+      await dispatchRecapJob({
+        kind: "range", projectId: id, rangeId: rangeRow.id, startBeat, endBeat,
+        previous: {
+          renderStatus: project.renderStatus,
+          renderIsMock: project.renderIsMock,
+          renderError: project.renderError,
+          renderStage: project.renderStage,
+          renderProgressCurrent: project.renderProgressCurrent,
+          renderProgressTotal: project.renderProgressTotal,
+          renderStartedAt: project.renderStartedAt,
+          renderCompletedAt: project.renderCompletedAt,
+        },
+      });
+    } catch (dispatchError) {
+      const message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+      await db.from("movie_recap_range_renders").update({
+        status: "failed", error: message, updated_at: new Date().toISOString(),
+      }).eq("id", rangeRow.id);
+      await restorePreviousRenderState();
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+    const [projectResult, rangeResult] = await Promise.all([
+      db.from("movie_recap_projects").select("*").eq("id", id).single(),
+      db.from("movie_recap_range_renders").select("*").eq("id", rangeRow.id).single(),
+    ]);
+    if (projectResult.error || rangeResult.error || !projectResult.data || !rangeResult.data) {
+      return NextResponse.json({ error: "Could not load the queued range render." }, { status: 500 });
+    }
+    return NextResponse.json({
+      project: mapMovieRecapProject(projectResult.data),
+      range: mapMovieRecapRangeRender(rangeResult.data),
+      renderLog: null,
+      queued: true,
+    });
   }
 
   const renderLog = await runMovieRecapRender(db, project, { range: { id: rangeRow.id, startBeat, endBeat } });

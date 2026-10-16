@@ -1,0 +1,126 @@
+# Movie Recap narration (script) and render runs, dispatched by the app when
+# RECAP_JOB_RUNNER=github — see lib/recap-job-dispatch.ts. The app has already
+# claimed the project row; this job runs the pipeline and writes the result back.
+name: Recap job
+
+run-name: "recap ${{ inputs.kind }} · ${{ inputs.project_id }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: script | render | range
+        required: true
+        type: choice
+        options: [script, render, range]
+      project_id:
+        required: true
+        type: string
+      mock:
+        type: string
+        default: "false"
+      range_id:
+        type: string
+        default: ""
+      start_beat:
+        type: string
+        default: ""
+      end_beat:
+        type: string
+        default: ""
+      previous:
+        description: Pre-claim render columns (JSON), range renders only
+        type: string
+        default: ""
+
+# One run per project at a time; the row claim already enforces this, so a
+# second dispatch would only be a stray one.
+concurrency:
+  group: recap-${{ inputs.project_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+      TTS_AZURE_KEY: ${{ secrets.TTS_AZURE_KEY }}
+      TTS_AZURE_REGION: ${{ secrets.TTS_AZURE_REGION }}
+      TTS_AZURE_ENDPOINT: ${{ secrets.TTS_AZURE_ENDPOINT }}
+      VOICE_LAB_WORKER_URL: ${{ secrets.VOICE_LAB_WORKER_URL }}
+      VOICE_LAB_WORKER_TOKEN: ${{ secrets.VOICE_LAB_WORKER_TOKEN }}
+      # Same font setup as the Dockerfile: Ubuntu's ffmpeg carries libass,
+      # harfbuzz and libopus; Medium/SemiBold Myanmar come from upstream.
+      FFMPEG_PATH: ffmpeg
+      MOVIE_RECAP_SUBTITLE_FONT: Noto Sans Myanmar
+      MOVIE_RECAP_SUBTITLE_FONT_MEDIUM: Noto Sans Myanmar Medium
+      MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD: Noto Sans Myanmar SemiBold
+      NOTO_MYANMAR_VERSION: "2.107"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Before ffmpeg, so the "Mark row failed" step can still run tsx if the
+      # apt install is what breaks.
+      - run: npm ci
+
+      - name: Install ffmpeg and Myanmar fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-core fontconfig
+          curl -fsSL -o /tmp/noto.zip "https://github.com/notofonts/myanmar/releases/download/NotoSansMyanmar-v${NOTO_MYANMAR_VERSION}/NotoSansMyanmar-v${NOTO_MYANMAR_VERSION}.zip"
+          python3 -m zipfile -e /tmp/noto.zip /tmp/noto
+          sudo mkdir -p /usr/share/fonts/truetype/noto-myanmar
+          sudo cp /tmp/noto/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-Medium.ttf \
+                  /tmp/noto/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-SemiBold.ttf \
+                  /usr/share/fonts/truetype/noto-myanmar/
+          sudo fc-cache -f
+          ffmpeg -hide_banner -filters | grep -E ' (subtitles|ass|drawtext) '
+          ffmpeg -hide_banner -encoders | grep libopus
+
+      - name: Run job
+        env:
+          KIND: ${{ inputs.kind }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          MOCK: ${{ inputs.mock }}
+          RANGE_ID: ${{ inputs.range_id }}
+          START_BEAT: ${{ inputs.start_beat }}
+          END_BEAT: ${{ inputs.end_beat }}
+          PREVIOUS: ${{ inputs.previous }}
+        run: |
+          case "$KIND" in
+            script) npx tsx scripts/recap-job.ts script "$PROJECT_ID" ;;
+            render) npx tsx scripts/recap-job.ts render "$PROJECT_ID" $([ "$MOCK" = "true" ] && echo --mock) ;;
+            range)  npx tsx scripts/recap-job.ts range "$PROJECT_ID" "$RANGE_ID" "$START_BEAT" "$END_BEAT" "$PREVIOUS" ;;
+          esac
+
+      # A killed runner (timeout, cancelled from the Actions tab) never reaches
+      # the pipeline's own catch; without this the row stays "running" forever.
+      # Every update is guarded on the row still being "running", so a run that
+      # already wrote its own failure is left alone.
+      - name: Mark row failed
+        if: failure() || cancelled()
+        env:
+          KIND: ${{ inputs.kind }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          RANGE_ID: ${{ inputs.range_id }}
+          PREVIOUS: ${{ inputs.previous }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          npx tsx scripts/recap-job.ts fail "$KIND" "$PROJECT_ID" "$RANGE_ID" "$PREVIOUS" "The GitHub Actions run stopped: $RUN_URL"

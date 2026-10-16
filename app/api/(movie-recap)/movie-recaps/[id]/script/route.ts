@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import { runMovieRecapScript } from "@/lib/movie-recap-script";
+import { dispatchRecapJob, remoteRecapJobsEnabled } from "@/lib/recap-job-dispatch";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export const runtime = "nodejs";
@@ -34,7 +35,18 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     .maybeSingle();
   if (!claimed) return NextResponse.json({ error: "The script is already being built." }, { status: 409 });
 
-  await runMovieRecapScript(db, project);
+  if (remoteRecapJobsEnabled()) {
+    // The poller watches the row from here; see lib/recap-job-dispatch.ts.
+    try {
+      await dispatchRecapJob({ kind: "script", projectId: id });
+    } catch (dispatchError) {
+      const message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+      await db.from("movie_recap_projects").update({ script_status: "failed", script_error: message }).eq("id", id);
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  } else {
+    await runMovieRecapScript(db, project);
+  }
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });

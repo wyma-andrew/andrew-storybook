@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import { runMovieRecapRender } from "@/lib/movie-recap-render";
+import { dispatchRecapJob, remoteRecapJobsEnabled } from "@/lib/recap-job-dispatch";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export const runtime = "nodejs";
@@ -45,9 +46,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "A render is already in progress." }, { status: 409 });
   }
 
-  // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
-  // its own status/result onto the row rather than throwing.
-  const renderLog = await runMovieRecapRender(db, project, { mock });
+  let renderLog = null;
+  if (remoteRecapJobsEnabled()) {
+    // Queued on GitHub Actions; the poller watches the row from here. The shot
+    // log stays in the runner's output — see lib/recap-job-dispatch.ts.
+    try {
+      await dispatchRecapJob({ kind: "render", projectId: id, mock });
+    } catch (dispatchError) {
+      const message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+      await db.from("movie_recap_projects").update({
+        render_status: "failed", render_error: message, render_completed_at: new Date().toISOString(),
+      }).eq("id", id);
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  } else {
+    // Synchronous, like the other AI passes (analyze/storyboard/sync) — writes
+    // its own status/result onto the row rather than throwing.
+    renderLog = await runMovieRecapRender(db, project, { mock });
+  }
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });

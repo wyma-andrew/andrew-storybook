@@ -4,8 +4,42 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `app/api/(movie-recap)/movie-recaps/**`, `components/movie-recap/**`,
 `lib/constants/movie-recap.ts`, `lib/movie-recap.ts`,
 `lib/movie-recap-render.ts`, `lib/movie-recap-range.ts`, `lib/prompts/movie-recap-narration.ts`,
-`lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, and the `movie_recap_projects`
+`lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, `lib/recap-job-dispatch.ts`,
+`scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
+
+## 2026-10-17 — Script and render can run on GitHub Actions
+
+**Decision, by the user:** the narration build (script) and the full, mock and
+range renders run on GitHub Actions when `RECAP_JOB_RUNNER=github`
+(`lib/recap-job-dispatch.ts`, `.github/workflows/recap-job.yml`,
+`scripts/recap-job.ts`). The route claims the row exactly as before, dispatches
+`workflow_dispatch`, and returns the still-"running" row; the wizard's existing
+2-second poller shows progress and toasts the outcome when the row settles.
+Unset, everything still runs in-process.
+
+**Why:** neither the local machine nor free hosting can carry these runs — free
+hosts cap function time (`maxDuration = 300`) and have no libass ffmpeg or
+Myanmar fonts (see the 2026-09-27 Vercel entry), and a local render ties up the
+laptop. A runner gets ffmpeg + fonts per job and up to 6 hours.
+
+**Rejected:** a DB-backed job queue with a polling worker — needs an always-on
+host, which is the thing that is missing. Storing the render log server-side so
+queued renders can still append to browser history — it is browser-only on
+purpose; for queued runs it lives only in the Actions log.
+
+**Consequences:**
+- Cancel needs no change: both pipelines already re-read their status and stop
+  when it is no longer "running", so the in-memory `AbortController` map simply
+  never finds a remote run and the row write does the work.
+- A range render restores the project's pre-claim render columns. The runner
+  only ever sees the claimed row, so the route sends that snapshot as a
+  workflow input (`previous`); losing it would leave the row at "running".
+- A killed runner (timeout, cancelled in the Actions tab) never reaches the
+  pipeline's catch; the workflow's `if: failure() || cancelled()` step marks the
+  row failed, guarded on it still being "running".
+- Runs take ~30–60s to start. Beat Re Build and beat previews stay on the app
+  server.
 
 ## 2026-10-09 — GPT-5.6 models moved to GPT-6
 

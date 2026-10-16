@@ -268,7 +268,8 @@ export type ApiSchema = {
     // iterating on overlay/subtitle design.
     // `renderLog` is how every shot actually came out. It rides on the response
     // instead of being stored: the browser keeps a per-project history of it in
-    // localStorage. Null when the render failed.
+    // localStorage. Null when the render failed — and when it was queued on
+    // GitHub Actions (renderStatus comes back "running"; poll the row).
     POST: {
       data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null };
       body: { mock?: boolean };
@@ -277,7 +278,8 @@ export type ApiSchema = {
   "movie-recaps/:id/render/ranges": {
     GET: { data: MovieRecapRangeRender[] };
     POST: {
-      data: { project: MovieRecapProject; range: MovieRecapRangeRender; renderLog: MovieRecapRenderLog | null };
+      // `queued`: handed to GitHub Actions; the range row is still "running".
+      data: { project: MovieRecapProject; range: MovieRecapRangeRender; renderLog: MovieRecapRenderLog | null; queued?: boolean };
       body: { startBeat: number; endBeat: number };
     };
   };

@@ -103,6 +103,36 @@ after about 13 minutes of source):
 "$FFMPEG_PATH" -encoders | grep libopus
 ```
 
+## Movie Recap jobs on GitHub Actions
+
+The narration build (script) and the final render — full, mock and beat-range —
+can run on GitHub Actions instead of inside the Next server
+(`lib/recap-job-dispatch.ts`, `.github/workflows/recap-job.yml`,
+`scripts/recap-job.ts`). The route claims the row as usual, dispatches the
+workflow and returns; the runner installs ffmpeg + the Myanmar fonts, runs the
+same pipeline and writes status/progress onto the row, which the wizard
+already polls. Cancel works unchanged (the pipeline re-reads the row).
+
+1. Repo → Settings → Secrets and variables → Actions → add these secrets:
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_BASE_URL`,
+   `TTS_AZURE_KEY`, `TTS_AZURE_REGION` (and `TTS_AZURE_ENDPOINT`,
+   `VOICE_LAB_WORKER_URL`, `VOICE_LAB_WORKER_TOKEN` if you use them).
+2. Create a fine-grained personal access token limited to this repository with
+   **Actions: Read and write**.
+3. On the app server set `RECAP_JOB_RUNNER=github`,
+   `GITHUB_DISPATCH_TOKEN=<token>`, `GITHUB_DISPATCH_REPO=owner/repo` and
+   optionally `GITHUB_DISPATCH_REF` (default `main` — the workflow file must be
+   on that branch).
+
+A run takes ~30–60s to start. Jobs time out after 300 minutes (GitHub's hard
+cap is 6 hours); a killed run marks the row failed with a link to the run.
+Public repositories get free Linux minutes; private ones share the account's
+monthly quota. The per-shot render log is not sent back to the browser for
+these runs — it is in the Actions log. Beat Re Build and beat previews still
+run on the app server.
+
 ## Movie Recap scene detection (PySceneDetect)
 
 The render pipeline reads the source twice — its audio (Whisper) and its

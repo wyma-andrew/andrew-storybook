@@ -260,6 +260,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // without the user having asked for anything, so it asks.
   const [dirtyBeats, setDirtyBeats] = useState(0);
   const pendingBeatIndexes = useRef(new Set<number>());
+  // Runs the server queued on GitHub Actions (RECAP_JOB_RUNNER=github): their
+  // POST returns at once with the row still "running", so the outcome toast
+  // comes from the poller seeing the row settle instead of from the response.
+  const queuedRuns = useRef({ script: false, render: false });
   const savingBeats = new Set(pendingBeatIndexes.current);
   const runningBeat = beatRebuilds.find((task) => task.status === "running");
   const checkingBeat = (runningBeat?.input?.body as { index?: number } | undefined)?.index ?? null;
@@ -421,7 +425,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       return;
     }
     setProject(result.data);
-    if (result.data.scriptStatus === "ready") toast.success("Narration timeline ready.");
+    if (result.data.scriptStatus === "running") {
+      queuedRuns.current.script = true;
+      toast.info("Narration queued on GitHub Actions. It can take a minute to start.");
+    }
+    else if (result.data.scriptStatus === "ready") toast.success("Narration timeline ready.");
     else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The script run failed.");
   }
 
@@ -479,7 +487,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     // The shot log is not stored server-side, so it has to be kept now or lost:
     // this response is the only time the browser ever sees it.
     if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
-    if (result.data.renderStatus === "done") {
+    if (result.data.renderStatus === "running") {
+      queuedRuns.current.render = true;
+      toast.info("Render queued on GitHub Actions. It can take a minute to start.");
+    }
+    else if (result.data.renderStatus === "done") {
       if (result.data.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
       else toast.success(
         mock
@@ -491,7 +503,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   async function renderRecapRange(startBeat: number, endBeat: number) {
-    if (!project) return;
+    if (!project) return null;
     const id = project.id;
     merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
     const result = await renderRange({
@@ -501,13 +513,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     });
     if (result.data) {
       setProject(result.data.project);
-      if (result.data.range.warning) toast.warning(`Beats ${startBeat}–${endBeat} rendered with a timeline warning.`);
+      if (result.data.queued) {
+        toast.info(`Beats ${startBeat}–${endBeat} queued on GitHub Actions.`);
+        return result.data.range.id;
+      }
+      else if (result.data.range.warning) toast.warning(`Beats ${startBeat}–${endBeat} rendered with a timeline warning.`);
       else toast.success(`Beats ${startBeat}–${endBeat} rendered.`);
     } else {
       const refreshed = await pollProject({ params: { id }, force: true });
       if (refreshed.data) setProject(refreshed.data);
       toast.error(result.error?.error ?? "Could not render the selected beats.");
     }
+    return null;
   }
 
   async function cancelRecapRender() {
@@ -788,6 +805,21 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }, 2000);
     return () => clearInterval(interval);
   }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject]);
+
+  useEffect(() => {
+    if (!queuedRuns.current.script || !scriptStatus || scriptStatus === "running") return;
+    queuedRuns.current.script = false;
+    if (scriptStatus === "ready") toast.success("Narration timeline ready.");
+    else if (scriptStatus === "failed") toast.error(project?.scriptError ?? "The script run failed.");
+  }, [scriptStatus, project?.scriptError]);
+
+  useEffect(() => {
+    if (!queuedRuns.current.render || !renderStatus || renderStatus === "running") return;
+    queuedRuns.current.render = false;
+    if (renderStatus === "failed") toast.error(project?.renderError ?? "Render failed.");
+    else if (project?.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
+    else toast.success("Render finished.");
+  }, [renderStatus, project?.renderError, project?.renderWarning]);
 
   // Which blur box the preview's drag handles belong to. Per visit, like any
   // other selection — it is not part of the project.
@@ -1121,7 +1153,8 @@ function Review({
   project: MovieRecapProject;
   onRenderPreview: (mock?: boolean) => void;
   rendering: boolean;
-  onRenderRange: (startBeat: number, endBeat: number) => Promise<void>;
+  // Resolves to the range id when the render was queued on GitHub Actions.
+  onRenderRange: (startBeat: number, endBeat: number) => Promise<string | null>;
   renderingRange: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
@@ -1138,6 +1171,25 @@ function Review({
     a.startBeat - b.startBeat || a.endBeat - b.endBeat || b.createdAt.localeCompare(a.createdAt)
   );
   const activeRange = ranges?.find((range) => range.status === "running");
+  // A queued (GitHub Actions) range render finishes after its POST returned, so
+  // the list is re-read when the project's render settles, and the outcome is
+  // read off the range row — the project's own render columns are restored to
+  // their pre-range values either way, so they cannot say whether it worked.
+  const queuedRange = useRef<string | null>(null);
+  const wasRendering = useRef(project.renderStatus === "running");
+  useEffect(() => {
+    const settled = wasRendering.current && project.renderStatus !== "running";
+    wasRendering.current = project.renderStatus === "running";
+    if (!settled) return;
+    void refreshRanges({ params: { id: project.id }, force: true }).then((result) => {
+      const range = queuedRange.current ? result.data?.find((item) => item.id === queuedRange.current) : null;
+      if (!range || range.status === "running") return;
+      queuedRange.current = null;
+      if (range.status === "failed") toast.error(range.error ?? `Beats ${range.startBeat}–${range.endBeat} failed.`);
+      else if (range.warning) toast.warning(`Beats ${range.startBeat}–${range.endBeat} rendered with a timeline warning.`);
+      else toast.success(`Beats ${range.startBeat}–${range.endBeat} rendered.`);
+    });
+  }, [project.renderStatus, project.id, refreshRanges]);
 
   useEffect(() => {
     try {
@@ -1238,7 +1290,7 @@ function Review({
           <div className="min-w-0"><div className="mb-1.5 text-xs font-medium text-fg-2">End beat</div><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
         </>}
         {renderMode === "full" && <LoadingButton variant="primary" className="justify-self-start" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>}
-        {renderMode === "range" && <LoadingButton variant="primary" className="justify-self-start" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
+        {renderMode === "range" && <LoadingButton variant="primary" className="justify-self-start" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { queuedRange.current = await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
       </div>
       {((renderMode === "full" && !beatCount) || project.renderStatus === "running") && (
         <div className="mt-4 flex flex-wrap items-center gap-3">
