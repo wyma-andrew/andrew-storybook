@@ -399,10 +399,13 @@ uploads each WAV to R2 via presigned URLs and reports back to
 `app/api/labs/voice/callback`. The page polls the rows. `TTS_AZURE_KEY` and
 `VOICE_LAB_WORKER_URL` stay server-only; `VOICE_LAB_WORKER_TOKEN` also
 authenticates the callback. See `history/voice-lab.md`.
+If job acceptance times out during a Modal cold start, rows remain processing;
+polling recovers completed WAVs from R2 or eventually marks stale rows failed.
 
-Wai Yan and Yuzana use fixed 16 kHz reference WAVs bundled only into the worker
-runtime. The server sends a profile ID and reference transcript; the worker
-maps that ID to its local WAV path.
+Wai Yan, Yuzana, and the Voice Lab-only `ပညာရှိအဘိုး` / `ဓမ္မသံ ၁` / `ဓမ္မသံ ၃` profiles use fixed
+16 kHz reference WAVs bundled into the worker runtime. The server sends a
+reference ID and exact transcript; the worker maps that ID to its local WAV
+path and passes only the requested narration text to VoxCPM2.
 
 ### Text to speech
 
@@ -418,8 +421,8 @@ provider's own parameters (Azure voice name and SSML prosody, or VoxCPM2 style
 prompt and seed). `synthesize()` picks the provider off the voice, so callers —
 the lab route and the render pipeline — never name a service. A voice's `id` is
 what the database stores, so moving a voice between providers is a code edit.
-`surfaces` decides where a voice is offered: Movie Recap and the lab both list
-the Azure and VoxCPM2 Burmese voices.
+`surfaces` decides where a voice is offered: Movie Recap and the lab share four
+Burmese voices, while the three story narration profiles are available only in Voice Lab.
 
 ### Script
 

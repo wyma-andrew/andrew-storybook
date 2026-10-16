@@ -236,3 +236,121 @@ model read the English prefix aloud ("a calm cinematic narrator…").
 **Consequence:** `stylePrompt` is still required by the request and catalog but
 is unused. Movie Recap narration shares this path, so audio cached before this
 fix may contain the spoken prefix; regenerate it.
+
+## 2026-10-11 — Test VoxCPM2 voice design for Buddha-story narration
+
+**Approved exception to the 2026-09-30 no-prefix decision:** add the
+Voice Lab-only `ဓမ္မသံ` profile with no reference recording. On this path only,
+the Next server sends VoxCPM2 a parenthesized voice-design description before
+the Burmese line, as the model's documented voice-design interface requires.
+The worker continues to pass its input verbatim, so its current deployment can
+serve the new profile. Keep the existing Wai Yan and Yuzana reference-cloning
+paths free of the description so their narration cannot start reading it again.
+
+**Why:** the user wants a distinct, calm and steady narration voice from the
+same self-hosted model used for Wai Yan and Yuzana, rather than Azure Thiha.
+Start with one fixed seed for repeatable experiments; change the seed only if
+listening shows the initial voice is unsuitable.
+
+**Rejected:** an Azure Thiha variant, because it uses a different service and
+speaker. Reusing either existing reference recording would retain that
+speaker's identity instead of exploring a new voice.
+
+**Consequence:** VoxCPM2 may still speak the English description aloud or vary
+the voice between lines. Listen to generated samples before using this profile
+for production narrative; a selected reference clip may be needed to lock its
+identity later.
+
+**Listening feedback:** the first sample did not sound grave enough. Strengthen
+the voice description toward a mature, resonant baritone with solemn, deliberate
+delivery. Keep the seed fixed while testing the description so the effect of the
+prompt change can be judged separately from random variation.
+
+**Further listening feedback:** the user preferred the fuller timbre from seed
+`20261011` but the phrasing from `20261012`. Keep the fuller seed and describe
+fluent phrasing and graceful pauses instead of deliberate pacing. Treat this as
+a candidate until the combined sample is heard; seed alone does not lock a
+speaker identity across arbitrary text.
+
+## 2026-10-11 — Lock the selected Dhamma samples as reference voices
+
+**Supersedes** the unreferenced `ဓမ္မသံ` voice-design profile above. The user
+selected generated samples 1 and 3 as two voices for Voice Lab and asked for
+the same reference-audio path used by Wai Yan and Yuzana to improve identity
+consistency across narration lines.
+
+**Decision:** store both selected samples as 16 kHz mono PCM WAVs in the worker,
+with distinct `ဓမ္မသံ ၁` and `ဓမ္မသံ ၃` catalog IDs. Each profile supplies its
+reference ID, file hash, and the exact Burmese source line as `referenceText`.
+The worker uses both the reference WAV and transcript for VoxCPM2's cloning
+path. Do not prepend the experimental English voice-design description to new
+spoken lines.
+
+**Why:** seed and natural-language voice design did not keep the desired timbre
+and delivery together across candidates. Fixed audio examples give the model a
+concrete speaker identity, while retaining both user-selected alternatives for
+later listening tests.
+
+**Rejected:** continuing to tune one unreferenced profile by seed alone; its
+voice can drift between lines. Also rejected: merging the two examples into one
+reference clip, because they represent distinct candidate voices and a stitched
+reference would not match a single uninterrupted transcript.
+
+**Consequence:** the Modal worker must be redeployed with the two new WAVs and
+reference IDs before these options can generate audio. The clips are short,
+so consistency still needs testing on lines other than the reference sentence.
+The lab maps a browser's stored `dhamma-narrator` selection to `dhamma-1` so
+the retired experiment does not silently fall back to Azure Thiha.
+
+## 2026-10-11 — Preserve jobs across a cold-start dispatch timeout
+
+**Decision:** allow up to four minutes for the Modal `/jobs` request to be
+accepted, within the route's five-minute limit. If that wait still times out,
+return the rows as processing because acceptance is uncertain. Polling can
+recover an uploaded WAV from R2 even when an earlier timeout marked its row
+failed; a processing row with no audio becomes failed after 30 minutes.
+
+**Why:** a Voice Lab Generate request returned 502 after 62 seconds, matching
+the route's former 60-second fetch timeout, while Modal logs showed `/jobs`
+accepted around that time. Immediately marking the row failed can discard a
+worker result whose acceptance response was simply late.
+
+**Rejected:** retrying `/jobs` automatically after a timeout, which can launch
+the same batch twice. Also rejected: treating the timeout as definite failure,
+because the worker may already be processing it.
+
+**Consequence:** a truly lost request can remain processing until the existing
+30-minute stale threshold. The browser can keep polling instead of showing a
+misleading 502 or starting a duplicate job.
+
+## 2026-10-11 — Compare three elderly Burmese voice designs manually
+
+**Decision:** provide a local command for three distinct VoxCPM2 voice-design
+descriptions, each using the same Burmese sentence and seed. The command calls
+the worker's direct `/generate` endpoint and saves one WAV only when the user
+runs it. These are experiments, not catalog profiles.
+
+**Why:** Voice Lab only offers fixed reference voices, while the user wants to
+listen to an older, slower storyteller before choosing a new stable reference.
+Keeping the text and seed fixed makes the three descriptions easier to compare.
+
+**Rejected:** adding unreferenced candidates to the Voice Lab selector before
+listening, because they would look like stable narration profiles despite the
+previously observed voice drift. A selected sample can later become a fixed
+reference profile.
+
+## 2026-10-11 — Save the selected elder storyteller as a reference profile
+
+**Decision:** the user selected voice-design sample 2. Add `ပညာရှိအဘိုး` as a
+Voice Lab-only VoxCPM2 profile using that sample converted to 16 kHz mono PCM,
+its matching Burmese source sentence, and a fixed reference hash. The worker
+receives the new `wise-elder` reference ID; subsequent narration lines contain
+only the requested Burmese text.
+
+**Why:** the user liked this speaker and wants to reuse it consistently. The
+recording anchors the model to the selected voice more closely than a design
+description and seed alone.
+
+**Rejected:** exposing sample 2 as an unreferenced profile, because its voice
+could change across narration lines. The original 48 kHz experiment remains a
+manual listening sample; the worker uses a converted 16 kHz copy.

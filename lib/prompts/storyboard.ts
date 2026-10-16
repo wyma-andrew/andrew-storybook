@@ -87,7 +87,7 @@ export const SITE_MAP_SCHEMA = {
           screenDirection: {
             type: "string",
             description:
-              "Travel direction as screen sides across the cut — e.g. 'exits frame right from the veranda, enters the yard from frame left'.",
+              "Travel direction against the places, never fixed frame sides — e.g. 'out through the town entrance onto the forest trail toward the deep forest'. Each shot derives its frame direction from its own station.",
           },
         },
         required: ["from", "to", "via", "screenDirection"],

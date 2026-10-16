@@ -32,8 +32,12 @@ export interface VisualStylePreset {
 }
 
 // The copy targets are single frames — without this tail the renders come back
-// letterboxed or captioned. Every English text carries it.
-const SINGLE_FRAME_TAIL = "Characters ignore the camera. Uncropped full frame, textless, no letterboxing.";
+// letterboxed or captioned. Every English text carries it. The gaze clause says
+// what people look at instead of naming the camera: "Characters ignore the
+// camera" put the word in front of the model, and photoreal crowds stared into
+// the lens. See history/visual-styles.md, 2026-10-11.
+const SINGLE_FRAME_TAIL =
+  "Everyone in frame is absorbed in the scene — looking at each other, at the action, or at their own work. Uncropped full frame, textless, no letterboxing.";
 
 // Same wording used for all three regions, same as Mythic Fantasy Painting's
 // english/myanmar duplication — the style is already Buddha-era in subject, so

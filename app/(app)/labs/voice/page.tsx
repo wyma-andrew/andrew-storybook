@@ -37,7 +37,8 @@ function subscribeStoredVoice(callback: () => void) {
 
 function useStoredVoice() {
   const stored = useSyncExternalStore(subscribeStoredVoice, readStoredVoice, () => null);
-  const voiceId = VOICE_LAB_PROFILES.some((profile) => profile.id === stored) ? (stored as string) : VOICE_LAB_PROFILES[0].id;
+  const selected = stored === "dhamma-narrator" ? "dhamma-1" : stored;
+  const voiceId = VOICE_LAB_PROFILES.some((profile) => profile.id === selected) ? (selected as string) : VOICE_LAB_PROFILES[0].id;
   function setVoiceId(id: string) {
     try {
       window.localStorage.setItem(VOICE_STORAGE_KEY, id);

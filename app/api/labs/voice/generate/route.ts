@@ -13,6 +13,10 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const AZURE_CONCURRENCY = 3;
+// Modal cold starts can exceed a minute; leave one minute inside maxDuration.
+const WORKER_DISPATCH_TIMEOUT_MS = 4 * 60 * 1000;
+
+class WorkerDispatchTimeout extends Error {}
 
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
 type Row = { id: string; text: string; audio_key: string | null };
@@ -74,9 +78,10 @@ async function dispatchToWorker(db: Db, voice: Extract<Voice, { providerId: "vox
         callbackUrl: `${callbackBase}/api/labs/voice/callback`,
       }),
       cache: "no-store",
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(WORKER_DISPATCH_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") throw new WorkerDispatchTimeout();
     throw new TtsError("Could not reach the voice worker.", 502);
   }
   if (!response.ok) {
@@ -120,6 +125,10 @@ export async function POST(request: NextRequest) {
       await runAzure(db, voice, user!.id, rows);
     }
   } catch (error) {
+    if (error instanceof WorkerDispatchTimeout) {
+      const { data: updated } = await db.from("voice_lab_items").select("*").in("id", ids).order("position");
+      return NextResponse.json((updated ?? []).map(mapVoiceLabItem), { status: 202 });
+    }
     const message = error instanceof TtsError ? error.message : "Voice generation failed.";
     await markFailed(db, ids, message);
     return NextResponse.json({ error: message }, { status: error instanceof TtsError ? error.status : 502 });

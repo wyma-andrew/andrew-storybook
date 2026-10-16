@@ -8,6 +8,7 @@ import {
   splitVoiceLabScript,
   validateVoiceLabText,
   VOICE_LAB_MAX_ITEMS,
+  VOICE_LAB_STALE_PROCESSING_MS,
 } from "@/lib/voice-lab";
 
 export const runtime = "nodejs";
@@ -20,23 +21,30 @@ export async function GET() {
   const { data, error } = await db.from("voice_lab_items").select("*").order("position");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // The worker's callback can be lost; its finished WAV is already in R2, so a
-  // processing row whose object exists is done. See history/voice-lab.md.
+  // The callback or dispatch response can be lost after the worker accepts a
+  // job; the finished WAV in R2 can still recover that row. See history/voice-lab.md.
+  const staleBefore = Date.now() - VOICE_LAB_STALE_PROCESSING_MS;
   const items = await Promise.all(
     data.map(async (row) => {
-      if (row.status !== "processing" || !row.audio_key) return row;
-      const bytes = await getObjectBytes(row.audio_key);
+      if (row.status !== "processing" && row.status !== "failed") return row;
+      if (row.status === "failed" && row.error !== "Could not reach the voice worker." && row.error !== "Voice worker did not finish in time.") return row;
+      const bytes = row.audio_key ? await getObjectBytes(row.audio_key) : null;
       const info = bytes && wavInfo(bytes);
-      if (!info) return row;
-      const done = {
-        status: "done",
-        audio_url: publicUrlFor(row.audio_key),
-        duration_seconds: Math.round(info.durationSeconds * 1000) / 1000,
-        error: null,
-        updated_at: new Date().toISOString(),
-      };
-      const { error: updateError } = await db.from("voice_lab_items").update(done).eq("id", row.id).eq("status", "processing");
-      return updateError ? row : { ...row, ...done };
+      if (info && row.audio_key) {
+        const done = {
+          status: "done",
+          audio_url: publicUrlFor(row.audio_key),
+          duration_seconds: Math.round(info.durationSeconds * 1000) / 1000,
+          error: null,
+          updated_at: new Date().toISOString(),
+        };
+        const { data: updated } = await db.from("voice_lab_items").update(done).eq("id", row.id).eq("audio_key", row.audio_key).in("status", ["processing", "failed"]).select("id").maybeSingle();
+        return updated ? { ...row, ...done } : row;
+      }
+      if (row.status !== "processing" || Date.parse(row.updated_at) >= staleBefore) return row;
+      const failed = { status: "failed", error: "Voice worker did not finish in time.", updated_at: new Date().toISOString() };
+      const { data: updated } = await db.from("voice_lab_items").update(failed).eq("id", row.id).eq("status", "processing").select("id").maybeSingle();
+      return updated ? { ...row, ...failed } : row;
     }),
   );
   return NextResponse.json(items.map(mapVoiceLabItem));

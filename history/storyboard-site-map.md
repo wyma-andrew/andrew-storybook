@@ -5,6 +5,23 @@ Covers: `lib/site-map.ts`, `lib/prompts/shared.ts` (`siteMapBlock`),
 `lib/openai.ts` (`GeneratedStoryboard`), `app/api/chapters/[id]/storyboard/generate`,
 `app/api/scenes/[id]/regenerate`, migration `20260911093000_chapter_site_map.sql`.
 
+## 2026-10-11 — Connection direction is stated against places, not frame sides
+
+**Supersedes** the 2026-09-11 form of `connections[].screenDirection` ("exits
+frame right…, enters from frame left"). A generated wide shot read "from inside
+town looking north… Buddha exits frame right toward the forest". That can't be
+drawn: a camera looking the way he walks sees him walk away, not exit to a side.
+A fixed frame side is only true from one camera position, and shots now stand
+at different site-map stations (`history/camera-stations.md`).
+
+`screenDirection` now names the move against the places themselves ("out
+through the town entrance onto the forest trail"). TRAVEL ACROSS A CUT has each
+shot derive its frame direction from its own station: away from camera, toward
+it, or across the frame toward the destination's side. Continuity is kept as
+"never walking back the way they came", not as a matched left/right pair. The
+original reason for the rule is unchanged: a flipped direction reads as turning
+around.
+
 ## 2026-09-11 — Shot generation is given chapter geography, not just per-location prompts
 
 **Decision: the storyboard pass emits a chapter-level site map as the first

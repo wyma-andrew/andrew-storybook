@@ -2,6 +2,16 @@
 
 Covers: `lib/prompts/shared.ts` (`ambientPopulationBlock`), `lib/prompts/storyboard.ts`.
 
+## 2026-10-11 — Background people always have a gaze target
+
+Photoreal crowd shots kept staring into the lens. The ambient clause, and any
+crowd the script names, gave the image model no gaze for them. The block now
+requires that one clause to say what they look at: the named character or
+action, each other, or their own task. It stays one short clause, never named,
+never in `assetsUsed`, so the 2026-09-10 decision below is unchanged. This
+pairs with the affirmative gaze line in the style tail
+(`history/visual-styles.md`, 2026-10-11).
+
 ## 2026-09-10 — Background crowd is prose, not an asset
 
 **Decision: a shot's background crowd (villagers, vendors, passersby in a

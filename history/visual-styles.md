@@ -9,12 +9,28 @@ Covers: `lib/constants/visual-styles.ts`, `lib/visual-styles.ts`, `lib/api/map.t
 - Styles live in code, not the DB. No self-serve editor, no "+ New style" UI —
   a project owner edits `VISUAL_STYLES` directly. `/settings` renders them
   read-only.
-- Every English text ends with `Characters ignore the camera. Uncropped full
-  frame, textless, no letterboxing.` (`SINGLE_FRAME_TAIL`). The copy targets are
+- Every English text ends with `SINGLE_FRAME_TAIL`: `Everyone in frame is
+  absorbed in the scene — looking at each other, at the action, or at their own
+  work. Uncropped full frame, textless, no letterboxing.` The copy targets are
   single frames; without it renders come back letterboxed or captioned.
 - An unresolvable `visual_style_id` falls back to `VISUAL_STYLES[0]`, so
   3D Animation must stay first in the array. Reordering silently restyles every
   story whose style was never set.
+
+## 2026-10-11 — The gaze clause names what people look at, not the camera
+
+**Supersedes** the tail's first clause, `Characters ignore the camera.` With the
+photoreal Sacred Historical Drama style, townspeople in wide and crowd shots kept
+looking straight into the lens. Two causes. The storyboard gives no gaze to
+unnamed background people (`ambientPopulationBlock`), and photoreal models
+default to a stock-photo stare. The clause itself made it worse: it named the
+camera, which raises its salience. That is the same negation failure
+`system-prompts.ts` records for the location presets. "Characters" also read as
+the named cast, not the crowd. The new clause is affirmative and covers
+everyone in frame. The rest of the tail is unchanged. Approved by the user.
+
+Not done (offered, not chosen): a storyboard rule giving every background group
+an explicit gaze target. Revisit if crowds still stare.
 
 ## 2026-10-09 — Added "Sacred Historical Drama"
 
