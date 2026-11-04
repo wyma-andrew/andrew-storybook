@@ -63,8 +63,8 @@ function ImportScreenplayDialog({
         <code className="text-fg-2">Title:</code>, <code className="text-fg-2">Scene:</code>,{" "}
         <code className="text-fg-2">Action:</code>, <code className="text-fg-2">Character:</code>,{" "}
         <code className="text-fg-2">Dialog:</code>, <code className="text-fg-2">Voice Over:</code>,{" "}
-        <code className="text-fg-2">Transition:</code> — so it works in any language. Copy the format guide for an
-        example. Plain screenplay text is imported too, best-effort.
+        <code className="text-fg-2">Transition:</code> — so it works in any language. Copy the format guide to get a prompt
+        template: paste it into an AI with your story to get a script split into scenes. Plain screenplay text is imported too, best-effort.
       </p>
 
       <Textarea

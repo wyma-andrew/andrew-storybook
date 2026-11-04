@@ -1,13 +1,25 @@
 services:
-  app:
-    image: ${IMAGE:-YOUR_DOCKERHUB_USER/ai-storybook:latest}
-    env_file: .env
+  ai-storybook-app-prod:
+    image: waiyandev/ai-storybook-app-prod:latest
+    container_name: ai-storybook-app-prod
+    init: true
     ports:
-      - "3000:3000"
-    restart: unless-stopped
+      - "127.0.0.1:${APP_PORT:-3100}:3000"
+    env_file:
+      - .env.docker
+    # ffmpeg renders run in this container, on a host shared with other sites.
+    cpus: ${APP_CPUS:-2}
+    mem_limit: ${APP_MEM_LIMIT:-4g}
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   migrate:
-    image: ${IMAGE:-YOUR_DOCKERHUB_USER/ai-storybook:latest}
-    env_file: .env
+    image: waiyandev/ai-storybook-app-prod:latest
+    env_file:
+      - .env.docker
     command: migrate
     profiles: ["migrate"]

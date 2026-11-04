@@ -66,6 +66,22 @@ export const VOICES: readonly Voice[] = [
     },
   },
   {
+    id: "grandpa",
+    name: "Grandpa",
+    description: "မြေးကို ပုံပြင်ပြောပြသော အဘိုးအိုအသံ၊ VoxCPM2။",
+    sampleText: "ဟိုး.. ရှေးရှေးတုန်းက မြတ်စွာဘုရားရှင် လူ့ပြည်ကိုပြန်ကြွလာတာကို ကြိုဆိုခဲ့ကြရာကနေစတာကွဲ့ အဖိုးပြောပြမယ်နားထောင်",
+    previewUrl: null,
+    surfaces: ["voice-lab"],
+    providerId: "voxcpm",
+    params: {
+      stylePrompt: "An old Burmese grandfather telling a story to his grandson, warm and affectionate, unhurried",
+      seed: 20261025,
+      referenceAudioId: "grandpa",
+      referenceAudioHash: "5b6b2110b4182d0cbbe456b705d1cfd03f626aca20b6f405a6dcfeab77f9ad2c",
+      referenceText: "ဟိုး.. ရှေးရှေးတုန်းက မြတ်စွာဘုရားရှင် လူ့ပြည်ကိုပြန်ကြွလာတာကို ကြိုဆိုခဲ့ကြရာကနေစတာကွဲ့ အဖိုးပြောပြမယ်နားထောင်",
+    },
+  },
+  {
     id: "dhamma-1",
     name: "ဓမ္မသံ ၁",
     description: "ဘုရားဇာတ်လမ်းများအတွက် အသံထူထူ၊ တည်ကြည်သော VoxCPM2 အသံ။",

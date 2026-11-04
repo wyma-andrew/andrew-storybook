@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore, type DragEvent } from "react";
 import Link from "next/link";
 import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
-import { AudioLines, ChevronDown, FileText, GripVertical, Loader2, RotateCw, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
+import { AudioLines, ChevronDown, Copy, FileText, GripVertical, Loader2, RotateCw, Sparkles, Trash2, Volume2, WandSparkles } from "lucide-react";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
 import { useRead, useWrite } from "@/lib/spoosh";
@@ -260,6 +260,21 @@ export default function VoiceLabPage() {
     else void refresh({ force: true });
   }
 
+  function handleRegenerateAll() {
+    ConfirmDialog.show({
+      title: "Regenerate all lines?",
+      content: `Every line will be generated again with ${profile.name}. Existing audio will be replaced.`,
+      confirmButtonLabel: "Regenerate all",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        dismiss();
+        const result = await generate({ body: { voiceId, itemIds: items!.map((item) => item.id) } });
+        if (result.error) toast.error(result.error.error);
+        else void refresh({ force: true });
+      },
+    });
+  }
+
   function handleClear() {
     ConfirmDialog.show({
       title: "Clear all lines?",
@@ -271,6 +286,11 @@ export default function VoiceLabPage() {
         dismiss();
       },
     });
+  }
+
+  async function handleCopyScript() {
+    await navigator.clipboard.writeText(ordered!.map((item) => item.text).join("\n"));
+    toast.success("Script copied.");
   }
 
   function openImport() {
@@ -309,6 +329,7 @@ export default function VoiceLabPage() {
                 </Select>
               </div>
               <Button onClick={openImport} disabled={generating}><FileText size={15} /> Import</Button>
+              <Button onClick={handleCopyScript} disabled={!ordered?.length}><Copy size={15} /> Copy script</Button>
               <LoadingButton
                 variant="primary"
                 loading={generating}
@@ -318,6 +339,9 @@ export default function VoiceLabPage() {
               >
                 <Sparkles size={15} /> Generate{pendingCount ? ` (${pendingCount})` : ""}
               </LoadingButton>
+              <Button onClick={handleRegenerateAll} disabled={generating || anyProcessing || !items?.length}>
+                <RotateCw size={15} /> Regenerate all
+              </Button>
               <Button variant="danger" onClick={handleClear} disabled={!items?.length || anyProcessing}><Trash2 size={15} /> Clear all</Button>
               </div>
               <p className="mt-2 text-xs text-fg-3">{profile.description}</p>

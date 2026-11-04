@@ -8,6 +8,8 @@ import type { SpaceKind } from "@/lib/api/types";
 export const SYSTEM_PROMPTS = {
   character:
     "Character reference sheet: full-body turnaround, front view / 3-quarter view / side view / back view, neutral standing pose, arranged left to right, consistent scale and studio lighting across all views, plain neutral background, no props or background elements. Maintain exact facial structure, hairstyle, and wardrobe identically across every view and every future generation of this character. No text, captions, labels, watermarks, or UI overlays anywhere in the image.",
+  characterGroup:
+    "Character group reference sheet: one single wide image of the whole group together — four to six members standing side by side in a loose line-up, full body, all facing the camera in a neutral standing pose, consistent scale and studio lighting, plain neutral background, no props or background elements. Each member is a distinct individual with their own face, age, build, and hair, while the group's shared skin tones, condition, bearing, and the attire of each social stratum are exactly as described below, so a mixed crowd shows plain working clothes beside finer, more colorful garments of the wealthier members. Keep that shared look identical in every future generation of this group. No text, captions, labels, watermarks, or UI overlays anywhere in the image.",
   prop:
     "Prop reference sheet: the complete object shown clearly from front, 3-quarter, side, and top views, arranged left to right at a consistent scale on a plain neutral background. Preserve the exact silhouette, material, color, finish, construction details, markings, wear, and proportions in every view and every future generation of this prop. No characters, hands, background objects, text, captions, labels, watermarks, or UI overlays anywhere in the image.",
   locationInterior:
@@ -69,7 +71,7 @@ export const SYSTEM_PROMPTS = {
   // REQUIRED (a plan without them anchors nothing, whereas burned-in text
   // ruins a normal shot image), it must stay a flat diagram, and it is copied
   // WITHOUT the story's [Style] — a stylized 3D "floor plan" is decorative,
-  // not a spatial reference. See the copy sites in the Assets/Bible pages.
+  // not a spatial reference. See the copy sites in the Assets page.
   locationFloorPlan:
     "Top-down architectural floor plan of this location, drawn as a flat 2D schematic diagram — orthographic overhead view, no perspective, no depth, no 3D rendering, no artistic style. " +
     "Clean thin black line work on a plain white background, in the manner of a technical blueprint or an IKEA-style layout diagram. " +

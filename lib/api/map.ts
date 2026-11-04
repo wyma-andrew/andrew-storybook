@@ -3,7 +3,6 @@ import { findLook, parseLooks } from "@/lib/character-looks";
 import type {
   Story,
   Chapter,
-  BibleEntry,
   ChapterAsset,
   ReferenceImage,
   ChapterImage,
@@ -213,33 +212,17 @@ export function mapChapterImage(r: Row): ChapterImage {
   };
 }
 
-export function mapBibleEntry(r: Row): BibleEntry {
-  return {
-    id: r.id as string,
-    storyId: r.story_id as string,
-    kind: r.kind as BibleEntry["kind"],
-    name: r.name as string,
-    meta: (r.meta as string) ?? null,
-    spaceKind: (r.space_kind as SpaceKind) ?? null,
-    realPrompt: r.real_prompt as string,
-    looks: parseLooks(r.looks),
-    seed: (r.seed as string) ?? null,
-    locked: r.locked as boolean,
-    images: ((r.bible_entry_images as Row[]) ?? []).map(mapReferenceImage),
-  };
-}
-
 export function mapChapterAsset(r: Row): ChapterAsset {
   return {
     id: r.id as string,
     chapterId: r.chapter_id as string,
     kind: r.kind as ChapterAsset["kind"],
-    bibleEntryId: (r.bible_entry_id as string) ?? null,
     name: r.name as string,
     meta: (r.meta as string) ?? null,
     spaceKind: (r.space_kind as SpaceKind) ?? null,
     realPrompt: r.real_prompt as string,
     looks: parseLooks(r.looks),
+    isGroup: Boolean(r.is_group),
     matchStatus: r.match_status as ChapterAsset["matchStatus"],
     images: ((r.chapter_asset_images as Row[]) ?? []).map(mapReferenceImage),
   };

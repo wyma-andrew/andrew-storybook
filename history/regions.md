@@ -5,6 +5,59 @@ Covers: `lib/constants/regions.ts`, `lib/prompts/shared.ts`
 `lib/prompts/regenerate-asset.ts`, and `lib/prompts/storyboard.ts`, story region
 API/types, region selectors, and the `stories.region` database constraint.
 
+## 2026-10-24 — Brahmas are drawn in white with hair, never saffron
+
+A shot described "solemnly dressed Brahmas" and the render drew shaved-head
+figures in saffron robes around the Buddha — lookalikes of him. The BRAHMAS clause
+now says pure white or pale flowing robes, full flowing hair, a slender circlet,
+and never saffron, ochre, maroon, or a shaved head. The general half of the fix
+is in `identityAnchorBlock` (groups state posture and attention, and wear colors
+different from the focal character's); see `history/asset-extraction.md`.
+Supersedes only the vaguer "restrained pure-toned" wording of the 2026-10-21
+celestial entry; the rest of that entry stands.
+
+## 2026-10-21 — Present-day frame scenes are contemporary Myanmar
+
+Some Buddha-region scripts frame the story in the present day (someone today
+telling or remembering a Buddha-era episode). The block's ancient-India
+grounding and anachronism exclusions were applying to those frame scenes too,
+so a modern home came out ancient-Indian. `buddhaAdaptationBlock()` now carries
+a PRESENT-DAY FRAME RULE: the model infers which content belongs to the frame,
+and that content follows the Myanmar guidance, with modern objects allowed. The
+Buddha-era rules and anachronism exclusions are scoped to Buddha-era content.
+A character in both eras gets two LOOKS; devas keep the celestial look in either era.
+
+The Myanmar guidance text is shared (`MYANMAR_GUIDANCE`), not duplicated, and
+is appended without the `MYANMAR VISUAL ADAPTATION` heading. That keeps the
+region-isolation test meaningful (the Buddha prompt never claims "This story is
+set in Myanmar"). This user-approved exception narrows, but does not reverse,
+the 2026-09-10 rule that the Buddha region is not Myanmar by default. With no
+present-day frame in the script, nothing changes.
+
+Era detection is left to the model's reading of the script. There is no
+per-scene era field; add one only if the model misclassifies scenes.
+
+## 2026-10-21 — Celestial beings and realms follow Myanmar celestial imagery
+
+`buddhaAdaptationBlock()` now carries a CELESTIAL EXCEPTION RULE. Devas,
+brahmas, and heavenly realms (Tavatimsa) use the Myanmar Theravada celestial
+look: Burmese royal/nat-inspired deva attire (paso, embroidered jackets, golden
+crowns and jewelry), restrained pure-toned brahmas, gilded pyatthat-inspired
+palaces on cloud terraces, and calm reverent behavior. Left unconstrained, the
+model drew devas as Indian/Hindu-style gods, which the user rejected as the
+wrong "India vibe" for celestial content.
+
+This is a scoped, user-approved exception to the 2026-09-10 rejection of
+Myanmar blending and gold ornament and the 2026-09-11 rejection of gilding and
+multi-tiered roofs — not a reversal. Earthly places, people, and props stay
+ancient South Asian, and those rejections still hold for earthly kings,
+palaces, and monasteries.
+
+A deva visiting the human world keeps the Myanmar celestial attire while the
+earthly location stays ancient-Indian. That visual mix in one shot is
+deliberate, not a bug. Brahmas must not read as monks; devas get rich golden
+ornament, brahmas restrained ornament.
+
 ## 2026-10-09 — Canonical historical detail for people, props, and episodes
 
 CANONICAL SITE DETAIL covered only named places. `buddhaAdaptationBlock()` now

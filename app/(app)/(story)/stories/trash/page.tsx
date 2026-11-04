@@ -19,7 +19,7 @@ export default function StoriesTrashPage() {
   function handleDeleteForever(id: string, title: string) {
     ConfirmDialog.show({
       title: `Permanently delete "${title}"?`,
-      content: "This removes every episode, script, and bible entry for good. Cannot be undone.",
+      content: "This removes every episode, script, and asset for good. Cannot be undone.",
       confirmButtonLabel: "Delete forever",
       cancelButtonLabel: "Cancel",
       onConfirm: async ({ dismiss }) => {

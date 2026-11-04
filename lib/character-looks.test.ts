@@ -100,3 +100,30 @@ describe("storyboard assets", () => {
     expect(preset).not.toContain("<paste");
   });
 });
+
+describe("character groups", () => {
+  const rows = [
+    { kind: "character", name: "Devas", meta: "group", real_prompt: "CHARACTER: Devas", is_group: true },
+    { kind: "character", name: "Sakka", meta: "deva king", real_prompt: "CHARACTER: Sakka" },
+  ];
+
+  it("labels a group as not attachable in the Known Assets block", () => {
+    const text = buildAssetContext(rows);
+    expect(text).toContain("Character group — Devas");
+    expect(text).toContain("never list it in assetsUsed");
+    expect(text).toContain("Character — Sakka");
+  });
+
+  it("drops a group from a shot's assetsUsed", () => {
+    expect(
+      cleanShotAssets(
+        [
+          { name: "Devas", kind: "character" },
+          { name: "Sakka", kind: "character" },
+        ],
+        rows,
+        null
+      )
+    ).toEqual([{ name: "Sakka", kind: "character" }]);
+  });
+});

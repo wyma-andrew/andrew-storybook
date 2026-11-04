@@ -19,20 +19,6 @@ const bundle: StoryBundle = {
     region: "myanmar",
     motionStyleId: "sacred-cinematic",
     format: "cozy-asmr",
-    bible: [
-      {
-        key: 0,
-        kind: "location",
-        name: "Lighthouse",
-        meta: null,
-        spaceKind: "interior",
-        realPrompt: "Stone tower...",
-        looks: [],
-        seed: null,
-        locked: true,
-        images: [{ angleLabel: "Plan", imageUrl: "https://example.com/a.png", isCanonical: true }],
-      },
-    ],
     chapters: [
       {
         index: 1,
@@ -44,13 +30,13 @@ const bundle: StoryBundle = {
         assets: [
           {
             kind: "location",
-            bibleKey: 0,
             name: "Lighthouse",
             meta: null,
             spaceKind: "interior",
             realPrompt: "Stone tower...",
             looks: [],
-            matchStatus: "matched",
+            isGroup: false,
+            matchStatus: "new",
             images: [],
           },
         ],
@@ -113,6 +99,36 @@ describe("parseStoryBundle", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.bundle.story.format).toBe("cinematic");
     expect(result.bundle.story.chapters[0].scenes[0].shots[0].soundPrompt).toBeNull();
+  });
+
+  it("folds a version 1 bundle's bible images onto the assets that used it", () => {
+    const legacy = {
+      ...bundle,
+      version: 1,
+      story: {
+        ...bundle.story,
+        bible: [
+          {
+            key: 0,
+            kind: "location",
+            name: "Lighthouse",
+            images: [{ angleLabel: "Plan", imageUrl: "https://example.com/a.png", isCanonical: true }],
+          },
+        ],
+        chapters: [
+          {
+            ...bundle.story.chapters[0],
+            assets: [{ ...bundle.story.chapters[0].assets[0], bibleKey: 0, matchStatus: "matched" }],
+          },
+        ],
+      },
+    };
+    const result = parseStoryBundle(legacy);
+    if (!("bundle" in result)) throw new Error(result.error);
+    const asset = result.bundle.story.chapters[0].assets[0];
+    expect(asset.matchStatus).toBe("new");
+    expect(asset.images).toEqual([{ angleLabel: "Plan", imageUrl: "https://example.com/a.png", isCanonical: true }]);
+    expect("bible" in result.bundle.story).toBe(false);
   });
 
   it("rejects a file that is not a story export", () => {

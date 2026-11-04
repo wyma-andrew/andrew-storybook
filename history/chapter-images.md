@@ -7,6 +7,8 @@ Covers: `lib/r2.ts`, `lib/r2.test.ts`, `components/ChapterImageUpload.tsx`,
 `components/ChapterHeader.tsx` (TABS), `lib/api/types.ts` (`ChapterImage`),
 migration `20260913101428_chapter_images.sql`.
 
+> **Superseded in part (2026-10-28):** the story Asset Bible was removed; anything below about bible entries, bible matching or promotion is history only. See `history/asset-bible-removal.md`.
+
 ## 2026-09-13 — Renders come back into the app, per chapter, ordered by file name
 
 The three-step flow produces prompts; the images are made in an external tool

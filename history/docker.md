@@ -1,7 +1,8 @@
 # Docker image
 
 Covers: `Dockerfile`, `docker-entrypoint.sh`, `docker-compose.yml`,
-`.dockerignore`, `.env.example`, `next.config.ts` (`output: "standalone"`)
+`.dockerignore`, `.env.example`, `next.config.ts`,
+`.github/workflows/deploy.yml`, `.github/DEPLOYMENT.md`
 
 ## 2026-09-23 — Distributable image, no source needed
 
@@ -14,10 +15,11 @@ runs `supabase db push --db-url`, keeping the "db push only" rule.
 **Why.**
 - `.env` is excluded from the build context. Next inlines `NEXT_PUBLIC_*` at
   build time when set; left unset, the server bundle keeps
-  `process.env.NEXT_PUBLIC_*` and reads it at runtime. The browser Supabase
-  client (`lib/supabase/client.ts`) is currently unused, so nothing client-side
-  needs the value. **If it becomes used, the runtime-env approach breaks** —
-  browser bundles would need the value at build time.
+  `process.env.NEXT_PUBLIC_*` and reads it at runtime. There is no browser
+  Supabase client (the unused `lib/supabase/client.ts` was deleted 2026-10-28;
+  the client reaches data only through Spoosh), so nothing client-side needs the
+  value. **If one is ever added, the runtime-env approach breaks** — browser
+  bundles would need the value at build time.
 - Debian's `ffmpeg` already has libass/harfbuzz/libopus; no custom build.
 - Debian's `fonts-noto-core` ships only Regular/Bold Myanmar. Medium/SemiBold
   come from the notofonts release. Their fontconfig family names on Linux are
@@ -36,3 +38,37 @@ runs `supabase db push --db-url`, keeping the "db push only" rule.
 **Why:** Standalone only existed for the Docker image. With Turbopack, Next 16.3.4 does not write `.next/next-server.js.nft.json`, but the standalone step on Vercel reads it and the build fails with ENOENT (vercel/next.js#96646).
 
 **Consequence:** The Dockerfile no longer builds a runnable image (it copies `.next/standalone`). Restore `output: "standalone"` before using it again, on a Next release with the fix (reported fixed in 16.3.5+).
+
+*Superseded in part by 2026-11-04: Docker is used again, and the Dockerfile runs without standalone.*
+
+## 2026-11-04 — Container on the shared Contabo server
+
+**Decision.** Production moves to a container on the Contabo server that already
+runs Executive Homes, using that project's flow: `deploy.yml` builds, pushes to
+Docker Hub, and SSH-deploys with compose. The image runs `next start` with
+production `node_modules`, not standalone output. It binds `127.0.0.1:3100`,
+behind the server's reverse proxy.
+
+**Why.**
+- Cloudflare Pages only serves static Next exports. Workers cannot spawn ffmpeg
+  (`node:child_process` is a stub) and caps memory at 128 MB, so the video
+  features would need another host anyway.
+- `next start` avoids the 16.3.4 standalone failure above without changing
+  `next.config.ts`, so a Vercel build still works.
+- The compose file caps CPU and memory because ffmpeg renders share a host with
+  other sites. Exact caps are unmeasured defaults; override them in the server's `.env`.
+- Migrations stay out of deploy so a push to `main` cannot change the schema.
+
+**Rejected.** Restoring `output: "standalone"` (blocked by the bug above).
+Running `migrate` on every deploy, as Executive Homes does with Prisma.
+
+**Consequences.**
+- The image's `FFMPEG_PATH` takes priority, so the `ffmpeg-static` and
+  `ffprobe-static` binaries are deleted from it. Both packages must stay
+  importable; their reported paths point at missing files. That is deliberate.
+- The workflow overwrites `.env.docker` on each deploy. `APP_PORT`, `APP_CPUS`,
+  and `APP_MEM_LIMIT` belong in the server's `.env`.
+- A deploy recreates the container and kills in-process jobs. Unless
+  `RECAP_JOB_RUNNER=github`, a running job's row can stay `running`.
+- GitHub reserves the `GITHUB_` secret prefix, so the dispatch token's secret is
+  `RECAP_DISPATCH_TOKEN`.

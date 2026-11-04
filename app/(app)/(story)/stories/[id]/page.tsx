@@ -159,7 +159,7 @@ export default function StoryDetailPage() {
                 <h3 className="mb-2 text-base font-semibold">Nothing here yet</h3>
                 <p className="mx-auto mb-5 max-w-[420px] text-[13px] text-fg-2">
                   Start writing and this becomes Episode 1 — Script → Assets → Storyboard. Add more episodes
-                  any time and they&apos;ll share this story&apos;s Asset Bible.
+                  any time.
                 </p>
                 <LoadingButton
                   variant="primary"

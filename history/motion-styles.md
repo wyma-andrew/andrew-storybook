@@ -6,6 +6,17 @@ Covers: `lib/constants/motion-styles.ts`, `lib/motion.ts`,
 the motion controls in `components/StoryControlsMenu.tsx` and the storyboard
 page, and the read-only list in `app/settings`.
 
+## 2026-10-29 — Sacred Cinematic `normal` uses restrained wording (test)
+
+The walking/travel text ("camera tracks or pans smoothly") read as full motion,
+against the intent that every shot, walking included, stays restrained micro-motion.
+Replaced with the restrained cinematic wording: fixed camera by default, at most one
+extremely slow camera move when the action needs it, unhurried steps, subtle gestures,
+and an explicit preservation clause in place of `HOLD_DESIGN`.
+
+Status: a local test edit for comparison in the Prompt Lab, not yet committed. Keep
+the old text recorded here if it is rejected. The other three Sacred modes are unchanged.
+
 ## 2026-10-06 — Cozy ASMR runs at real-time speed
 
 The first Cozy ASMR wording ("one slow, careful hand action at a calm,

@@ -352,8 +352,6 @@ export type Chapter = {
 };
 
 // Locked reference image for a location asset (URL-only — no upload/Storage).
-// See ChapterAsset.images (chapter-scoped, pending) vs BibleEntry.images
-// (promoted, shared across every chapter reusing that location).
 export type ReferenceImage = {
   id: string;
   angleLabel: string;
@@ -392,31 +390,17 @@ export type ChapterImage = {
 export type SpaceKind = "interior" | "exterior";
 export type AssetKind = "character" | "location" | "prop";
 
-export type BibleEntry = {
-  id: string;
-  storyId: string;
-  kind: AssetKind;
-  name: string;
-  meta: string | null;
-  spaceKind: SpaceKind | null;
-  realPrompt: string;
-  looks: CharacterLook[];
-  seed: string | null;
-  locked: boolean;
-  images: ReferenceImage[];
-};
-
 export type ChapterAsset = {
   id: string;
   chapterId: string;
   kind: AssetKind;
-  bibleEntryId: string | null;
   name: string;
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
   looks: CharacterLook[];
-  matchStatus: "matched" | "new" | "local" | "stale";
+  isGroup: boolean;
+  matchStatus: "new" | "local" | "stale";
   images: ReferenceImage[];
 };
 

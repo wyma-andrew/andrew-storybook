@@ -1,5 +1,7 @@
 Covers: lib/story-transfer.ts, app/api/(story)/stories/[id]/export/, app/api/(story)/stories/import/, components/StoryTransfer.tsx
 
+> **Superseded in part (2026-10-28):** the story Asset Bible was removed; anything below about bible entries, bible matching or promotion is history only. See `history/asset-bible-removal.md`.
+
 ## 2026-09-16 — Story export/import as a JSON file, account to account
 
 A story can be written to a file from "Story options → Export story" and

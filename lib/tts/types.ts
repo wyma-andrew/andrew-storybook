@@ -13,7 +13,7 @@ export type AzureVoiceParams = {
 export type VoxcpmVoiceParams = {
   stylePrompt: string;
   seed: number;
-  referenceAudioId?: "waiyan" | "yuzana" | "dhamma-1" | "dhamma-3" | "wise-elder";
+  referenceAudioId?: "waiyan" | "yuzana" | "dhamma-1" | "dhamma-3" | "wise-elder" | "grandpa";
   referenceAudioHash?: string;
   referenceText?: string;
 };

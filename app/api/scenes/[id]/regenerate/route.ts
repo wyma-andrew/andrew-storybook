@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const [{ data: assets, error: aErr }, { data: story, error: stErr }, { data: sceneRows, error: allErr }] =
     await Promise.all([
-      db.from("chapter_assets").select("kind, name, meta, real_prompt, looks").eq("chapter_id", chapterId),
+      db.from("chapter_assets").select("kind, name, meta, real_prompt, looks, is_group").eq("chapter_id", chapterId),
       db
         .from("stories")
         .select("visual_style_id, aspect_ratio, region, motion_style_id, format")

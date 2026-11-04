@@ -1,4 +1,5 @@
 import type { Region } from "../constants/regions";
+import { joinPromptParts, nonEmptyParts, promptPart, type PromptPart } from "./parts";
 import {
   styleContextBlock,
   outputLanguageBlock,
@@ -7,6 +8,8 @@ import {
   characterIdentityBlock,
   storyComprehensionBlock,
   characterLooksBlock,
+  characterGroupBlock,
+  socialStandingBlock,
 } from "./shared";
 
 const SCENE_REFS = {
@@ -103,8 +106,9 @@ export const ASSET_SCHEMA = {
               "The lock bullets are copied verbatim into every shot this character appears in, so keep each one short and self-contained.",
           },
           looks: LOOKS,
+          isGroup: { type: "boolean", description: "true for a nameless recurring collective (see CHARACTER GROUPS), false for one individual" },
         },
-        required: ["name", "meta", "scenes", "evidence", "realPrompt", "looks"],
+        required: ["name", "meta", "scenes", "evidence", "realPrompt", "looks", "isGroup"],
         additionalProperties: false,
       },
     },
@@ -159,23 +163,29 @@ export const ASSET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export function extractAssetsSystemPrompt(styleContext?: string | null, region: Region = "english") {
-  return (
-    "You extract characters, locations, and visually important recurring props from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. Extract props when they are distinct, story-relevant objects that appear, are handled, or recur; do not extract every incidental background object. " +
-    "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. " +
+export function extractAssetsSystemPromptParts(styleContext?: string | null, region: Region = "english"): PromptPart[] {
+  return nonEmptyParts([
+    promptPart("role", "Role & visual-only rule", "extract-assets.ts", "You extract characters, locations, and visually important recurring props from a story script for a storyboard tool. Only describe visual identity facts, never camera/lighting/art-style — those are injected by the app separately. Extract props when they are distinct, story-relevant objects that appear, are handled, or recur; do not extract every incidental background object. "),
+    promptPart("emptyLocation", "Empty locations", "extract-assets.ts", "Location realPrompt must describe the empty space only — never name or describe any character, person, animal, or their action, even if they occupy that location in the scene. "),
     // One physical place must come out as one location row. Splitting it into
     // "front yard" + "backyard" gives each half its own reference image and its
     // own architecture, so the same house renders differently shot to shot.
-    "ONE PLACE = ONE LOCATION: merge into a single location every area that belongs to the same physical building, house, yard, compound, or site — its front yard, backyard, porch, and surrounding grounds are one exterior location with several VIEWS, one STRUCTURE SHELL, and one FIXED LAYOUT, not separate locations. Keep locations separate only when they are genuinely different spaces: separate rooms, or an interior and an unrelated exterior. Give each merged location one natural canonical name covering the whole place, and cover its distinct areas inside FIXED LAYOUT. " +
-    "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure. Voice Over may reveal visual entities, but it has no speaker and never creates a narrator character by itself." +
-    "\n\nSTORY ANALYSIS FIRST: fill storyAnalysis before any asset. Number the [SCENE] headings 1, 2, 3… in script order. sceneMap: one entry per scene, giving the physical place its action is staged in and how the scene portrays it. places: group the scenes by physical place and justify each grouping. characterArcs: how each on-screen character's role, condition, and appearance change across the scenes. Then derive the characters, locations, and props from that analysis — every location must be one of the places, and every asset's scenes and evidence must come from it." +
-    storyComprehensionBlock() +
-    characterIdentityBlock() +
-    characterLooksBlock() +
-    locationSpatialLayoutBlock() +
-    "\n\nPROP IDENTITY: every prop's realPrompt must use PROP / IDENTITY LOCK / VARIABLE sections. Describe silhouette, material, color, finish, construction, distinctive marks, scale, and meaningful variable state. Do not describe a character holding it, a location around it, camera, lighting, or style." +
-    styleContextBlock(styleContext) +
-    regionAdaptationBlock(region) +
-    outputLanguageBlock()
-  );
+    promptPart("onePlace", "One place = one location", "extract-assets.ts", "ONE PLACE = ONE LOCATION: merge into a single location every area that belongs to the same physical building, house, yard, compound, or site — its front yard, backyard, porch, and surrounding grounds are one exterior location with several VIEWS, one STRUCTURE SHELL, and one FIXED LAYOUT, not separate locations. Keep locations separate only when they are genuinely different spaces: separate rooms, or an interior and an unrelated exterior. Give each merged location one natural canonical name covering the whole place, and cover its distinct areas inside FIXED LAYOUT. "),
+    promptPart("scriptTags", "Script tags", "extract-assets.ts", "The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure. Voice Over may reveal visual entities, but it has no speaker and never creates a narrator character by itself."),
+    promptPart("storyAnalysis", "Story analysis first", "extract-assets.ts", "\n\nSTORY ANALYSIS FIRST: fill storyAnalysis before any asset. Number the [SCENE] headings 1, 2, 3… in script order. sceneMap: one entry per scene, giving the physical place its action is staged in and how the scene portrays it. places: group the scenes by physical place and justify each grouping. characterArcs: how each on-screen character's role, condition, and appearance change across the scenes. Then derive the characters, locations, and props from that analysis — every location must be one of the places, and every asset's scenes and evidence must come from it."),
+    promptPart("storyComprehension", "Story comprehension", "shared.ts", storyComprehensionBlock()),
+    promptPart("characterIdentity", "Character identity", "shared.ts", characterIdentityBlock()),
+    promptPart("characterLooks", "Character looks", "shared.ts", characterLooksBlock()),
+    promptPart("characterGroup", "Character groups", "shared.ts", characterGroupBlock()),
+    promptPart("socialStanding", "Social standing", "shared.ts", socialStandingBlock()),
+    promptPart("locationSpatialLayout", "Location spatial layout", "shared.ts", locationSpatialLayoutBlock()),
+    promptPart("propIdentity", "Prop identity", "extract-assets.ts", "\n\nPROP IDENTITY: every prop's realPrompt must use PROP / IDENTITY LOCK / VARIABLE sections. Describe silhouette, material, color, finish, construction, distinctive marks, scale, and meaningful variable state. Do not describe a character holding it, a location around it, camera, lighting, or style."),
+    promptPart("styleContext", "Visual style", "shared.ts", styleContextBlock(styleContext)),
+    promptPart("regionAdaptation", "Region adaptation", "shared.ts", regionAdaptationBlock(region)),
+    promptPart("outputLanguage", "Output language", "shared.ts", outputLanguageBlock()),
+  ]);
+}
+
+export function extractAssetsSystemPrompt(styleContext?: string | null, region: Region = "english") {
+  return joinPromptParts(extractAssetsSystemPromptParts(styleContext, region));
 }

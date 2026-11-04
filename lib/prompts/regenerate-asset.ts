@@ -7,6 +7,8 @@ import {
   characterIdentityBlock,
   storyComprehensionBlock,
   characterLooksBlock,
+  characterGroupBlock,
+  socialStandingBlock,
 } from "./shared";
 import { LOOKS } from "./extract-assets";
 
@@ -83,11 +85,12 @@ export function regenerateAssetSystemPrompt(
     " The script is given as tagged lines from the screenplay editor: [TITLE], [SCENE] (a scene heading, e.g. INT./EXT. ...), [ACTION] (description), [CHARACTER] (a character cue — the speaker's name), [PARENTHETICAL], [DIALOG] (that character's line), [VOICE_OVER] (anonymous narration), [TRANSITION]. Use these tags as ground truth for structure. Voice Over may reveal visual entities, but it has no speaker and never creates a narrator character by itself." +
     " Read the whole script first and find every scene this one appears in from what happens there, not from where its name occurs." +
     storyComprehensionBlock() +
+    (kind === "prop" ? "" : socialStandingBlock()) +
     (kind === "location"
       ? locationSpatialLayoutBlock()
       : kind === "prop"
         ? "\n\nPROP IDENTITY: use PROP / IDENTITY LOCK / VARIABLE sections. Keep the identity lock short and self-contained."
-        : characterIdentityBlock() + characterLooksBlock()) +
+        : characterIdentityBlock() + characterLooksBlock() + characterGroupBlock()) +
     styleContextBlock(styleContext) +
     regionAdaptationBlock(region) +
     outputLanguageBlock()

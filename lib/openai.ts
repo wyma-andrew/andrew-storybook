@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { ASSET_SCHEMA, extractAssetsSystemPrompt } from "./prompts/extract-assets";
+import { ASSET_SCHEMA, extractAssetsSystemPromptParts } from "./prompts/extract-assets";
 import {
   REGENERATE_SCHEMA,
   REGENERATE_LOCATION_SCHEMA,
@@ -10,7 +10,7 @@ import { parseLooks, type CharacterLook } from "./character-looks";
 import {
   storyboardSchema,
   sceneShotsSchema,
-  storyboardSystemPrompt,
+  storyboardSystemPromptParts,
   regenerateSceneSystemPrompt,
   type SceneRegenerationTarget,
 } from "./prompts/storyboard";
@@ -34,6 +34,7 @@ import type { Region } from "./constants/regions";
 import type { StoryFormat } from "./constants/story-formats";
 import type { VoiceOverAssignment, VoiceOverSource } from "./voice-over";
 import { parseSiteMap, type SiteMap } from "./site-map";
+import { joinPromptParts, nonEmptyParts, promptPart, type PromptPart } from "./prompts/parts";
 
 let client: OpenAI | null = null;
 export function openai() {
@@ -46,10 +47,18 @@ export type ExtractedAsset = { name: string; meta: string; scenes: string[]; evi
 // Locations additionally carry spaceKind — it selects the reference-image
 // preset (interior view + floor plan vs exterior view + site plan).
 export type ExtractedLocation = ExtractedAsset & { spaceKind: SpaceKind };
-export type ExtractedCharacter = ExtractedAsset & { looks: CharacterLook[] };
+export type ExtractedCharacter = ExtractedAsset & { looks: CharacterLook[]; isGroup: boolean };
 export type ExtractedAssets = { characters: ExtractedCharacter[]; locations: ExtractedLocation[]; props: ExtractedAsset[] };
 
-export async function extractAssets(
+// Every Story pass (extraction, asset regenerate, storyboard, scene regenerate,
+// Voice Over mapping) runs at one effort — history/asset-extraction.md,
+// 2026-10-29.
+export const STORY_REASONING_EFFORT = "medium" as const;
+
+export const EXTRACT_ASSETS_MODEL = "gpt-6-luna";
+export const EXTRACT_ASSETS_EFFORT = STORY_REASONING_EFFORT;
+
+export function extractAssetsMessages(
   scriptText: string,
   styleContext?: string | null,
   region: Region = "english",
@@ -58,32 +67,69 @@ export async function extractAssets(
   // duplicate and flags the original stale. Feeding the names back keeps them
   // stable across runs — including merged location names.
   existingNames: string[] = []
-): Promise<ExtractedAssets> {
-  const systemPrompt = extractAssetsSystemPrompt(styleContext, region);
+): PassMessageParts {
   // With no names the message stays the bare script, exactly as before this
   // parameter existed — a "Script:" header the names block doesn't need would
   // shift Re-analyze's extraction for nothing.
-  const userMessage = existingNames.length
-    ? `Assets already extracted from this script — whenever the same entity appears, return it under the EXACT same name:\n${existingNames
-        .map((n) => `- ${n}`)
-        .join("\n")}\n\nScript:\n${scriptText}`
-    : scriptText;
+  const userParts = existingNames.length
+    ? [
+        promptPart(
+          "existingNames",
+          "Existing asset names",
+          "Re-Sync",
+          `Assets already extracted from this script — whenever the same entity appears, return it under the EXACT same name:\n${existingNames
+            .map((n) => `- ${n}`)
+            .join("\n")}\n\n`
+        ),
+        promptPart("script", "Script", "chapter", `Script:\n${scriptText}`),
+      ]
+    : [promptPart("script", "Script", "chapter", scriptText)];
+  return withJoined(extractAssetsSystemPromptParts(styleContext, region), userParts);
+}
+
+export async function runExtractAssetsPass(
+  messages: PassMessages,
+  { model = EXTRACT_ASSETS_MODEL, reasoningEffort = EXTRACT_ASSETS_EFFORT }: PassOptions = {}
+) {
+  const started = Date.now();
   const res = await openai().chat.completions.create({
-    model: "gpt-6-luna",
-    reasoning_effort: "high",
+    model,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
+      { role: "system", content: messages.system },
+      { role: "user", content: messages.user },
     ],
     response_format: {
       type: "json_schema",
       json_schema: { name: "extracted_assets", schema: ASSET_SCHEMA, strict: true },
     },
   });
-  const raw = res.choices[0]?.message?.content ?? "{}";
+  return {
+    raw: res.choices[0]?.message?.content ?? "{}",
+    usage: res.usage ?? null,
+    latencyMs: Date.now() - started,
+  };
+}
+
+export function parseExtractedAssets(raw: string): ExtractedAssets & { storyAnalysis: unknown } {
   const { storyAnalysis, ...assets } = JSON.parse(raw) as ExtractedAssets & { storyAnalysis?: unknown };
+  return {
+    ...assets,
+    characters: assets.characters.map((c) => ({ ...c, looks: parseLooks(c.isGroup ? [] : c.looks), isGroup: Boolean(c.isGroup) })),
+    storyAnalysis: storyAnalysis ?? null,
+  };
+}
+
+export async function extractAssets(
+  scriptText: string,
+  styleContext?: string | null,
+  region: Region = "english",
+  existingNames: string[] = []
+): Promise<ExtractedAssets> {
+  const { raw } = await runExtractAssetsPass(extractAssetsMessages(scriptText, styleContext, region, existingNames));
+  const { storyAnalysis, ...assets } = parseExtractedAssets(raw);
   console.info("[extractAssets] storyAnalysis", JSON.stringify(storyAnalysis));
-  return { ...assets, characters: assets.characters.map((c) => ({ ...c, looks: parseLooks(c.looks) })) };
+  return assets;
 }
 
 // Regenerates a single already-extracted asset's realPrompt (per-card "Regenerate"
@@ -94,19 +140,20 @@ export async function regenerateAssetPrompt(
   name: string,
   meta: string,
   styleContext?: string | null,
-  region: Region = "english"
+  region: Region = "english",
+  isGroup = false
 ): Promise<{ realPrompt: string; spaceKind: SpaceKind | null; looks: CharacterLook[] }> {
   const systemPrompt = regenerateAssetSystemPrompt(kind, styleContext, region);
   const isLocation = kind === "location";
   const isCharacter = kind === "character";
   const res = await openai().chat.completions.create({
     model: "gpt-6-luna",
-    reasoning_effort: "high",
+    reasoning_effort: STORY_REASONING_EFFORT,
     messages: [
       { role: "system", content: systemPrompt },
       {
         role: "user",
-        content: `Script:\n${scriptText}\n\nRegenerate the realPrompt for ${kind} "${name}" (${meta}).`,
+        content: `Script:\n${scriptText}\n\nRegenerate the realPrompt for ${kind} "${name}" (${meta}).${isGroup ? " This is a CHARACTER GROUP: describe what its members share, not one individual." : ""}`,
       },
     ],
     response_format: {
@@ -123,7 +170,7 @@ export async function regenerateAssetPrompt(
   return {
     realPrompt: parsed.realPrompt,
     spaceKind: isLocation ? parsed.spaceKind ?? null : null,
-    looks: isCharacter ? parseLooks(parsed.looks) : [],
+    looks: isCharacter && !isGroup ? parseLooks(parsed.looks) : [],
   };
 }
 
@@ -151,6 +198,64 @@ export type GeneratedScene = { title: string; slug: string; lighting: string; sh
 // regeneration — see lib/site-map.ts.
 export type GeneratedStoryboard = { siteMap: SiteMap | null; scenes: GeneratedScene[] };
 
+export const STORYBOARD_MODEL = "gpt-6-luna";
+
+export type PassMessages = { system: string; user: string };
+export type PassMessageParts = PassMessages & { systemParts: PromptPart[]; userParts: PromptPart[] };
+
+function withJoined(systemParts: PromptPart[], userParts: PromptPart[]): PassMessageParts {
+  const user = nonEmptyParts(userParts);
+  return { system: joinPromptParts(systemParts), user: joinPromptParts(user), systemParts, userParts: user };
+}
+export type PassOptions = { model?: string; reasoningEffort?: OpenAI.ReasoningEffort };
+
+// Prompt Lab builds its default messages here too, so what it shows is exactly
+// what production sends.
+export function storyboardMessages(
+  scriptText: string,
+  assetContext: string,
+  styleContext?: string | null,
+  aspectRatio?: string,
+  region: Region = "english",
+  motionStyleId?: string | null,
+  format: StoryFormat = "cinematic"
+): PassMessageParts {
+  return withJoined(storyboardSystemPromptParts(styleContext, aspectRatio, region, motionStyleId, format), [
+    promptPart("knownAssets", "Known assets", "chapter assets", `Known assets:\n${assetContext}\n\n`),
+    promptPart("script", "Script", "chapter", `Script:\n${scriptText}`),
+  ]);
+}
+
+export async function runStoryboardPass(
+  messages: PassMessages,
+  format: StoryFormat,
+  { model = STORYBOARD_MODEL, reasoningEffort = STORY_REASONING_EFFORT }: PassOptions = {}
+) {
+  const started = Date.now();
+  const res = await openai().chat.completions.create({
+    model,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    messages: [
+      { role: "system", content: messages.system },
+      { role: "user", content: messages.user },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "storyboard", schema: storyboardSchema(format), strict: true },
+    },
+  });
+  return {
+    raw: res.choices[0]?.message?.content ?? "{}",
+    usage: res.usage ?? null,
+    latencyMs: Date.now() - started,
+  };
+}
+
+export function parseStoryboard(raw: string): GeneratedStoryboard {
+  const parsed = JSON.parse(raw) as { siteMap?: unknown; scenes?: GeneratedScene[] };
+  return { siteMap: parseSiteMap(parsed.siteMap), scenes: parsed.scenes ?? [] };
+}
+
 export async function generateStoryboard(
   scriptText: string,
   assetContext: string,
@@ -160,21 +265,9 @@ export async function generateStoryboard(
   motionStyleId?: string | null,
   format: StoryFormat = "cinematic"
 ): Promise<GeneratedStoryboard> {
-  const systemPrompt = storyboardSystemPrompt(styleContext, aspectRatio, region, motionStyleId, format);
-  const res = await openai().chat.completions.create({
-    model: "gpt-6-luna",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: { name: "storyboard", schema: storyboardSchema(format), strict: true },
-    },
-  });
-  const raw = res.choices[0]?.message?.content ?? "{}";
-  const parsed = JSON.parse(raw) as { siteMap?: unknown; scenes?: GeneratedScene[] };
-  return { siteMap: parseSiteMap(parsed.siteMap), scenes: parsed.scenes ?? [] };
+  const messages = storyboardMessages(scriptText, assetContext, styleContext, aspectRatio, region, motionStyleId, format);
+  const { raw } = await runStoryboardPass(messages, format);
+  return parseStoryboard(raw);
 }
 
 // Narration mapping only needs each shot's length and beat, so this takes the
@@ -196,6 +289,7 @@ export async function assignVoiceOvers(
   );
   const res = await openai().chat.completions.create({
     model: "gpt-6-luna",
+    reasoning_effort: STORY_REASONING_EFFORT,
     messages: [
       { role: "system", content: voiceOverAssignmentSystemPrompt },
       { role: "user", content: JSON.stringify({ voiceOvers, shots }) },
@@ -221,20 +315,38 @@ export async function regenerateSceneShots(
   motionStyleId?: string | null,
   format: StoryFormat = "cinematic"
 ): Promise<GeneratedShot[]> {
-  const systemPrompt = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId, format);
+  const system = regenerateSceneSystemPrompt(target, styleContext, aspectRatio, region, motionStyleId, format);
+  const { raw } = await runSceneShotsPass({ system, user: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` }, format);
+  return parseSceneShots(raw);
+}
+
+export async function runSceneShotsPass(
+  messages: PassMessages,
+  format: StoryFormat,
+  { model = STORYBOARD_MODEL, reasoningEffort = STORY_REASONING_EFFORT }: PassOptions = {}
+) {
+  const started = Date.now();
   const res = await openai().chat.completions.create({
-    model: "gpt-6-luna",
+    model,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: `Known assets:\n${assetContext}\n\nScript:\n${scriptText}` },
+      { role: "system", content: messages.system },
+      { role: "user", content: messages.user },
     ],
     response_format: {
       type: "json_schema",
       json_schema: { name: "scene_shots", schema: sceneShotsSchema(format), strict: true },
     },
   });
-  const raw = res.choices[0]?.message?.content ?? "{}";
-  return (JSON.parse(raw) as { shots: GeneratedShot[] }).shots ?? [];
+  return {
+    raw: res.choices[0]?.message?.content ?? "{}",
+    usage: res.usage ?? null,
+    latencyMs: Date.now() - started,
+  };
+}
+
+export function parseSceneShots(raw: string): GeneratedShot[] {
+  return (JSON.parse(raw) as { shots?: GeneratedShot[] }).shots ?? [];
 }
 
 // Movie Recap render pipeline — see lib/movie-recap-render.ts. The source is

@@ -5,6 +5,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+FROM node:22-bookworm-slim AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+# The image's FFMPEG_PATH wins over both static packages, which only need to
+# stay importable; their binaries are ~380 MB (see lib/movie-recap-ffmpeg.ts).
+RUN npm ci --omit=dev \
+ && rm -rf node_modules/ffprobe-static/bin node_modules/ffmpeg-static/ffmpeg
+
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -12,7 +20,7 @@ COPY . .
 # No .env is copied in: NEXT_PUBLIC_* must stay unset here so Next does not
 # inline one Supabase project into the bundle; they are read at runtime.
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN npm run build && rm -rf .next/cache
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
@@ -45,16 +53,16 @@ RUN apt-get update \
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0 \
     FFMPEG_PATH=ffmpeg \
     SCENEDETECT_BIN=/opt/scenedetect/bin/scenedetect \
     MOVIE_RECAP_SUBTITLE_FONT="Noto Sans Myanmar" \
     MOVIE_RECAP_SUBTITLE_FONT_MEDIUM="Noto Sans Myanmar Medium" \
     MOVIE_RECAP_SUBTITLE_FONT_SEMIBOLD="Noto Sans Myanmar SemiBold"
 
-COPY --from=builder --chown=node:node /app/.next/standalone ./
-COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/public ./public
+COPY --chown=node:node package.json next.config.ts ./
 COPY --chown=node:node supabase ./supabase
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

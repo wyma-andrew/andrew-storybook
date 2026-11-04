@@ -28,7 +28,7 @@ export function CardHeader({
 }
 
 // Two columns: location cards carry up to four actions (copy prompt, copy
-// floor plan, regenerate, add to bible) and a single row squeezed them to
+// floor plan, regenerate) and a single row squeezed them to
 // unreadable widths. The last-child:nth-child(odd) rule makes a trailing
 // button span both columns, so an odd count ends flush instead of leaving a
 // half-width straggler.
@@ -46,7 +46,7 @@ export function CardFooter({ children }: { children: React.ReactNode }) {
 // same weight as the named ones.
 //
 // The menu also does the job the old CardActions divider did: actions that
-// CHANGE the asset (regenerate, add to bible) must not sit in the same row as
+// CHANGE the asset (regenerate) must not sit in the same row as
 // buttons that only copy text out of it, or a destructive action reads as one
 // more copy button.
 export function CardFooterWithMenu({

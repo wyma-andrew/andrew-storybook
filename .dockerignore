@@ -10,6 +10,8 @@ node_modules
 demo
 history
 workers
+voice-design-samples
+.github
 *.tsbuildinfo
 next-env.d.ts
 Dockerfile

@@ -12,6 +12,7 @@ import { MOTION_STYLES, MOTION_MODE_OPTIONS } from "@/lib/constants/motion-style
 
 export default function SettingsPage() {
   const character = SYSTEM_PROMPTS.character;
+  const characterGroup = SYSTEM_PROMPTS.characterGroup;
   const locationInterior = SYSTEM_PROMPTS.locationInterior;
   const locationExterior = SYSTEM_PROMPTS.locationExterior;
 
@@ -100,6 +101,10 @@ export default function SettingsPage() {
                 <Lock size={13} /> You can view this preset but cannot edit it.
               </div>
               <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{character}</div>
+            </AdminBlock>
+
+            <AdminBlock title="Character group preset" badge="LOCKED" className="mt-3.5">
+              <div className="text-[14px] leading-relaxed whitespace-pre-wrap text-fg-code">{characterGroup}</div>
             </AdminBlock>
 
             <AdminBlock title="Location preset — interior" badge="LOCKED" className="mt-3.5">

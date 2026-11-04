@@ -185,12 +185,25 @@ export function serializeScreenplay(doc: unknown): string {
 }
 
 /**
- * The documented import format, shown (and copyable) in the import dialog.
- * `Label: text`, one block per line — script-agnostic, so English and Myanmar
- * use the exact same format. Unlabelled screenplay text still imports via the
- * heuristics above, but this is the format we tell people to use.
+ * The documented import format, copyable from the import dialog and meant to be
+ * pasted into an external AI together with a story. `Label: text`, one block
+ * per line — script-agnostic, so English and Myanmar use the exact same format.
+ * Unlabelled screenplay text still imports via the heuristics above, but this
+ * is the format we tell people to use. See history/script-format-guide.md.
  */
-export const SCREENPLAY_FORMAT_GUIDE = `Title: Story Name
+export const SCREENPLAY_FORMAT_GUIDE = `Convert the story below into a screenplay for a storyboard tool. Output ONLY the screenplay, one block per line, each line starting with one of these labels and a colon: Title, Scene, Action, Character, Parenthetical, Dialog, Voice Over, Transition. Keep the story's original language for all text after the label (labels stay in English). No markdown, no blank commentary.
+
+SCENE RULES — the tool only draws what a Scene shows:
+- A Scene represents continuous dramatic action within one specific physical staging area and time period. Create a new Scene when the action moves to a different physical staging area, when a meaningful time jump begins a distinct sequence, or when the narrative enters a distinct event being shown from a narration, memory, flashback, or explanation. Do not split continuous action into separate Scenes merely because a character arrives, speaks, reacts, or performs another action in the same place and time.
+- Every important concrete event described through narration, dialogue, memory, or explanation that the story intends to show visually MUST be dramatized with its own appropriate Scene or sequence of Scenes. Never leave such an event only inside Dialog or Voice Over. Preserve the original chronology, causal relationships, and story meaning. Reuse exact canonical location names for repeated physical staging areas. Do not invent unsupported events or create a new Scene for every spoken sentence or abstract statement.
+- Scene heading format: INT. or EXT. + specific place + time of day (for example EXT. TAVATIMSA HEAVEN - DAY). Name each place consistently so the same place always has the same name.
+- Action lines describe only what can be seen: who is present, where they stand, what they do, what the place looks like. Name every character, creature, and important object the first time it appears. Do not describe camera, lighting, or art style.
+- Present-day framing (someone telling the story) stays as its own Scene(s) at the start and end; the told story is staged as full Scenes in between, not summarized.
+- Voice Over is anonymous narration laid over the images of the Scene it sits in; keep it for narration only, and make sure the Scene's Action shows what the narration talks about.
+- Do not shorten or skip events from the story, and do not add events that are not in it.
+
+FORMAT:
+Title: Story Name
 Scene: INT. LOCATION - DAY
 Action: Action line describing what happens.
 Character: MG MG
@@ -199,4 +212,7 @@ Dialog: The line the character says.
 Voice Over: Anonymous narration laid over one or more shots.
 Transition: CUT TO:
 Scene: EXT. ANOTHER LOCATION - NIGHT
-Action: More action.`;
+Action: More action.
+
+STORY:
+(paste the story here)`;

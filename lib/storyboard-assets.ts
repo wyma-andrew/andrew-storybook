@@ -2,7 +2,7 @@ import { parseLooks } from "./character-looks";
 import type { AssetKind, ShotAsset } from "./api/types";
 import type { SiteMap } from "./site-map";
 
-type AssetRow = { kind: string; name: string; meta: string | null; real_prompt: string; looks?: unknown };
+type AssetRow = { kind: string; name: string; meta: string | null; real_prompt: string; looks?: unknown; is_group?: boolean };
 
 const KIND_LABEL: Record<string, string> = { character: "Character", location: "Location", prop: "Prop" };
 
@@ -10,6 +10,9 @@ const KIND_LABEL: Record<string, string> = { character: "Character", location: "
 export function buildAssetContext(rows: AssetRow[]): string {
   return rows
     .map((a) => {
+      if (a.kind === "character" && a.is_group) {
+        return `Character group — ${a.name} (${a.meta}) — NOT a reference image: never list it in assetsUsed; when it is in frame, describe its dress in \`prompt\` from this look: ${a.real_prompt}`;
+      }
       const line = `${KIND_LABEL[a.kind] ?? "Prop"} — ${a.name} (${a.meta}): ${a.real_prompt}`;
       const looks = a.kind === "character" ? parseLooks(a.looks) : [];
       if (!looks.length) return line;
@@ -38,10 +41,13 @@ export function cleanShotAssets(assetsUsed: ShotAsset[], rows: AssetRow[], siteM
       stationKeys.set(place.location, new Set(place.stations.map((st) => st.key)));
     }
   }
-  return assetsUsed.map(({ name, kind, look, station }) => {
-    const asset: ShotAsset = { name, kind: kind as AssetKind };
-    if (kind === "character" && look && lookKeys.get(name)?.has(look)) asset.look = look;
-    if (kind === "location" && station && stationKeys.get(name)?.has(station)) asset.station = station;
-    return asset;
-  });
+  const groups = new Set(rows.filter((a) => a.kind === "character" && a.is_group).map((a) => a.name));
+  return assetsUsed
+    .filter(({ name, kind }) => !(kind === "character" && groups.has(name)))
+    .map(({ name, kind, look, station }) => {
+      const asset: ShotAsset = { name, kind: kind as AssetKind };
+      if (kind === "character" && look && lookKeys.get(name)?.has(look)) asset.look = look;
+      if (kind === "location" && station && stationKeys.get(name)?.has(station)) asset.station = station;
+      return asset;
+    });
 }

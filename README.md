@@ -191,24 +191,21 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Docker
 
-The image bundles the standalone Next server, ffmpeg (libass + libopus),
-PySceneDetect, Noto Sans Myanmar (Regular/Medium/SemiBold/Bold) and the
-Supabase CLI with this repo's migrations, so it runs without the source.
+Production runs as a container on the shared Contabo server; see
+[`.github/DEPLOYMENT.md`](.github/DEPLOYMENT.md). The image runs `next start`
+with ffmpeg (libass + libopus), PySceneDetect, Noto Sans Myanmar
+(Regular/Medium/SemiBold/Bold) and the Supabase CLI with this repo's migrations.
+`NEXT_PUBLIC_*` values are read at runtime, not baked into the image.
 
-Build and push (multi-arch, so it runs on Intel and Apple Silicon hosts):
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t <dockerhub-user>/ai-storybook:latest --push .
-```
-
-On the host that runs it, only `docker-compose.yml` and a filled-in `.env`
-(from `.env.example`) are needed:
+Build and run locally:
 
 ```bash
-docker compose run --rm migrate
-docker compose up -d
+docker build --target runner -t waiyandev/ai-storybook-app-prod:latest .
 ```
 
-`migrate` runs `supabase db push` against `DATABASE_URL`. Set `IMAGE` in `.env`
-to the pushed tag. `NEXT_PUBLIC_*` values are read at runtime, not baked into
-the image, so one image serves any Supabase project.
+```bash
+docker compose up -d ai-storybook-app-prod
+```
+
+The container reads `.env.docker` (from `.env.example`) and listens on
+`127.0.0.1:3100`.

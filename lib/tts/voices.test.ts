@@ -17,7 +17,7 @@ describe("tts voice catalog", () => {
   });
 
   it("binds each lab-only profile to its fixed reference WAV and transcript", () => {
-    for (const id of ["wise-elder", "dhamma-1", "dhamma-3"]) {
+    for (const id of ["wise-elder", "grandpa", "dhamma-1", "dhamma-3"]) {
       const voice = getVoice(id, "voice-lab");
       expect(voice?.providerId).toBe("voxcpm");
       expect(getVoice(id, "movie-recap")).toBeNull();

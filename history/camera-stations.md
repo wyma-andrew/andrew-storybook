@@ -8,6 +8,8 @@ Covers: `lib/site-map.ts` (`SiteMapStation`, `REFERENCE_STATION`),
 `lib/storyboard-assets.ts`, `components/CameraPlates.tsx`, and
 `supabase/migrations/20261010051504_station_plates.sql`.
 
+> **Superseded in part (2026-10-28):** the story Asset Bible was removed; anything below about bible entries, bible matching or promotion is history only. See `history/asset-bible-removal.md`.
+
 ## 2026-10-10 — Each shot stands at a site-map station with its own plate
 
 **Problem, from the user.** A forest trail with a boulder: a traveler walks

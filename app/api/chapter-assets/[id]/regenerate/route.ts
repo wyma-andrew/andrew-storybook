@@ -7,8 +7,7 @@ import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
 import { resolveStyleContext } from "@/lib/constants/visual-styles";
 
 // Regenerates one chapter_asset's real_prompt only (per-card "Regenerate"), leaving
-// every other asset on the chapter untouched. If this asset is "matched", the new
-// prompt is a local override on this chapter_asset row — the bible entry is not touched.
+// every other asset on the chapter untouched.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await supabaseRoute();
@@ -43,7 +42,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     asset.name,
     asset.meta,
     styleContext,
-    region
+    region,
+    Boolean(asset.is_group)
   );
 
   const { data, error } = await db

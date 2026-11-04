@@ -7,6 +7,8 @@ rule and `assetsUsed.look` in `lib/prompts/storyboard.ts`, the character card on
 the Assets page, shot chips on the Storyboard page, bible character copy, and
 `supabase/migrations/20261009172114_character_looks.sql`.
 
+> **Superseded in part (2026-10-28):** the story Asset Bible was removed; anything below about bible entries, bible matching or promotion is history only. See `history/asset-bible-removal.md`.
+
 ## 2026-10-10 — One character, one look per lasting stage
 
 **Problem.** A character's appearance can change for good mid-story

@@ -10,8 +10,8 @@ import type { AssetKind, SpaceKind } from "./api/types";
 // Portable one-story bundle: everything needed to rebuild a story under a
 // DIFFERENT account. Rows are exported without database ids, owner, or
 // timestamps — cross-account uuids are meaningless, so every relationship is
-// re-expressed positionally (bible entries by `key`, shots by scene index +
-// shot index) and remapped on import.
+// re-expressed positionally (shots by scene index + shot index) and remapped
+// on import.
 //
 // Chapter images (R2 renders) are deliberately not in the bundle: the rows
 // point at objects in the exporting account's bucket, and deleting the image
@@ -19,7 +19,10 @@ import type { AssetKind, SpaceKind } from "./api/types";
 // See history/story-transfer.md.
 
 export const STORY_BUNDLE_FORMAT = "ai-storybook.story" as const;
-export const STORY_BUNDLE_VERSION = 1 as const;
+// Version 1 bundles also carried the removed story Asset Bible; they still
+// import — see legacyBibleImagesByKey.
+export const STORY_BUNDLE_VERSION = 2 as const;
+const READABLE_VERSIONS = [1, 2];
 
 export type BundleReferenceImage = {
   angleLabel: string;
@@ -27,28 +30,15 @@ export type BundleReferenceImage = {
   isCanonical: boolean;
 };
 
-export type BundleBibleEntry = {
-  key: number; // local-to-bundle id, referenced by chapter assets
-  kind: AssetKind;
-  name: string;
-  meta: string | null;
-  spaceKind: SpaceKind | null;
-  realPrompt: string;
-  looks: CharacterLook[];
-  seed: string | null;
-  locked: boolean;
-  images: BundleReferenceImage[];
-};
-
 export type BundleChapterAsset = {
   kind: AssetKind;
-  bibleKey: number | null;
   name: string;
   meta: string | null;
   spaceKind: SpaceKind | null;
   realPrompt: string;
   looks: CharacterLook[];
-  matchStatus: "matched" | "new" | "local" | "stale";
+  isGroup: boolean;
+  matchStatus: "new" | "local" | "stale";
   images: BundleReferenceImage[];
 };
 
@@ -114,7 +104,6 @@ export type StoryBundle = {
     region: Region;
     motionStyleId: string;
     format: StoryFormat;
-    bible: BundleBibleEntry[];
     chapters: BundleChapter[];
   };
 };
@@ -155,29 +144,12 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
     .single();
   if (storyErr || !story) return { error: storyErr?.message ?? "Story not found.", status: 404 };
 
-  const [{ data: bible, error: bibleErr }, { data: chapters, error: chaptersErr }] = await Promise.all([
-    db.from("bible_entries").select("*, bible_entry_images(*)").eq("story_id", storyId).order("created_at"),
-    db.from("chapters").select("*").eq("story_id", storyId).order("index"),
-  ]);
-  if (bibleErr) return { error: bibleErr.message, status: 500 };
+  const { data: chapters, error: chaptersErr } = await db
+    .from("chapters")
+    .select("*")
+    .eq("story_id", storyId)
+    .order("index");
   if (chaptersErr) return { error: chaptersErr.message, status: 500 };
-
-  const bibleKeyById = new Map<string, number>();
-  const bundleBible: BundleBibleEntry[] = (bible ?? []).map((entry, i) => {
-    bibleKeyById.set(entry.id as string, i);
-    return {
-      key: i,
-      kind: isAssetKind(entry.kind) ? entry.kind : "character",
-      name: entry.name as string,
-      meta: str(entry.meta),
-      spaceKind: isSpaceKind(entry.space_kind) ? entry.space_kind : null,
-      realPrompt: (str(entry.real_prompt) ?? "").toString(),
-      looks: parseLooks(entry.looks),
-      seed: str(entry.seed),
-      locked: Boolean(entry.locked),
-      images: mapBundleImages(entry.bible_entry_images as Row[] | null),
-    };
-  });
 
   const bundleChapters: BundleChapter[] = [];
   for (const chapter of chapters ?? []) {
@@ -256,15 +228,13 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
       siteMap: chapter.site_map ?? null,
       assets: (assets ?? []).map((asset) => ({
         kind: isAssetKind(asset.kind) ? asset.kind : "character",
-        bibleKey: bibleKeyById.get(asset.bible_entry_id as string) ?? null,
         name: asset.name as string,
         meta: str(asset.meta),
         spaceKind: isSpaceKind(asset.space_kind) ? asset.space_kind : null,
         realPrompt: str(asset.real_prompt) ?? "",
         looks: parseLooks(asset.looks),
-        matchStatus: ["matched", "new", "local", "stale"].includes(asset.match_status as string)
-          ? (asset.match_status as BundleChapterAsset["matchStatus"])
-          : "local",
+        isGroup: Boolean(asset.is_group),
+        matchStatus: parseMatchStatus(asset.match_status),
         images: mapBundleImages(asset.chapter_asset_images as Row[] | null),
       })),
       scenes: bundleScenes,
@@ -285,7 +255,6 @@ export async function buildStoryBundle(db: Db, storyId: string): Promise<{ bundl
         region: isRegion(story.region) ? story.region : DEFAULT_REGION,
         motionStyleId: str(story.motion_style_id) ?? DEFAULT_MOTION_STYLE_ID,
         format: resolveStoryFormat(story.format),
-        bible: bundleBible,
         chapters: bundleChapters,
       },
     },
@@ -302,27 +271,14 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
   if (!input || typeof input !== "object") return { error: "That file is not a story export." };
   const raw = input as Row;
   if (raw.format !== STORY_BUNDLE_FORMAT) return { error: "That file is not an AI Storybook story export." };
-  if (raw.version !== STORY_BUNDLE_VERSION) {
-    return { error: `Unsupported export version ${String(raw.version)} — this app reads version ${STORY_BUNDLE_VERSION}.` };
+  if (!READABLE_VERSIONS.includes(raw.version as number)) {
+    return { error: `Unsupported export version ${String(raw.version)} — this app reads versions ${READABLE_VERSIONS.join(" and ")}.` };
   }
   const story = raw.story as Row | undefined;
   if (!story || typeof story !== "object") return { error: "The export has no story in it." };
-  if (!Array.isArray(story.chapters) || !Array.isArray(story.bible)) {
-    return { error: "The export is missing its chapters or asset bible." };
-  }
+  if (!Array.isArray(story.chapters)) return { error: "The export is missing its chapters." };
 
-  const bible: BundleBibleEntry[] = (story.bible as Row[]).map((entry, i) => ({
-    key: num(entry.key) ?? i,
-    kind: isAssetKind(entry.kind) ? entry.kind : "character",
-    name: str(entry.name) ?? "Untitled",
-    meta: str(entry.meta),
-    spaceKind: isSpaceKind(entry.spaceKind) ? entry.spaceKind : null,
-    realPrompt: str(entry.realPrompt) ?? "",
-    looks: parseLooks(entry.looks),
-    seed: str(entry.seed),
-    locked: Boolean(entry.locked),
-    images: parseImages(entry.images),
-  }));
+  const legacyBibleImages = legacyBibleImagesByKey(story.bible);
 
   const chapters: BundleChapter[] = (story.chapters as Row[]).map((chapter, i) => ({
     index: num(chapter.index) ?? i + 1,
@@ -335,16 +291,14 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
     siteMap: chapter.siteMap ?? null,
     assets: (Array.isArray(chapter.assets) ? (chapter.assets as Row[]) : []).map((asset) => ({
       kind: isAssetKind(asset.kind) ? asset.kind : "character",
-      bibleKey: num(asset.bibleKey),
       name: str(asset.name) ?? "Untitled",
       meta: str(asset.meta),
       spaceKind: isSpaceKind(asset.spaceKind) ? asset.spaceKind : null,
       realPrompt: str(asset.realPrompt) ?? "",
       looks: parseLooks(asset.looks),
-      matchStatus: ["matched", "new", "local", "stale"].includes(asset.matchStatus as string)
-        ? (asset.matchStatus as BundleChapterAsset["matchStatus"])
-        : "local",
-      images: parseImages(asset.images),
+      isGroup: Boolean(asset.isGroup),
+      matchStatus: parseMatchStatus(asset.matchStatus),
+      images: mergeImages(parseImages(asset.images), legacyBibleImages.get(num(asset.bibleKey) ?? -1) ?? []),
     })),
     scenes: (Array.isArray(chapter.scenes) ? (chapter.scenes as Row[]) : []).map((scene, si) => ({
       index: num(scene.index) ?? si + 1,
@@ -401,11 +355,35 @@ export function parseStoryBundle(input: unknown): { bundle: StoryBundle } | { er
         region: isRegion(story.region) ? story.region : DEFAULT_REGION,
         motionStyleId: str(story.motionStyleId) ?? DEFAULT_MOTION_STYLE_ID,
         format: resolveStoryFormat(story.format),
-        bible,
         chapters,
       },
     },
   };
+}
+
+// "matched" meant linked to a bible entry; with the bible gone it is a plain
+// chapter asset.
+function parseMatchStatus(value: unknown): BundleChapterAsset["matchStatus"] {
+  if (value === "matched") return "new";
+  return value === "new" || value === "stale" ? value : "local";
+}
+
+// A version 1 bundle's bible location images, by the key its chapter assets
+// pointed at. They are folded onto those assets, as the database migration
+// that removed the bible did.
+function legacyBibleImagesByKey(input: unknown): Map<number, BundleReferenceImage[]> {
+  const byKey = new Map<number, BundleReferenceImage[]>();
+  if (!Array.isArray(input)) return byKey;
+  (input as Row[]).forEach((entry, i) => byKey.set(num(entry.key) ?? i, parseImages(entry.images)));
+  return byKey;
+}
+
+function mergeImages(own: BundleReferenceImage[], inherited: BundleReferenceImage[]): BundleReferenceImage[] {
+  const hasCanonical = own.some((image) => image.isCanonical);
+  const extra = inherited
+    .filter((image) => !own.some((o) => o.angleLabel === image.angleLabel && o.imageUrl === image.imageUrl))
+    .map((image) => ({ ...image, isCanonical: image.isCanonical && !hasCanonical }));
+  return [...own, ...extra];
 }
 
 function parseImages(input: unknown): BundleReferenceImage[] {
@@ -458,45 +436,6 @@ export async function importStoryBundle(
   if (storyErr || !story) return { error: storyErr?.message ?? "Could not create the story.", status: 500 };
   const storyId = story.id as string;
 
-  const bibleIdByKey = new Map<number, string>();
-  if (source.bible.length) {
-    const { data: inserted, error } = await db
-      .from("bible_entries")
-      .insert(
-        source.bible.map((entry) => ({
-          story_id: storyId,
-          kind: entry.kind,
-          name: entry.name,
-          meta: entry.meta,
-          space_kind: entry.spaceKind,
-          real_prompt: entry.realPrompt,
-          looks: entry.looks,
-          seed: entry.seed,
-          locked: entry.locked,
-        }))
-      )
-      .select("id");
-    if (error) return { error: error.message, status: 500 };
-    // insert() returns rows in the order they were sent, so position is the key.
-    source.bible.forEach((entry, i) => {
-      const id = inserted?.[i]?.id as string | undefined;
-      if (id) bibleIdByKey.set(entry.key, id);
-    });
-
-    const bibleImages = source.bible.flatMap((entry) =>
-      entry.images.map((image) => ({
-        bible_entry_id: bibleIdByKey.get(entry.key),
-        angle_label: image.angleLabel,
-        image_url: image.imageUrl,
-        is_canonical: image.isCanonical,
-      }))
-    ).filter((row) => row.bible_entry_id);
-    if (bibleImages.length) {
-      const { error: imgErr } = await db.from("bible_entry_images").insert(bibleImages);
-      if (imgErr) return { error: imgErr.message, status: 500 };
-    }
-  }
-
   for (const chapter of source.chapters) {
     const { data: newChapter, error: chapterErr } = await db
       .from("chapters")
@@ -521,18 +460,13 @@ export async function importStoryBundle(
           chapter.assets.map((asset) => ({
             chapter_id: chapterId,
             kind: asset.kind,
-            // A bible key that did not resolve degrades the row to unmatched
-            // rather than failing the whole import.
-            bible_entry_id: asset.bibleKey == null ? null : bibleIdByKey.get(asset.bibleKey) ?? null,
             name: asset.name,
             meta: asset.meta,
             space_kind: asset.spaceKind,
             real_prompt: asset.realPrompt,
             looks: asset.looks,
-            match_status:
-              asset.matchStatus === "matched" && (asset.bibleKey == null || !bibleIdByKey.has(asset.bibleKey))
-                ? "new"
-                : asset.matchStatus,
+            is_group: asset.isGroup,
+            match_status: asset.matchStatus,
           }))
         )
         .select("id");

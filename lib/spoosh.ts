@@ -5,13 +5,14 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, BibleEntry, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 import type { VoiceLabItem } from "@/lib/voice-lab";
+import type { PromptLabPreview, PromptLabRun, PromptLabRunBody, PromptLabRunSummary, PromptLabSceneRunBody, PromptLabVersion, PromptLabVersionBody } from "@/lib/prompt-lab";
 import type { TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
 import type { RecapV2Project, RecapV2ProjectListItem, RecapV2ProjectPatch } from "@/lib/recap-v2";
 import type { TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
@@ -131,6 +132,33 @@ export type ApiSchema = {
   "labs/voice/items/:id": {
     PATCH: { data: VoiceLabItem; body: { text?: string; resetAudio?: boolean } };
     DELETE: { data: null };
+  };
+  "labs/prompt/chapters/:id/preview/:pass": {
+    GET: { data: PromptLabPreview };
+  };
+  "labs/prompt/runs/:id/storyboard-preview": {
+    GET: { data: PromptLabPreview };
+  };
+  "labs/prompt/chapters/:id/runs": {
+    GET: { data: PromptLabRunSummary[] };
+  };
+  "labs/prompt/passes/:pass/versions": {
+    GET: { data: PromptLabVersion[] };
+    POST: { data: PromptLabVersion; body: Omit<PromptLabVersionBody, "pass"> };
+  };
+  "labs/prompt/versions/:id": {
+    PATCH: { data: PromptLabVersion; body: Partial<Pick<PromptLabVersionBody, "name" | "overrides" | "motionOverrides">> };
+    DELETE: { data: null };
+  };
+  "labs/prompt/runs": {
+    POST: { data: PromptLabRun; body: PromptLabRunBody };
+  };
+  "labs/prompt/runs/:id": {
+    GET: { data: PromptLabRun };
+    DELETE: { data: null };
+  };
+  "labs/prompt/runs/:id/scenes/:index": {
+    POST: { data: PromptLabRun; body: PromptLabSceneRunBody };
   };
   "labs/voice/generate": {
     POST: { data: VoiceLabItem[]; body: { voiceId: string; itemIds?: string[] } };
@@ -355,18 +383,9 @@ export type ApiSchema = {
   "stories/:id/permanent": {
     DELETE: { data: null };
   };
-  "stories/:id/bible": {
-    GET: { data: BibleEntry[] };
-  };
   "stories/:id/chapters": {
     GET: { data: Chapter[] };
     POST: { data: Chapter; body: { title?: string } };
-  };
-  "bible-entries/:id": {
-    PATCH: {
-      data: BibleEntry;
-      body: Partial<{ realPrompt: string; looks: CharacterLook[]; locked: boolean; name: string; meta: string }>;
-    };
   };
   "chapters/:id": {
     GET: { data: Chapter };
@@ -397,9 +416,6 @@ export type ApiSchema = {
     PATCH: { data: ChapterAsset; body: Partial<{ realPrompt: string; looks: CharacterLook[]; name: string; meta: string }> };
     DELETE: { data: null };
   };
-  "chapter-assets/:id/promote": {
-    POST: { data: ChapterAsset };
-  };
   "chapter-assets/:id/regenerate": {
     POST: { data: ChapterAsset };
   };
@@ -407,13 +423,6 @@ export type ApiSchema = {
     POST: { data: ReferenceImage; body: { angleLabel: string; imageUrl?: string | null; isCanonical?: boolean } };
   };
   "chapter-asset-images/:id": {
-    PATCH: { data: ReferenceImage; body: Partial<{ angleLabel: string; imageUrl: string | null; isCanonical: boolean }> };
-    DELETE: { data: null };
-  };
-  "chapter-asset-images/:id/promote": {
-    POST: { data: ReferenceImage };
-  };
-  "bible-entry-images/:id": {
     PATCH: { data: ReferenceImage; body: Partial<{ angleLabel: string; imageUrl: string | null; isCanonical: boolean }> };
     DELETE: { data: null };
   };

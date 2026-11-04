@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, Paperclip, Telescope, ListPlus as AddToBible } from "lucide-react";
+import { RefreshCw, ArrowRight, Sparkles, ListPlus, Trash2, Grid2x2, Camera, Columns2, Image as ImageIcon, Pencil, MoreVertical, Loader2, User, MapPin, Package, Eye, Copy, X, ChevronLeft, ChevronRight, ImagePlus, Paperclip, Telescope } from "lucide-react";
 import { ChapterHeader } from "@/components/ChapterHeader";
 import { Card, CardHeader, CardFooter, CardFooterWithMenu } from "@/components/ui/Card";
 import { useChapterImageUpload, useImagePickers } from "@/components/ChapterImageUpload";
 import { showImagePreview } from "@/components/ImagePreviewDialog";
 import { SectionHead } from "@/components/ui/SectionHead";
-import { MatchBadge } from "@/components/ui/Badge";
+import { StaleBadge } from "@/components/ui/Badge";
 import { Button, LoadingButton, MiniButton, MiniLoadingButton } from "@/components/ui/Button";
 import { EmptyCta } from "@/components/ui/EmptyCta";
 import { PromptHint } from "@/components/ui/PromptHint";
@@ -198,7 +198,6 @@ function AssetCard({
   images: ChapterImage[];
   onImagesChanged: () => void;
 }) {
-  const { trigger: promote, loading } = useWrite((api) => api("chapter-assets/:id/promote").POST());
   const { trigger: regenerate, loading: regenerating } = useWrite((api) => api("chapter-assets/:id/regenerate").POST());
   const { trigger: removeAsset, loading: removing } = useWrite((api) => api("chapter-assets/:id").DELETE());
 
@@ -246,9 +245,6 @@ function AssetCard({
   const viewPreset = asset.kind === "location" ? locationViewPreset(asset.spaceKind) : systemPrompt;
   const hints = locationPromptHints(asset.spaceKind);
 
-  // "new" carries no border tint: it is the default state of most cards, and
-  // "Add to bible" in the card's menu already says it. Only "stale" is marked,
-  // because that one is a warning.
   const borderClass = asset.matchStatus === "stale" ? "border-danger-border" : "";
 
   function confirmRegenerate() {
@@ -267,7 +263,7 @@ function AssetCard({
   function confirmRemove() {
     ConfirmDialog.show({
       title: `Remove "${asset.name}"?`,
-      content: "No longer found in this chapter's script. Removing only affects this chapter — its bible entry, if any, is untouched.",
+      content: "No longer found in this chapter's script. Removing only affects this chapter.",
       confirmButtonLabel: "Remove",
       cancelButtonLabel: "Cancel",
       onConfirm: ({ dismiss }) => {
@@ -414,12 +410,7 @@ function AssetCard({
           <div className="truncate text-[11.5px] leading-normal text-fg-3">{asset.meta}</div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {/* Only a bible-backed asset is badged. "New" needed no badge: it is the
-              default state of most cards, and "Add to bible" in the menu already
-              says it. "Stale" keeps its badge — that one is a warning. */}
-          {(asset.matchStatus === "matched" || asset.matchStatus === "stale") && (
-            <MatchBadge status={asset.matchStatus} />
-          )}
+          {asset.matchStatus === "stale" && <StaleBadge />}
           {asset.kind === "character" && (
             <MiniButton
               ghost
@@ -549,11 +540,11 @@ function AssetCard({
                       ghost
                       className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
                       onClick={toggleMenu}
-                      disabled={regenerating || loading}
+                      disabled={regenerating}
                       aria-label={`More actions for ${asset.name}`}
                       title="More actions"
                     >
-                      {regenerating || loading ? (
+                      {regenerating ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <MoreVertical size={14} />
@@ -612,18 +603,6 @@ function AssetCard({
                     <RefreshCw size={14} /> Regenerate
                   </span>
                 </MenuItem>
-                {asset.matchStatus === "new" && (
-                  <MenuItem
-                    disabled={loading}
-                    onClick={() =>
-                      promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })
-                    }
-                  >
-                    <span className="flex items-center gap-2 text-[13px] text-accent">
-                      <AddToBible size={14} /> Add to bible
-                    </span>
-                  </MenuItem>
-                )}
               </Menu>
             </CardFooterWithMenu>
           ) : (
@@ -677,11 +656,11 @@ function AssetCard({
                       ghost
                       className="!w-8 !min-w-0 cursor-pointer justify-center !p-0"
                       onClick={toggleMenu}
-                      disabled={regenerating || loading}
+                      disabled={regenerating}
                       aria-label={`More actions for ${asset.name}`}
                       title="More actions"
                     >
-                      {regenerating || loading ? (
+                      {regenerating ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <MoreVertical size={14} />
@@ -694,18 +673,6 @@ function AssetCard({
                     <RefreshCw size={14} /> Regenerate
                   </span>
                 </MenuItem>
-                {asset.matchStatus === "new" && (
-                  <MenuItem
-                    disabled={loading}
-                    onClick={() =>
-                      promote({ params: { id: asset.id }, invalidate: `chapters/${asset.chapterId}/assets` })
-                    }
-                  >
-                    <span className="flex items-center gap-2 text-[13px] text-accent">
-                      <AddToBible size={14} /> Add to bible
-                    </span>
-                  </MenuItem>
-                )}
               </Menu>
             </CardFooterWithMenu>
           )}
@@ -772,8 +739,6 @@ export default function AssetsPage() {
   const characters = assets?.filter((a) => a.kind === "character") ?? [];
   const locations = assets?.filter((a) => a.kind === "location") ?? [];
   const props = assets?.filter((a) => a.kind === "prop") ?? [];
-  const matched = characters.filter((a) => a.matchStatus === "matched").length;
-  const isNew = characters.filter((a) => a.matchStatus === "new").length;
   const staleCharacters = characters.filter((a) => a.matchStatus === "stale").length;
   const staleLocations = locations.filter((a) => a.matchStatus === "stale").length;
   const staleProps = props.filter((a) => a.matchStatus === "stale").length;
@@ -872,7 +837,7 @@ export default function AssetsPage() {
               <section className="mb-11">
                 <SectionHead
                   title="Character Prompts"
-                  count={`${characters.length} detected · ${matched} matched · ${isNew} new${staleCharacters ? ` · ${staleCharacters} stale` : ""}`}
+                  count={`${characters.length} detected${staleCharacters ? ` · ${staleCharacters} stale` : ""}`}
                   action={!!characters.length && <RegenerateAllButton assets={characters} chapterId={chapterId} />}
                 />
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
@@ -880,7 +845,7 @@ export default function AssetsPage() {
                     <AssetCard
                       key={a.id}
                       asset={a}
-                      systemPrompt={characterPreset}
+                      systemPrompt={a.isGroup ? SYSTEM_PROMPTS.characterGroup : characterPreset}
                       styleContext={styleContext}
                       chapterId={chapterId}
                       images={imagesByAsset.get(a.id) ?? []}

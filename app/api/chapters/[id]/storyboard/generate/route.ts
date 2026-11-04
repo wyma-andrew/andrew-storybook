@@ -1,46 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
-import { buildAssetContext, cleanShotAssets } from "@/lib/storyboard-assets";
+import { cleanShotAssets } from "@/lib/storyboard-assets";
+import { loadStoryboardInputs } from "@/lib/storyboard-inputs";
 import { mapScene } from "@/lib/api/map";
-import { tiptapToText, tiptapVoiceOvers } from "@/lib/tiptap-text";
+import { tiptapVoiceOvers } from "@/lib/tiptap-text";
 import { assignVoiceOvers, generateStoryboard } from "@/lib/openai";
-import { isRegion, DEFAULT_REGION } from "@/lib/constants/regions";
-import { resolveStyleContext } from "@/lib/constants/visual-styles";
 import { resolveVoiceOverAssignments } from "@/lib/voice-over";
 import { resolveMotionMode } from "@/lib/motion";
 import { resolveShotScale } from "@/lib/constants/shot-scales";
-import { resolveStoryFormat } from "@/lib/constants/story-formats";
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const db = await supabaseRoute();
 
-  const { data: chapter, error: chErr } = await db
-    .from("chapters")
-    .select("id, story_id, script, aspect_ratio")
-    .eq("id", id)
-    .single();
-  if (chErr) return NextResponse.json({ error: chErr.message }, { status: 404 });
+  const loaded = await loadStoryboardInputs(db, id);
+  if (loaded.error) return NextResponse.json({ error: loaded.error.message }, { status: loaded.error.status });
+  const { script, scriptText, assets, assetContext, styleContext, aspectRatio, region, motionStyleId, format } =
+    loaded.inputs;
 
-  const scriptText = tiptapToText(chapter.script);
-  if (!scriptText.trim()) {
-    return NextResponse.json({ error: "Script is empty — write something first." }, { status: 400 });
-  }
-
-  const [{ data: assets, error: aErr }, { data: story, error: stErr }] = await Promise.all([
-    db.from("chapter_assets").select("kind, name, meta, real_prompt, looks").eq("chapter_id", id),
-    db.from("stories").select("visual_style_id, aspect_ratio, region, motion_style_id, format").eq("id", chapter.story_id).single(),
-  ]);
-  if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
-  if (stErr) return NextResponse.json({ error: stErr.message }, { status: 500 });
-  const region = isRegion(story?.region) ? story.region : DEFAULT_REGION;
-  const styleContext = resolveStyleContext(region, story?.visual_style_id);
-
-  const assetContext = buildAssetContext(assets ?? []);
-
-  const aspectRatio = chapter.aspect_ratio ?? story?.aspect_ratio;
-  const motionStyleId = (story?.motion_style_id as string | null) ?? null;
-  const format = resolveStoryFormat(story?.format);
   const { siteMap, scenes } = await generateStoryboard(
     scriptText,
     assetContext,
@@ -50,7 +27,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     motionStyleId,
     format
   );
-  const voiceOverSources = tiptapVoiceOvers(chapter.script).map((text, index) => ({
+  const voiceOverSources = tiptapVoiceOvers(script).map((text, index) => ({
     sourceIndex: index + 1,
     text,
   }));
@@ -111,7 +88,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       prompt: sh.prompt,
       video_prompt: sh.videoPrompt,
       sound_prompt: sh.soundPrompt || null,
-      assets_used: cleanShotAssets(sh.assetsUsed, assets ?? [], siteMap),
+      assets_used: cleanShotAssets(sh.assetsUsed, assets, siteMap),
       start_state: sh.startState,
       end_state: sh.endState,
     }));

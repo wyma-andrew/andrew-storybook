@@ -117,16 +117,16 @@ npx supabase db push --db-url "$DATABASE_URL"
 ```
 
 - `supabase/` (config + `migrations/`) is the single source of truth for schema.
-- Current tables: `stories` (has `owner_id`), `chapters`, `bible_entries`
-  (story asset bible), `chapter_assets` (matched/new/stale per chapter),
-  `chapter_asset_images`, `bible_entry_images`, `scenes`, `shots`, and
-  `voice_over_segments` (storyboard narration snapshots and shot ranges).
+- Current tables: `stories` (has `owner_id`), `chapters`, `chapter_assets`
+  (new/stale per chapter), `chapter_asset_images`, `scenes`, `shots`, and
+  `voice_over_segments` (storyboard narration snapshots and shot ranges), and
+  `prompt_lab_runs` (admin Prompt Lab sandbox runs).
 - Visual styles and system prompt presets live in `lib/constants/`, not the
   database. `stories.visual_style_id` stores a code-defined style slug.
 
 ## Auth — Supabase Auth, email/password
 
-- `stories` and everything under it (chapters, bible_entries, chapter_assets,
+- `stories` and everything under it (chapters, chapter_assets,
   reference-image rows, scenes, shots, and voice_over_segments) are **owned per-user** and
   enforced by **RLS policies**, not app-level checks — route handlers for
   these tables use `supabaseRoute()` (`lib/supabase/route.ts`, anon key +

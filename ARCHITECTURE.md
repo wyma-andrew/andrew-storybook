@@ -6,15 +6,13 @@ changing a feature; history explains **why** its behavior was chosen.
 
 ## Product model
 
-One user owns many stories. A story holds shared settings and a reusable Asset
-Bible. Each story has many episodes (called `chapters` in code and the database),
+One user owns many stories. A story holds shared settings. Each story has many episodes (called `chapters` in code and the database),
 and each chapter follows this flow:
 
 ```text
 Tiptap screenplay
   -> AI asset extraction
   -> chapter characters / locations / props
-  -> optional manual promotion into the story Asset Bible
   -> AI storyboard generation
   -> scenes
   -> numbered shots with image + video prompts and continuity metadata
@@ -39,15 +37,14 @@ app/
   api/                         Next Route Handlers; browser data boundary
     auth/                      Email/password session operations
     admin/users/               Admin-only: list/create accounts, set feature flags, delete
-    (story)/stories/           Story list, detail, trash, bible, chapters (URL: /api/stories)
+    (story)/stories/           Story list, detail, trash, chapters (URL: /api/stories)
     (story)/stories/:id/export  One story as a portable JSON bundle
     (story)/stories/import      Rebuilds a bundle as a new story owned by the caller
     chapters/                  Script persistence, extraction, sync, storyboard
     chapters/:id/images/       List + record uploaded renders; /presign mints R2 PUT URLs
     chapter-images/:id         Delete one uploaded render (row + R2 object)
-    chapter-assets/            Edit, delete, promote, regenerate, add image
-    chapter-asset-images/      Edit/delete/promote chapter location images
-    bible-entries/             Edit shared story-bible entries and images
+    chapter-assets/            Edit, delete, regenerate, add image
+    chapter-asset-images/      Edit/delete chapter location images
     shots/                     Store/clear user prompt overrides
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
@@ -55,6 +52,7 @@ app/
     (recap-v2)/recap-v2-projects/ Recap V2 CRUD, upload, transcribe, translate, Smart Sync render
     (transcript)/transcript-projects/ Burmese video upload and speech-to-text
     labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
+    labs/prompt/               Admin-only: storyboard / asset-extraction preview, sandbox runs
   (app)/                       Shared layout.tsx: renders MobileNavProvider, Sidebar and the
                                rounded panel once, so they survive client-side navigation here
     (story)/
@@ -71,19 +69,20 @@ app/
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
     labs/voice/                Burmese narration generation test bench
+    labs/prompt/               Admin-only Prompt Lab: inspect, edit, run and compare storyboard and asset prompts
     settings/                  Read-only styles and system prompts
   sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Movie Recap, Recap V2, Transcript, Translate, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories (admin: Prompt Lab nested under it), Movie Recap, Recap V2, Transcript, Translate, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
   ScriptEditor.tsx             Tiptap screenplay editor and import UI
   StoryTransfer.tsx            Export-story menu item and import-file button
   ChapterHeader.tsx            Chapter navigation and workflow tabs
-  StoryControlsMenu.tsx        Story style, motion style, region, aspect, delete, bible
+  StoryControlsMenu.tsx        Story style, motion style, region, aspect, export, delete
   ChapterControlsMenu.tsx      Chapter aspect override and story region
   ui/                          Shared GeckoUI-backed presentation primitives
 
@@ -93,6 +92,8 @@ lib/
   prompts/                     Asset, regeneration, and storyboard instructions
   constants/                   Styles, motion styles, story formats, system presets, regions, aspect ratios
   prompt-copy.ts               Final copied-prompt composition
+  storyboard-inputs.ts         Chapter -> storyboard-pass inputs (Generate route and Prompt Lab)
+  prompt-lab.ts                Prompt Lab types, models, row mappers
   story-transfer.ts            Story bundle build/parse/import (cross-account transfer)
   tiptap-text.ts               Tiptap JSON -> role-tagged AI input
   tiptap/                      Custom screenplay nodes and text importer
@@ -109,6 +110,14 @@ proxy.ts                       Session refresh and page-route auth redirects
 ```
 
 ## Runtime boundaries
+
+### Deployment
+
+Production is one Docker container on a shared Contabo server, behind its reverse
+proxy (`.github/DEPLOYMENT.md`). A push to `main` runs
+`.github/workflows/deploy.yml`. ffmpeg-based work runs in that container unless
+`RECAP_JOB_RUNNER=github` sends recap script and render jobs to Actions.
+Migrations are not part of deploy.
 
 ### Browser to API
 
@@ -164,6 +173,17 @@ schemas. The operations are:
   The story format picks the schema: only `cozy-asmr` adds `soundPrompt`.
 - `regenerateSceneShots()` — replacement shots for one existing scene.
 - `assignVoiceOvers()` — ordered, non-overlapping narration ranges over finalized shots.
+
+The storyboard and asset-extraction passes are each split into a message
+builder (`storyboardMessages()`, `extractAssetsMessages()`) and a call
+(`runStoryboardPass()`, `runExtractAssetsPass()`), so Prompt Lab (`/labs/prompt`)
+shows and runs the exact request production sends; both system prompts are
+built as ordered labeled blocks (`lib/prompts/parts.ts`) that the lab displays
+one by one. Lab runs are saved to
+`prompt_lab_runs` and never touch assets, scenes or shots; an extraction run can
+feed a storyboard run's Known Assets, and one scene of a storyboard run can be
+re-shot (`runSceneShotsPass()` + `sceneScopePrompt()`, the same scope block
+`regenerateSceneShots()` sends) — see `history/prompt-lab.md`.
 
 Tiptap JSON is flattened by `tiptapToText()` into tagged lines such as
 `[SCENE]`, `[ACTION]`, and `[DIALOG]`, so models receive explicit screenplay
@@ -458,23 +478,23 @@ rows and prompts, inserts newly found assets, marks missing assets `stale`, and
 revives stale rows when their exact entity returns. Existing non-stale names
 are supplied to extraction to keep names stable.
 
-Bible matching is normalized name matching within the same asset kind. A match
-inherits the bible prompt and location `space_kind`; an unmatched asset starts
-as `new`. Promotion creates a `bible_entries` row and changes the chapter asset
-to `matched`.
+Every extracted asset starts as `new`. There is no story-wide asset store:
+each chapter's assets stand alone (the Asset Bible was removed — see
+`history/asset-bible-removal.md`).
 
 Extraction fills a `storyAnalysis` (scene → place map, place groupings,
 character arcs) before any asset; it is logged, not stored. A character whose
-appearance changes lastingly gets `looks` (jsonb on `chapter_assets` and
-`bible_entries`): IDENTITY LOCK in `real_prompt` holds the shared traits, each
+appearance changes lastingly gets `looks` (jsonb on `chapter_assets`): IDENTITY LOCK in `real_prompt` holds the shared traits, each
 look its own appearance and wardrobe and its own sheet copy
 (`lib/character-looks.ts`). Storyboard shots pick a look in
 `assets_used[].look`; uploaded renders carry `chapter_images.look_key`.
+A recurring nameless collective (devas, hell beings) is one `character` row with
+`is_group`; it copies with the group sheet preset instead of the
+single-person turnaround.
 
 Locations use structured `STRUCTURE SHELL`, `FIXED LAYOUT`, optional `VIEWS`,
 and `SPATIAL RULES`. One physical place is merged during extraction. Location
-reference images are URL-only and move into the bible only through explicit
-promotion. Characters and props currently have no reference-image rows.
+reference images are URL-only and chapter-scoped. Characters and props currently have no reference-image rows.
 
 ### Storyboard
 
@@ -530,12 +550,11 @@ edited separately and is never injected into per-shot video prompts.
 - Import: `POST /api/stories/import`
 - UI: `components/StoryTransfer.tsx` (Story options menu, Stories header)
 
-Export returns the story, its Asset Bible, and every chapter (script, site map,
+Export returns the story and every chapter (script, site map,
 chapter assets, scenes, shots, Voice Over segments) as ordinary JSON, which the
 browser saves as a `.storybook.json` file. Import parses a picked file, posts it
 back, and inserts the whole tree as a new story owned by the signed-in user.
-Database ids never travel: bible entries carry a bundle-local key and Voice Over
-ranges reference `{ sceneIndex, shotIndex }`, remapped during import. Uploaded
+Database ids never travel: Voice Over ranges reference `{ sceneIndex, shotIndex }`, remapped during import. Uploaded
 chapter images (R2 objects) are deliberately excluded — see
 `history/story-transfer.md`.
 
@@ -573,15 +592,13 @@ auth.users
             -> scenes.chapter_id
                  -> shots.scene_id
             -> voice_over_segments.chapter_id
-       -> bible_entries.story_id
-            -> bible_entry_images.bible_entry_id
+            -> prompt_lab_runs.chapter_id (also owner_id -> auth.users)
 
 auth.users
   -> movie_recap_projects.owner_id
        -> movie_recap_range_renders.project_id
   -> translate_projects.owner_id
 
-chapter_assets.bible_entry_id -> bible_entries.id (nullable)
 voice_over_segments.start_shot_id / end_shot_id -> shots.id
 ```
 
@@ -590,14 +607,13 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `profiles` | Mirrored email, admin flag, and one feature-access boolean per gated feature |
 | `stories` | Ownership, title, description, style slug, motion style slug, format, region, aspect, soft delete |
 | `chapters` | Episode order, Tiptap script, workflow status, aspect override, storyboard site map |
-| `chapter_assets` | Chapter-local extracted asset and bible match state |
-| `bible_entries` | Story-wide approved character/location/prop identity |
+| `chapter_assets` | Chapter-local extracted asset, prompt, looks, and stale state |
 | `chapter_images` | Externally generated renders uploaded to R2, per chapter |
-| `chapter_asset_images` | Pending chapter-scoped location image URLs |
-| `bible_entry_images` | Promoted story-wide location image URLs |
+| `chapter_asset_images` | Chapter-scoped location reference image URLs |
 | `scenes` | Ordered storyboard scenes and their lighting line |
 | `shots` | Ordered prompts (image, video, optional sound), overrides, references, beat, framing scale, motion mode, and continuity state |
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
+| `prompt_lab_runs` | Prompt Lab sandbox runs (storyboard or asset extraction): prompts as sent, model, context, raw/parsed output, usage, optional source asset run |
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
 | `movie_recap_range_renders` | Saved output and beat bounds for standalone range renders |
 | `translate_projects` | Owned source upload, SRT, blur/subtitle settings, and rendered MP4 |
@@ -615,7 +631,7 @@ tables. Their sources of truth are `lib/constants/visual-styles.ts`,
 
 Implemented: email/password auth, per-user stories, soft-delete trash,
 multi-chapter stories, Tiptap screenplay import/editing, three-kind asset
-extraction, chapter-local character-info and prompt editing, story bible promotion,
+extraction, chapter-local character-info and prompt editing,
 location reference-image URLs, storyboard
 generation, editable/restorable shot prompts, style/region selection,
 story-wide motion style with a per-shot motion mode override, per-scene

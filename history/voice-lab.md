@@ -354,3 +354,31 @@ description and seed alone.
 **Rejected:** exposing sample 2 as an unreferenced profile, because its voice
 could change across narration lines. The original 48 kHz experiment remains a
 manual listening sample; the worker uses a converted 16 kHz copy.
+
+## 2026-10-25 — Add the supplied Grandpa reference profile
+
+**Decision:** add `grandpa` as a Voice Lab-only VoxCPM2 reference profile from
+the user-supplied old-man storytelling clip (converted from 48 kHz stereo MP3 to
+16 kHz mono PCM), with its exact Burmese transcript as `referenceText`.
+
+**Why:** the user wants a warm grandfather-to-grandchild storyteller voice; a
+fixed reference anchors identity better than voice design and seed.
+
+**Consequence:** the Modal worker must be redeployed with `grandpa.wav` before
+this profile can generate audio. Consistency on other lines still needs
+listening tests.
+
+The reference was replaced the same day with the user's noise-reduced version
+of the clip (same transcript), converted the same way; the catalog hash
+changed with it.
+
+## 2026-10-25 — Regenerate all lines
+
+**Decision:** Voice Lab has a confirmed "Regenerate all" action that sends
+every line's ID to the existing generate route with the selected voice, so
+finished lines are re-rendered too (Generate still only picks unfinished ones).
+
+**Why:** comparing a new or changed voice profile on an already generated
+script otherwise needs one click per line.
+
+**Consequence:** old audio is replaced as each line finishes; there is no undo.

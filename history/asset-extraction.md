@@ -5,6 +5,32 @@ Covers: `lib/prompts/extract-assets.ts`, `lib/openai.ts` (`extractAssets`,
 `app/api/chapters/[id]/sync`, `app/api/chapter-assets/[id]/regenerate`,
 `app/stories/[id]/chapters/[chapterId]/assets/page.tsx`.
 
+> **Superseded in part (2026-10-28):** the story Asset Bible was removed; anything below about bible entries, bible matching or promotion is history only. See `history/asset-bible-removal.md`.
+
+## 2026-10-29 — Every Story pass runs at medium reasoning effort (supersedes "high")
+
+**Decision, by the user.** `STORY_REASONING_EFFORT = "medium"` in
+`lib/openai.ts` is now the effort for extraction, single-asset regenerate,
+storyboard generation, scene regeneration and Voice Over mapping. Before this,
+extraction and regenerate ran at `high` and the other three sent no effort at
+all (the model's own default).
+
+**Superseded reasoning.** The 2026-10-10 entry below put extraction at `high`
+so the model would work through `storyAnalysis` (scene → place map) before any
+asset; that is what fixed merged / dropped forest locations on the Angulimala
+chapter. The schema order still forces the analysis first, but with less
+reasoning. **If locations start merging or disappearing again, effort is the
+first thing to raise** — compare in Prompt Lab at medium vs high on that
+chapter. Movie Recap, Recap V2 and Translate keep their own settings.
+
+## 2026-10-28 — Extraction request is built by `extractAssetsMessages`
+
+`extractAssets()` is now `extractAssetsMessages` → `runExtractAssetsPass` →
+`parseExtractedAssets`, so Prompt Lab can show and run the exact Analyze request.
+Behaviour is unchanged (same model, `high` effort, same names block). Any
+change to the extraction request belongs in those functions, or the lab drifts
+from production — see `history/prompt-lab.md`.
+
 ## 2026-10-10 — Extraction reads the story before writing assets
 
 Extraction was keying off surface words: a `[SCENE]` heading or an object noun
@@ -163,6 +189,8 @@ pure friction. The split is deliberate; don't collapse it.
 
 ## 2026-09-11 — Asset card prompts collapse to two lines
 
+> **Superseded (2026-10-28):** asset cards no longer render the prompt text (it opens in the prompt dialog), so `components/ui/ClampedText.tsx` was unused and has been deleted. The reasoning below is kept for if inline prompts return.
+
 Asset prompts run long enough that a chapter's card grid became unscannable, so
 `real_prompt` on the Assets step renders through `components/ui/ClampedText.tsx`,
 clamped to four lines with a Show more / Show less toggle on its own line below
@@ -177,3 +205,71 @@ is also reachable via Copy prompt and the character edit dialog.
 
 Rejected truncating the stored/copied text: the clamp is display-only; copy
 actions still use the whole prompt.
+
+## 2026-10-22 — Recurring nameless collectives are one group character
+
+`characterGroupBlock()` (extract + single-asset regenerate) makes a recurring,
+story-relevant nameless collective — hell beings, devas, a monastic assembly — a
+single plural-named `character` row whose IDENTITY/WARDROBE LOCK describes what
+the members share. Without it the model either omitted them (each shot drew them
+differently) or would need one asset per member. Groups are `character` rows in the same section, flagged `is_group`
+(chapter_assets + bible_entries).
+
+Narrows, does not reverse, `history/ambient-population.md` (2026-09-10): a
+background crowd that merely fills a populated place is still prose and never an
+asset. Only a recurring collective the story keeps returning to becomes a group.
+Named individuals stay separate characters. 
+The flag exists because copy wraps every character in `SYSTEM_PROMPTS.character`
+(a single-person front/3-quarter/side/back turnaround, "exact facial structure
+of this character"); a group prompt inside it came out as one man in four views.
+`is_group` selects `SYSTEM_PROMPTS.characterGroup` (one wide lineup of 4-6
+individuals sharing the group look) in the bible and assets pages. Regenerate
+keeps the flag and a group has no looks. Rejected: guessing groups from a plural
+name. Open: groups are not listed in a separate section.
+
+A crowd of ordinary people is a cross-section of social strata, not a uniform:
+WARDROBE LOCK gets one bullet per stratum present, wealthier members in finer,
+more colorful cloth and ornament (period-appropriate; restraint stays the baseline
+for the Buddha region). The first group sheet drew five people in near-identical
+plain cloth, which misrepresents a real crowd. Sheets generated before this keep
+the uniform look until regenerated.
+
+## 2026-10-22 — Social standing drives characters and locations
+
+`socialStandingBlock()` (extract + regenerate, characters and locations, not
+props) tells the model to infer each character's and location's standing from
+occupation, wealth, class, and role, and set clothing, ornament, grooming, and
+dwelling size, materials, furnishing, and upkeep from it. Without it everyone
+came out in the same plain cloth and every home was the same modest hut.
+Wealthier means finer and more colorful within the region's rules, never
+anachronistic; the Buddha region's restraint against later-era ornament is
+unchanged. Existing prompts keep their old look until regenerated.
+
+## 2026-10-22 — Location prompts must fully specify each element
+
+`locationSpatialLayoutBlock()` gained COMPLETE EXTENT, MATERIAL BY APPEARANCE,
+and STATED CONDITION, plus a ban on activity wording. A location prompt that
+described only the near end of three staircases was drawn with the far ends
+invented as a stepped brick mound, painted-looking gold/silver, ruined brick
+foundations from a vague "stone-edged boundary", and carts, pots, and cattle from
+"working city edge". Every one traced to something the prompt left unsaid.
+
+Rejected: a rule naming the symptom (staircases rise into the sky). Stories vary
+too much; the rules state the principle (never leave an element's extent,
+surface, or condition unsaid) so they apply to any structure. Existing location
+prompts keep their old text until regenerated.
+
+## 2026-10-23 — Groups are described in the shot, never attached as references
+
+Many named characters plus a group sheet in one shot meant six-plus reference
+images, and the render mixed them up. User decision: a group stays an asset (its
+sheet can still be generated and copied) but is no longer attached to shots. The
+Known Assets block marks it "Character group — NOT a reference image",
+`cleanShotAssets` drops a group from `assetsUsed`, and the Known Assets line tells the storyboard model to describe the group in
+the shot `prompt` from its look. Only individual characters are references.
+
+Narrows the 2026-10-22 group decision: that entry's reference-sheet preset still
+applies when a group sheet is generated, but the sheet is not a shot reference.
+Consequence: a group in frame is drawn from words, so it can vary shot to shot;
+that is accepted in exchange for fewer references. Existing shots keep the group
+in `assetsUsed` until their scene is regenerated.

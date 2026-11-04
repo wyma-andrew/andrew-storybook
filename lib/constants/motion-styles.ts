@@ -107,11 +107,11 @@ export const MOTION_STYLES: MotionStylePreset[] = [
         "No walking, no broad gestures, no exaggerated expression. " +
         HOLD_DESIGN,
       normal:
-        "MOTION:\nNatural walking pace with calm, grounded body movement. One primary action only. " +
-        "Robes and cloth respond gently to the movement and the breeze. " +
-        "Camera tracks or pans smoothly with the movement. " +
-        "No hurried, sharp, or exaggerated motion. " +
-        HOLD_DESIGN,
+        "MOTION:\nRestrained, natural cinematic movement. Preserve the primary physical action described in the shot with measured, controlled, anatomically believable motion. " +
+        "Walking uses natural, unhurried steps appropriate to the character and situation. " +
+        "Gestures remain subtle and purposeful, without exaggerated body movement or abrupt acceleration. " +
+        "Keep the camera fixed by default. Allow only a single extremely slow, subtle camera movement when clearly necessary to follow the action. " +
+        "Preserve character appearance, clothing, object positions, and environment geometry throughout the clip.",
       emotional:
         "MOTION:\nHold the character nearly still as the emotion settles. Subtle breathing, slight eye movement, " +
         "one small change of expression. Very slow push-in toward the face. " +

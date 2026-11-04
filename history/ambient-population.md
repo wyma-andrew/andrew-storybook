@@ -2,6 +2,12 @@
 
 Covers: `lib/prompts/shared.ts` (`ambientPopulationBlock`), `lib/prompts/storyboard.ts`.
 
+## 2026-10-22 — Recurring collectives are the exception
+
+A recurring, story-relevant nameless collective (devas, hell beings, a monastic
+assembly) is now one group character asset; see `history/asset-extraction.md`
+2026-10-22. Ambient filler crowds below are unchanged.
+
 ## 2026-10-11 — Background people always have a gaze target
 
 Photoreal crowd shots kept staring into the lens. The ambient clause, and any

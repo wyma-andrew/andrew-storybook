@@ -42,11 +42,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       assets.map((a) => ({
         chapter_id: newChapter.id,
         kind: a.kind,
-        bible_entry_id: a.bible_entry_id,
         name: a.name,
         meta: a.meta,
         real_prompt: a.real_prompt,
         looks: a.looks,
+        is_group: a.is_group,
         match_status: a.match_status,
       }))
     );

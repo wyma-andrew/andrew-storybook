@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { Select, SelectOption, ConfirmDialog, Drawer, toast } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
@@ -176,13 +175,6 @@ export function StoryControlsMenu({
         </Select>
       </div>
       <div className="border-t border-line">
-        <Link
-          href={`/stories/${storyId}/bible`}
-          className="block w-full px-3.5 py-2.5 text-left text-[13px] text-fg no-underline hover:bg-hover"
-          onClick={() => setOpen(false)}
-        >
-          Manage Bible
-        </Link>
         <ExportStoryMenuItem storyId={storyId} onDone={() => setOpen(false)} />
         <button
           type="button"
