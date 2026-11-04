@@ -1,6 +1,6 @@
 services:
   ai-storybook-app-prod:
-    image: waiyandev/ai-storybook-app-prod:latest
+    image: waiyandev/ai-storybook:latest
     container_name: ai-storybook-app-prod
     init: true
     ports:
@@ -18,7 +18,7 @@ services:
         max-file: "3"
 
   migrate:
-    image: waiyandev/ai-storybook-app-prod:latest
+    image: waiyandev/ai-storybook:latest
     env_file:
       - .env.docker
     command: migrate

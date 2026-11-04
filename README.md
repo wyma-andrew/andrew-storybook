@@ -200,7 +200,7 @@ with ffmpeg (libass + libopus), PySceneDetect, Noto Sans Myanmar
 Build and run locally:
 
 ```bash
-docker build --target runner -t waiyandev/ai-storybook-app-prod:latest .
+docker build --target runner -t waiyandev/ai-storybook:latest .
 ```
 
 ```bash

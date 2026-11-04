@@ -31,7 +31,7 @@ jobs:
           context: .
           target: runner
           push: true
-          tags: waiyandev/ai-storybook-app-prod:latest
+          tags: waiyandev/ai-storybook:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

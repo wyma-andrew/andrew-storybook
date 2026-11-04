@@ -5,7 +5,7 @@ the image, pushes it to Docker Hub, then SSH-deploys with `docker compose`.
 
 | Branch | Workflow | Image | Server path | Host port |
 | --- | --- | --- | --- | --- |
-| `main` | `deploy.yml` | `waiyandev/ai-storybook-app-prod:latest` | `~/projects/ai-storybook` | `127.0.0.1:3100` |
+| `main` | `deploy.yml` | `waiyandev/ai-storybook:latest` | `~/projects/ai-storybook` | `127.0.0.1:3100` |
 
 Set `APP_PORT`, `APP_CPUS`, or `APP_MEM_LIMIT` in the server's
 `~/projects/ai-storybook/.env` to change the compose defaults. Do not use
@@ -29,7 +29,7 @@ Set `APP_PORT`, `APP_CPUS`, or `APP_MEM_LIMIT` in the server's
 
 ## Pre-flight
 
-1. Make the Docker Hub repository `waiyandev/ai-storybook-app-prod` private
+1. Make the Docker Hub repository `waiyandev/ai-storybook` private
    before the first push if the compiled prompts should not be public. The
    server then needs `docker login` once.
 2. Point the domain at the server and add a reverse-proxy site. nginx example:
