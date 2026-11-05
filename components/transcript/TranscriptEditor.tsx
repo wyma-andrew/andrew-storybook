@@ -7,7 +7,7 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
 import { formatDuration } from "@/lib/movie-recap";
 import { useRead, useWrite } from "@/lib/spoosh";
-import type { TranscriptProject } from "@/lib/transcript-project";
+import { TRANSCRIPT_STALE_JOB_MS, type TranscriptProject } from "@/lib/transcript-project";
 
 function Elapsed() {
   const [startedAt] = useState(() => Date.now());
@@ -23,6 +23,7 @@ function Elapsed() {
 export function TranscriptEditor({ projectId }: { projectId: string }) {
   const { data, error } = useRead((api) => api("transcript-projects/:id").GET({ params: { id: projectId } }));
   const { trigger: poll } = useRead((api) => api("transcript-projects/:id").GET({ params: { id: projectId } }), { enabled: false });
+  const { trigger: pollProgress } = useRead((api) => api("transcript-projects/:id/progress").GET({ params: { id: projectId } }), { enabled: false });
   const { trigger: transcribe } = useWrite((api) => api("transcript-projects/:id/transcribe").POST());
   const [server, setServer] = useState<TranscriptProject | null>(null);
   const [tab, setTab] = useState<"video" | "transcript" | null>(null);
@@ -32,11 +33,21 @@ export function TranscriptEditor({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!running) return;
     const interval = window.setInterval(async () => {
-      const result = await poll({ force: true });
-      if (result.data) setServer(result.data);
-    }, 2000);
+      const { data: progress } = await pollProgress({ force: true });
+      if (!progress) return;
+      if (progress.jobStatus !== "running") {
+        const result = await poll({ force: true });
+        if (result.data) setServer(result.data);
+        return;
+      }
+      if (Date.now() - Date.parse(progress.updatedAt) >= TRANSCRIPT_STALE_JOB_MS) window.clearInterval(interval);
+      setServer((current) => {
+        const latest = current ?? data ?? null;
+        return latest?.jobStatus === "running" ? { ...latest, ...progress } : current;
+      });
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [running, poll]);
+  }, [running, data, poll, pollProgress]);
 
   if (error) return <Body><Wrap><p className="text-danger">{error.error}</p></Wrap></Body>;
   if (!project) return <Body><Wrap><p className="text-fg-3">Loading project…</p></Wrap></Body>;

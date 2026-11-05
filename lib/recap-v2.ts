@@ -64,6 +64,20 @@ export type RecapV2ProjectListItem = Pick<RecapV2Project,
 
 export const RECAP_V2_LIST_COLUMNS = "id,name,source_file_name,source_size_bytes,source_duration_seconds,source_upload_status,cover_url,updated_at,units,render_output_url";
 
+export type RecapV2Progress = Pick<RecapV2Project, "jobKind" | "jobStatus" | "jobStage" | "jobProgress" | "updatedAt">;
+
+export const RECAP_V2_PROGRESS_COLUMNS = "job_kind,job_status,job_stage,job_progress,updated_at";
+
+export function mapRecapV2Progress(row: Record<string, unknown>): RecapV2Progress {
+  return {
+    jobKind: (row.job_kind as RecapV2JobKind) ?? null,
+    jobStatus: row.job_status as RecapV2Project["jobStatus"],
+    jobStage: (row.job_stage as string) ?? null,
+    jobProgress: row.job_progress == null ? null : Number(row.job_progress),
+    updatedAt: row.updated_at as string,
+  };
+}
+
 // A job row older than this is treated as orphaned by a restart and may be reclaimed.
 export const RECAP_V2_STALE_JOB_MS = 2 * 60 * 60 * 1000;
 

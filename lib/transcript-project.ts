@@ -26,11 +26,23 @@ export type TranscriptProjectListItem = Pick<TranscriptProject,
 
 export const TRANSCRIPT_LIST_COLUMNS = "id,name,source_file_name,source_size_bytes,source_duration_seconds,source_upload_status,cover_url,job_status,updated_at,transcript_text";
 
+export type TranscriptProgress = Pick<TranscriptProject, "jobStatus" | "jobStage" | "updatedAt">;
+
+export const TRANSCRIPT_PROGRESS_COLUMNS = "job_status,job_stage,updated_at";
+
+export function mapTranscriptProgress(row: Record<string, unknown>): TranscriptProgress {
+  return {
+    jobStatus: row.job_status as TranscriptProject["jobStatus"],
+    jobStage: (row.job_stage as string) ?? null,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 // A job row older than this is treated as orphaned by a restart and may be reclaimed.
-const STALE_JOB_MS = 2 * 60 * 60 * 1000;
+export const TRANSCRIPT_STALE_JOB_MS = 2 * 60 * 60 * 1000;
 
 export function transcriptJobRunning(row: { job_status: unknown; updated_at: unknown }) {
-  return row.job_status === "running" && Date.now() - Date.parse(String(row.updated_at)) < STALE_JOB_MS;
+  return row.job_status === "running" && Date.now() - Date.parse(String(row.updated_at)) < TRANSCRIPT_STALE_JOB_MS;
 }
 
 export function mapTranscriptProjectListItem(row: Record<string, unknown>): TranscriptProjectListItem {

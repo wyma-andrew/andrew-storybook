@@ -4,6 +4,20 @@ Covers: `app/(app)/(transcript)/**`, `app/api/(transcript)/**`,
 `components/transcript/**`, `lib/transcript-*.ts`, `workers/whisper-mm/**`,
 and the `transcript_projects` migration.
 
+## 2026-11-05 — The poller reads progress columns, not the whole row
+
+**Decision, approved by the user:** the editor's tick reads
+`GET transcript-projects/:id/progress` every 10 seconds, down from the full row
+every 2. When the job leaves `running` it fetches the full row once and adopts it.
+A tick that finds the row orphaned by `TRANSCRIPT_STALE_JOB_MS` stops the timer.
+
+**Why:** Fast Origin Transfer; see `history/recap-v2.md` 2026-11-05 for the usage
+numbers. The full row carries `transcript_text`, including the previous transcript
+during "Transcribe again".
+
+**Consequences:** the stage label can lag by up to 10 seconds. The button stays
+"Transcribing…" after the timer stops on an orphaned row, until a reload.
+
 ## 2026-10-09 — Burmese video to plain text, on Whisper large-v3 (Modal)
 
 **Decision, by the user:** a separate "Transcript" menu: upload a Burmese

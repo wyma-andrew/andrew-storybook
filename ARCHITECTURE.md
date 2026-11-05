@@ -378,6 +378,7 @@ speech transcript is cached in project-scoped R2 per source video; unmatched cue
 their original timing. Users can switch between original and synced timing without
 discarding either; an explicit delete removes synced timing. The server downloads the original video, burns the blur
 and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
+The editor follows a render through `GET translate-projects/:id/progress`.
 
 ### Recap V2
 
@@ -397,7 +398,9 @@ cached by content in R2), optionally trims its edge silence ("Short pauses"),
 retimes each window's picture to its line (max 1.25×, then the window's tail
 is cut; frame-locked to the cumulative narration clock), applies source-frame blur and
 Movie Recap's `buildShotFilter` look, concatenates, burns captions, and muxes.
-All three share one job slot (`job_*` columns) that the editor polls.
+All three share one job slot (`job_*` columns). The editor polls
+`GET recap-v2-projects/:id/progress` and fetches the full row when the job leaves
+`running`.
 
 ### Transcript
 
@@ -407,7 +410,8 @@ All three share one job slot (`job_*` columns) that the editor polls.
 - Worker: `workers/whisper-mm/` (Whisper large-v3 on Modal, `lib/transcript-worker.ts`)
 
 A Burmese video uploads to R2 (same multipart flow as Recap V2); Transcribe
-extracts Opus audio and sends it to the Whisper worker; the segments become
+extracts Opus audio and sends it to the Whisper worker, while the editor polls
+`GET transcript-projects/:id/progress`; the segments become
 plain text (`transcript_text`), shown in a Transcript tab with copy and .txt
 download. No timestamps are kept.
 

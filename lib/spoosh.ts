@@ -13,9 +13,9 @@ import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 import type { VoiceLabItem } from "@/lib/voice-lab";
 import type { PromptLabPreview, PromptLabRun, PromptLabRunBody, PromptLabRunSummary, PromptLabSceneRunBody, PromptLabVersion, PromptLabVersionBody } from "@/lib/prompt-lab";
-import type { TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
-import type { RecapV2Project, RecapV2ProjectListItem, RecapV2ProjectPatch } from "@/lib/recap-v2";
-import type { TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
+import type { TranslateProgress, TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
+import type { RecapV2Progress, RecapV2Project, RecapV2ProjectListItem, RecapV2ProjectPatch } from "@/lib/recap-v2";
+import type { TranscriptProgress, TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
 
 export type ApiSchema = {
   "transcript-projects": {
@@ -28,6 +28,9 @@ export type ApiSchema = {
   "transcript-projects/:id": {
     GET: { data: TranscriptProject };
     DELETE: { data: null };
+  };
+  "transcript-projects/:id/progress": {
+    GET: { data: TranscriptProgress };
   };
   "transcript-projects/:id/cover": {
     POST: { data: TranscriptProject; body: { sourceObjectKey: string; imageBase64: string } };
@@ -54,6 +57,9 @@ export type ApiSchema = {
     GET: { data: RecapV2Project };
     PATCH: { data: RecapV2Project; body: RecapV2ProjectPatch };
     DELETE: { data: null };
+  };
+  "recap-v2-projects/:id/progress": {
+    GET: { data: RecapV2Progress };
   };
   "recap-v2-projects/:id/cover": {
     POST: { data: RecapV2Project; body: { sourceObjectKey: string; imageBase64: string } };
@@ -84,6 +90,9 @@ export type ApiSchema = {
     GET: { data: TranslateProject };
     PATCH: { data: TranslateProject; body: TranslateProjectPatch };
     DELETE: { data: null };
+  };
+  "translate-projects/:id/progress": {
+    GET: { data: TranslateProgress };
   };
   "translate-projects/:id/cover": {
     POST: { data: TranslateProject; body: { sourceObjectKey: string; imageBase64: string } };

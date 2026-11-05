@@ -45,6 +45,22 @@ export type TranslateProject = {
   updatedAt: string;
 };
 
+export type TranslateProgress = Pick<TranslateProject, "renderStatus" | "renderProgress" | "renderError" | "renderOutputUrl" | "updatedAt">;
+
+export const TRANSLATE_PROGRESS_COLUMNS = "render_status,render_progress,render_error,render_output_url,updated_at";
+
+export const TRANSLATE_STALE_RENDER_MS = 2 * 60 * 60 * 1000;
+
+export function mapTranslateProgress(row: Record<string, unknown>): TranslateProgress {
+  return {
+    renderStatus: row.render_status as TranslateProject["renderStatus"],
+    renderProgress: row.render_progress == null ? null : Number(row.render_progress),
+    renderError: (row.render_error as string) ?? null,
+    renderOutputUrl: (row.render_output_url as string) ?? null,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 export type TranslateProjectPatch = Partial<Pick<TranslateProject,
   "name" | "srtFileName" | "srtText" | "subtitleCues" | "translatedSrtFileName" | "translatedSrtText" | "subtitleTimingMode" | "blurRegions" | "subtitleY" | "subtitleSize"
 >>;

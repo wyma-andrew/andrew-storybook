@@ -4,6 +4,21 @@ Covers: `app/(app)/(translate)/translate/**`, `components/translate/**`,
 `app/api/(translate)/translate-projects/**`, `lib/translate*.ts` (including `lib/translate-transfer.ts`), the
 `translate_projects` migration, and the Translate sidebar item.
 
+## 2026-11-05 — The render poller reads progress columns, not the whole row
+
+**Decision, approved by the user:** the editor's tick reads
+`GET translate-projects/:id/progress` every 10 seconds, down from the full row
+every 2. It already merged only the render fields and `updatedAt`, so the route
+returns exactly those and no full-row fetch follows. The 2-hour orphan check now
+also runs on each tick, because `render_progress` writes do not bump `updated_at`
+and the check at effect start alone never stopped a stuck row's timer.
+
+**Why:** Fast Origin Transfer; see `history/recap-v2.md` 2026-11-05 for the usage
+numbers. Every tick sent both SRT texts and the cues, then discarded them.
+
+**Consequence:** the render percentage can lag by up to 10 seconds. The 2026-09-27
+"Show real render progress" entry's write rate is unchanged.
+
 ## 2026-10-09 — GPT-5.6 models moved to GPT-6
 
 **Decision, by the user:** every `gpt-5.6-luna` call is now `gpt-6-luna` and

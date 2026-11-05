@@ -4,6 +4,28 @@ Covers: `app/(app)/(recap-v2)/**`, `app/api/(recap-v2)/**`,
 `components/recap-v2/**`, `lib/recap-v2*.ts`,
 `lib/prompts/recap-v2-translation.ts`, and the `recap_v2_projects` migration.
 
+## 2026-11-05 — The poller reads progress columns, not the whole row
+
+**Decision, approved by the user:** the editor's tick reads
+`GET recap-v2-projects/:id/progress` every 10 seconds, down from the full row
+every 2. When the job leaves `running` it fetches the full row once and adopts it.
+A tick that finds the row orphaned by `RECAP_V2_STALE_JOB_MS` stops the timer.
+
+**Why:** the Vercel account was paused at 10.28 GB of Fast Origin Transfer against
+Hobby's 10 GB, 95.6% of it outgoing and 99.1% from this app. Every tick sent all
+of `units`, and a stuck row kept sending them while the tab stayed open. The
+Usage page did not break this down by route, so polling is the likely cause
+rather than a measured one. Same reasoning as `history/movie-recap.md` 2026-11-05.
+
+**Rejected:** merging only `job_stage` and `job_progress` while dropping the
+settled row. Transcribe, Translate, and Render all replace `units` or the output,
+and a reloaded tab has no POST response to learn that from.
+
+**Consequences:** progress on screen can lag the row by up to 10 seconds. The bar
+stays "running" after the timer stops on an orphaned row, until a reload or a new
+job, because this entry changes the poller and not how `running` is displayed. A
+column the UI needs during a job must be added to `RECAP_V2_PROGRESS_COLUMNS`.
+
 ## 2026-10-09 — Lines can be muted, keeping their picture
 
 **Decision, by the user:** some ASR lines say nothing worth narrating. A line

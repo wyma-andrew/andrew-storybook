@@ -7,7 +7,7 @@ import { Button, LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
 import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatDuration } from "@/lib/movie-recap";
-import { formatUnitTime, type RecapV2JobKind, type RecapV2Project, type RecapV2ProjectPatch } from "@/lib/recap-v2";
+import { formatUnitTime, RECAP_V2_STALE_JOB_MS, type RecapV2JobKind, type RecapV2Project, type RecapV2ProjectPatch } from "@/lib/recap-v2";
 import { clampTranslateRect, type TranslateRect } from "@/lib/translate";
 import { listVoices } from "@/lib/tts/voices";
 import { RecapV2OutputPreview } from "@/components/recap-v2/RecapV2OutputPreview";
@@ -50,6 +50,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export function RecapV2Editor({ projectId }: { projectId: string }) {
   const { data, error } = useRead((api) => api("recap-v2-projects/:id").GET({ params: { id: projectId } }));
   const { trigger: poll } = useRead((api) => api("recap-v2-projects/:id").GET({ params: { id: projectId } }), { enabled: false });
+  const { trigger: pollProgress } = useRead((api) => api("recap-v2-projects/:id/progress").GET({ params: { id: projectId } }), { enabled: false });
   const { trigger: patch, loading: saving } = useWrite((api) => api("recap-v2-projects/:id").PATCH());
   const { trigger: transcribe } = useWrite((api) => api("recap-v2-projects/:id/transcribe").POST());
   const { trigger: resplit } = useWrite((api) => api("recap-v2-projects/:id/resplit").POST());
@@ -72,11 +73,21 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!running) return;
     const interval = window.setInterval(async () => {
-      const result = await poll({ force: true });
-      if (result.data) setServer(result.data);
-    }, 2000);
+      const { data: progress } = await pollProgress({ force: true });
+      if (!progress) return;
+      if (progress.jobStatus !== "running") {
+        const result = await poll({ force: true });
+        if (result.data) setServer(result.data);
+        return;
+      }
+      if (Date.now() - Date.parse(progress.updatedAt) >= RECAP_V2_STALE_JOB_MS) window.clearInterval(interval);
+      setServer((current) => {
+        const latest = current ?? data ?? null;
+        return latest?.jobStatus === "running" ? { ...latest, ...progress } : current;
+      });
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [running, poll]);
+  }, [running, data, poll, pollProgress]);
 
   const translatedCount = useMemo(() => project?.units.filter((unit) => unit.muted || (lineEdits[unit.id] ?? unit.text).trim()).length ?? 0, [project?.units, lineEdits]);
 

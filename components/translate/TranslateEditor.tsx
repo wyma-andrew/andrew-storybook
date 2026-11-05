@@ -8,7 +8,7 @@ import { Button, LinkButton, LoadingButton, MiniButton } from "@/components/ui/B
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
 import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatBytes, formatDuration } from "@/lib/movie-recap";
-import { applyCueEdit, buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, formatTimecode, frameIndex, frameTime, mergeSrtBlocks, nearestFrameRate, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
+import { TRANSLATE_STALE_RENDER_MS, applyCueEdit,buildTranslateSrtPrompt, TRANSLATE_PROMPT_BATCH_SIZE, formatCueTime, parseCueTime, clampTranslateRect, formatSrtTime, formatTimecode, frameIndex, frameTime, mergeSrtBlocks, nearestFrameRate, parseSrt, parseSrtBlocks, srtBlocksToText, translateCuesToSrt, translateBlurCssPx, translateCues, type TranslateCue, type TranslateProject, type TranslateRect } from "@/lib/translate";
 import { replaceTranslateVideo, uploadTranslateVideo } from "@/lib/translate-upload";
 import { captureFirstVideoCover, captureVideoCover } from "@/lib/video-cover";
 import { toTranslateBundle, translateBundleFileName } from "@/lib/translate-transfer";
@@ -122,7 +122,7 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   const { data, loading, error, trigger: refresh } = useRead((api) => api("translate-projects/:id").GET({ params: { id: projectId } }));
   const { trigger: patch, loading: saving } = useWrite((api) => api("translate-projects/:id").PATCH());
   const { trigger: render, loading: rendering } = useWrite((api) => api("translate-projects/:id/render").POST());
-  const { trigger: pollProject } = useRead((api) => api("translate-projects/:id").GET({ params: { id: projectId } }), { enabled: false });
+  const { trigger: pollProgress } = useRead((api) => api("translate-projects/:id/progress").GET({ params: { id: projectId } }), { enabled: false });
   const { trigger: generate, loading: generating } = useWrite((api) => api("translate-projects/:id/generate").POST());
   const { trigger: align, loading: aligning } = useWrite((api) => api("translate-projects/:id/align").POST());
   const { trigger: saveCover } = useWrite((api) => api("translate-projects/:id/cover").POST());
@@ -182,18 +182,18 @@ export function TranslateEditor({ projectId }: { projectId: string }) {
   const renderStatus = project?.renderStatus;
   const renderStartedAt = project?.updatedAt;
   useEffect(() => {
-    if (renderStatus !== "running" || !renderStartedAt || Date.now() - Date.parse(renderStartedAt) > 2 * 60 * 60 * 1000) return;
+    if (renderStatus !== "running" || !renderStartedAt || Date.now() - Date.parse(renderStartedAt) > TRANSLATE_STALE_RENDER_MS) return;
     const interval = window.setInterval(async () => {
-      const result = await pollProject({ force: true });
-      const latest = result.data;
-      if (!latest) return;
-      setProject((current) => current ? {
-        ...current, renderStatus: latest.renderStatus, renderProgress: latest.renderProgress, renderError: latest.renderError,
-        renderOutputUrl: latest.renderOutputUrl, updatedAt: latest.updatedAt,
-      } : latest);
-    }, 2000);
+      const { data: progress } = await pollProgress({ force: true });
+      if (!progress) return;
+      if (progress.renderStatus === "running" && Date.now() - Date.parse(progress.updatedAt) > TRANSLATE_STALE_RENDER_MS) window.clearInterval(interval);
+      setProject((current) => {
+        const latest = current ?? data ?? null;
+        return latest ? { ...latest, ...progress } : current;
+      });
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [renderStatus, renderStartedAt, pollProject]);
+  }, [renderStatus, renderStartedAt, data, pollProgress]);
 
   const cues = useMemo(() => project ? translateCues(project) : [], [project]);
   const translatedSrtText = project?.translatedSrtText;
