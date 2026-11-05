@@ -19,7 +19,7 @@ describe("trimFailureMessage", () => {
     expect(trimmed).toContain("Output file is empty");
   });
 
-  it("caps what reaches the row, which is polled every two seconds", () => {
+  it("caps what reaches the row", () => {
     const trimmed = trimFailureMessage("x".repeat(90_000));
     expect(trimmed.length).toBeLessThan(2_000);
   });

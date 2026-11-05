@@ -10,6 +10,7 @@ import type {
   Scene,
   Shot,
   VoiceOverSegment,
+  MovieRecapProgress,
   MovieRecapProject,
   MovieRecapRangeRender,
 } from "./types";
@@ -119,6 +120,24 @@ export function mapMovieRecapProject(r: Row): MovieRecapProject {
     renderCompletedAt: (r.render_completed_at as string) ?? null,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
+  };
+}
+
+export function mapMovieRecapProgress(r: Row): MovieRecapProgress {
+  return {
+    renderStatus: r.render_status as MovieRecapProgress["renderStatus"],
+    renderStage: (r.render_stage as MovieRecapProgress["renderStage"]) ?? null,
+    renderProgressCurrent: r.render_progress_current == null ? null : Number(r.render_progress_current),
+    renderProgressTotal: r.render_progress_total == null ? null : Number(r.render_progress_total),
+    scriptStatus: (r.script_status as MovieRecapProgress["scriptStatus"]) ?? "idle",
+    scriptStage: (r.script_stage as MovieRecapProgress["scriptStage"]) ?? null,
+    scriptProgressCurrent: (r.script_progress_current as number | null) ?? null,
+    scriptProgressTotal: (r.script_progress_total as number | null) ?? null,
+    transcriptStatus: (r.transcript_status as MovieRecapProgress["transcriptStatus"]) ?? "idle",
+    transcriptStage: (r.transcript_stage as MovieRecapProgress["transcriptStage"]) ?? null,
+    transcriptProgressCurrent: r.transcript_progress_current == null ? null : Number(r.transcript_progress_current),
+    transcriptProgressTotal: r.transcript_progress_total == null ? null : Number(r.transcript_progress_total),
+    transcriptProgressPartial: r.transcript_progress_partial == null ? null : Number(r.transcript_progress_partial),
   };
 }
 

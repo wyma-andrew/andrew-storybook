@@ -93,9 +93,9 @@ export function suggestMovieRecapFraming(width: number, height: number) {
 //
 // ffmpeg writes its whole banner to stderr — version, build flags, every codec
 // warning — and `execFile` hands all of it back on a non-zero exit. One real
-// failure stored 85,975 characters. The row is re-read every two seconds while a
-// render runs, so a message that size rides along on every poll, and the one
-// line that says what actually went wrong is buried in it.
+// failure stored 85,975 characters. A message that size rides along every time
+// the full row is read, and the one line that says what actually went wrong is
+// buried in it.
 //
 // The HEAD is kept because it names the command that failed, and the TAIL
 // because that is where ffmpeg puts the reason. The middle is the banner.

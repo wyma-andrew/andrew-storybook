@@ -8,6 +8,34 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`
 and `movie_recap_range_renders` migrations.
 
+## 2026-11-05 — The poller reads progress columns, not the whole row
+
+**Decision, approved by the user:** the wizard's tick reads
+`GET movie-recaps/:id/progress` (status, stage and counters only). When a status
+differs from local state it fetches `GET movie-recaps/:id` once and adopts that.
+Polling itself stays, per the 2026-09-15 "via polling not SSE" entry. The user
+also asked for a slower tick: 10 seconds, down from 2 (360 requests an hour per
+open tab, not 1,800). The transcript's partial-progress write slowed with it, to
+every 9 seconds.
+
+**Why:** the full row carries the transcript, story and narration manifest, and
+went out 1,800 times an hour per open tab. On Vercel Hobby that spends the 10 GB
+Fast Origin Transfer allowance, and a row stuck on "running" keeps spending it for
+as long as the tab stays open. Requests count against their own 1M allowance
+however small the response is, which is what the slower tick addresses. Older
+entries that say "2s" or "every two seconds" describe the interval of their day.
+
+**Rejected:** merging status from the tick and the outcome later. The outcome
+toasts fire when status leaves "running" and read the error from the same state,
+so status has to land together with the full row.
+
+**Consequences:** progress on screen can lag the row by up to 10 seconds, and the
+outcome toast can arrive that much after a queued run settles.
+`render_script` written mid-render (narration timings) reaches the browser when
+the run settles, not during it. A failed full-row fetch leaves
+the status on "running", so the next tick tries again. A column the UI needs
+during a run must be added to the progress route and `MovieRecapProgress`.
+
 ## 2026-10-17 — Script and render can run on GitHub Actions
 
 **Decision, by the user:** the narration build (script) and the full, mock and

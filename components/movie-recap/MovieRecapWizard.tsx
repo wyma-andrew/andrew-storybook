@@ -243,6 +243,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
+  const { trigger: pollProgress } = useRead((api) => api("movie-recaps/:id/progress").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
   const [project, setProject] = useState<MovieRecapProject | null>(initialProject);
   const maxStep = project?.maxStep ?? 1;
   // No `withDefault`: an absent `?step` has to stay distinguishable from an
@@ -797,14 +798,26 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const scriptStatus = project?.scriptStatus;
   const transcriptStatus = project?.transcriptStatus;
   // Every long run reports its stage on the row, so one poller serves them all.
+  // Ticks read only the progress columns; the outcome (errors, output URLs, the
+  // narration) arrives by adopting the full row once a status changes, so the
+  // outcome toasts below see status and error together. See history/movie-recap.md.
   useEffect(() => {
     if (!projectId || (renderStatus !== "running" && scriptStatus !== "running" && transcriptStatus !== "running")) return;
     const interval = setInterval(async () => {
+      const { data: progress } = await pollProgress({ params: { id: projectId }, force: true });
+      if (!progress) return;
+      const statusChanged = progress.renderStatus !== renderStatus
+        || progress.scriptStatus !== scriptStatus
+        || progress.transcriptStatus !== transcriptStatus;
+      if (!statusChanged) {
+        merge(progress);
+        return;
+      }
       const result = await pollProject({ params: { id: projectId }, force: true });
       if (result.data) adoptRow(result.data);
-    }, 2000);
+    }, 10_000);
     return () => clearInterval(interval);
-  }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject]);
+  }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject, pollProgress]);
 
   useEffect(() => {
     if (!queuedRuns.current.script || !scriptStatus || scriptStatus === "running") return;

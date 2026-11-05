@@ -271,8 +271,9 @@ are prepared concurrently and kept as browser object URLs for smooth handoff.
 
 With `RECAP_JOB_RUNNER=github`, the script and render routes claim the row and
 dispatch `.github/workflows/recap-job.yml` instead of running in-process
-(`lib/recap-job-dispatch.ts` → `scripts/recap-job.ts`); the wizard's row poller
-follows the run either way.
+(`lib/recap-job-dispatch.ts` → `scripts/recap-job.ts`); the wizard's poller
+(`GET movie-recaps/:id/progress`, then the full row when a status changes) follows
+the run either way.
 
 The render (`lib/movie-recap-render.ts`) is then ffmpeg. The shared timeline
 planner samples each narration beat in a configurable 3 source seconds retained

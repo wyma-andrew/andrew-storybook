@@ -288,6 +288,23 @@ export type MovieRecapRenderAnalysis = {
   crop?: { width: number; height: number; x: number; y: number } | null;
 };
 
+export type MovieRecapProgress = Pick<
+  MovieRecapProject,
+  | "renderStatus"
+  | "renderStage"
+  | "renderProgressCurrent"
+  | "renderProgressTotal"
+  | "scriptStatus"
+  | "scriptStage"
+  | "scriptProgressCurrent"
+  | "scriptProgressTotal"
+  | "transcriptStatus"
+  | "transcriptStage"
+  | "transcriptProgressCurrent"
+  | "transcriptProgressTotal"
+  | "transcriptProgressPartial"
+>;
+
 export type MovieRecapProjectPatch = Partial<{
   name: string;
   outputLanguage: MovieRecapProject["outputLanguage"];

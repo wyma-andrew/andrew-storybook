@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
@@ -193,6 +193,9 @@ export type ApiSchema = {
       body: MovieRecapProjectPatch;
     };
     DELETE: { data: null };
+  };
+  "movie-recaps/:id/progress": {
+    GET: { data: MovieRecapProgress };
   };
   "movie-recaps/:id/source/multipart": {
     GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };

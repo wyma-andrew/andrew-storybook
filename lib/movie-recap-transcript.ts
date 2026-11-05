@@ -28,7 +28,7 @@ const TRANSCRIBE_AUDIO_BITRATE = "16k";
 // would produce a retelling with nothing to narrate.
 const STORY_CHUNK_CHARS = 12000;
 
-const PROGRESS_WRITE_INTERVAL_MS = 1500;
+const PROGRESS_WRITE_INTERVAL_MS = 9000;
 
 // Sequential, because each batch hands the cast and the last description to
 // the next one.
@@ -125,7 +125,7 @@ export async function retellTranscript(
   const passages: string[] = [];
   for (const [index, passage] of chunks.entries()) {
     await onProgress("translating", index, chunks.length, 0);
-    // The row is written at most this often: the browser polls every two
+    // The row is written at most this often: the browser polls every ten
     // seconds, so anything faster is a write nobody reads.
     let nextWriteAt = 0;
     const written = await retellInBurmese(passage, signal, (characters) => {
