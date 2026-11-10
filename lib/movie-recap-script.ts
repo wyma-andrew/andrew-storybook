@@ -15,6 +15,7 @@ import { trimFailureMessage } from "./movie-recap";
 import { deleteObject, movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
+  MOVIE_RECAP_NARRATION_CONCURRENCY,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_PLAYBACK_SPEED,
 } from "./constants/movie-recap";
@@ -151,15 +152,16 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
     await setStage(db, project.id, "synthesizing_narration", 0, narration.length);
     let cacheHits = 0;
-    const narrationClips = [];
-    for (const [i, beat] of narration.entries()) {
-      if (await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+    let done = 0;
+    const narrationClips = await mapConcurrent(narration, MOVIE_RECAP_NARRATION_CONCURRENCY, async (beat, i) => {
+      if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
       const clip = await narrationClip({ projectId: project.id, voice, text: beat.text, slot: i, workDir, signal });
-      narrationClips.push(clip);
       if (clip.cached) cacheHits++;
       beat.rawAudioS = clip.durationSeconds;
-      await setStage(db, project.id, "synthesizing_narration", i + 1, narration.length);
-    }
+      done++;
+      await setStage(db, project.id, "synthesizing_narration", done, narration.length);
+      return clip;
+    });
     const rates = narrationTimelineRates();
     const master = await ensureNarrationMaster({
       projectId: project.id,

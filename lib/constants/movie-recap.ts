@@ -159,6 +159,11 @@ export const MOVIE_RECAP_NARRATION_SAMPLE_RATE = 24_000;
 // so tuning this rebuilds narration.wav without synthesizing unchanged speech.
 export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.05;
 
+// Lines spoken at once by a script run. Matches the voice worker's
+// max_containers (workers/voice-lab/modal_app.py): each container serves one
+// line at a time, so more than that only queues. See history/voice-lab.md.
+export const MOVIE_RECAP_NARRATION_CONCURRENCY = 3;
+
 // While one beat preview plays, prepare this many following beats so sequential
 // playback normally advances without waiting on R2 or ffmpeg.
 export const MOVIE_RECAP_NARRATION_PRELOAD_BEATS = 3;

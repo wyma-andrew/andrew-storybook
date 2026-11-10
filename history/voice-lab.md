@@ -5,6 +5,37 @@ Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
 `workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
 `lib/tts/**`.
 
+## 2026-11-11 — L40S worker, three narration lines at once
+
+**Decision, chosen by the user:** the Modal worker runs on L40S (was T4) and
+its `web` function scales to 3 containers. A Movie Recap script run speaks
+`MOVIE_RECAP_NARRATION_CONCURRENCY` (3) lines at once instead of one after
+another. `process_job` (Voice Lab batches) stays at one container.
+
+**Why:** measured on T4: ~16 s per 5.6 s line warm, ~80 s cold, so a 700-beat
+script took about 3 hours. Modal bills per second, so a faster GPU costs about
+the same per run; L40S is estimated at ~3–4 s per line, and three in parallel
+should bring a full script to roughly 15–20 minutes (estimate, not measured).
+
+**Rejected:** H100 — about twice L40S's hourly rate for a model this size;
+parallelism buys more than a bigger card. Staying on T4 — no native bf16
+(VoxCPM2's dtype) and the slowest by far.
+
+**Scaledown 20 s → 30 s (requested by the user):** with three containers and
+lines arriving in bursts, 20 idle seconds let containers close between beats and
+pay the cold start again; 30 s keeps them warm across short gaps for at most
+~10 s more of idle GPU per container.
+
+**Consequences:** each container has its own cold start (~1 min+), paid up to
+three times. Keep `MOVIE_RECAP_NARRATION_CONCURRENCY` and the worker's
+`VOICE_LAB_WEB_MAX_CONTAINERS` equal — more lines than containers only queue.
+Progress writes from parallel lines can land out of order, so the count may
+step back briefly. A bare "Voice worker returned 500" (no detail) comes from
+Modal, not the handler: Modal logs showed "Container terminated due to
+preemption" next to such a 500. The VoxCPM provider therefore retries a 5xx or
+dropped connection up to 3 attempts (2 s, then 4 s apart); 4xx, timeouts and
+aborts are not retried. Generation is seeded, so a retry is safe.
+
 ## 2026-11-11 — Two young narrator reference voices
 
 **Decision, chosen by the user:** samples `young-male-3` and `young-female-4`
@@ -299,6 +330,8 @@ native bf16 (VoxCPM2's checkpoint dtype); if it fails or is very slow,
 redeploy with `VOICE_LAB_GPU=L4` rather than raising the other limits.
 
 ## 2026-09-28 — Scale the Modal worker down after 20 idle seconds
+
+**Superseded 2026-11-11:** the window is 30 s (see "L40S worker, three narration lines at once").
 
 **Decision:** set `scaledown_window=20` for the Voice Lab Modal worker.
 
