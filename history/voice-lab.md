@@ -1,8 +1,136 @@
 # Burmese Voice Lab
 
 Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
+`components/voice-lab/**`, `components/voice/**`, the `voice_lab_items` / `voice_lab_projects` migrations,
 `workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
 `lib/tts/**`.
+
+## 2026-11-11 — One voice list for every surface
+
+**Decision, requested by the user:** `surfaces` is gone. `VOICES` in
+`lib/tts/voices.ts` is the single source of truth; Voice Lab and Movie Recap
+offer the same voices (`MOVIE_RECAP_VOICES`, `VOICE_LAB_PROFILES`,
+`listVoices`, `getVoice(id, surface)` and `getVoiceLabProfile` were removed;
+use `VOICES` / `getVoiceById`). Migration
+`20261111110000_movie_recap_voice_check_from_code.sql` dropped the
+`movie_recap_projects.voice_profile_id` CHECK, so adding a voice is a code edit
+only; `PATCH movie-recaps/:id` validates against the catalog and
+`resolveMovieRecapVoice` falls back to the default for unknown values.
+
+**Why:** the two pickers showed different voices, which read as a bug.
+
+**Consequence:** the VoxCPM voices (ပညာရှိအဘိုး, Grandpa, ဓမ္မသံ ၁/၃) can now
+narrate a Movie Recap. They run on the Modal GPU, so narration is slower than
+Azure and the first beat waits for a cold start.
+
+**Supersedes:** the `surfaces` split from 2026-09-16 and the "lab-only"
+availability of the VoxCPM profiles recorded in the 2026-10 entries.
+
+## 2026-11-11 — One shared voice picker for Voice Lab and Movie Recap
+
+**Decision, requested by the user:** the picker lives in
+`components/voice/VoicePicker.tsx` and takes the voice list as a prop; the
+sample/download/player state is in `components/voice/useVoiceSamples.ts`.
+Movie Recap's Transcript step uses it (`MOVIE_RECAP_VOICES`) in place of its
+own grid of voice cards and its own preview code.
+
+**Why:** one place for preview, download and selection, so the two surfaces
+cannot drift.
+
+## 2026-11-11 — Wai Yan and Yuzana removed
+
+**Decision, requested and confirmed by the user:** the `narrator` (Wai Yan) and
+`narrator-female` (Yuzana) profiles are gone from the catalog, both surfaces,
+the worker (`REFERENCE_AUDIO`, `reference_audio/*.wav`) and
+`public/movie-recap/voices/`. Migration
+`20261111100000_remove_waiyan_yuzana_voices.sql` limits
+`movie_recap_projects.voice_profile_id` to the two Azure voices and resets the
+one Voice Lab project that used Yuzana to the default.
+
+**Consequences:** Movie Recap now offers only Thiha and Nilar. The Modal worker
+still has the two WAVs until it is redeployed; nothing asks for them.
+`voice_lab_items.voice_id` keeps `narrator*` on old lines as a record of what
+generated them.
+
+## 2026-11-11 — Download a sample before playing; one sample line for all voices
+
+**Decision, requested by the user:** in the Voice Lab picker a voice whose
+sample is not in storage shows a **Download** button instead of Play. Download
+generates it on the GPU and stores it in R2 (the cached preview route), with a
+percentage ring on the button; several can run at once and the dialog has
+"Download all". Once stored, the button becomes Play. `GET voices/preview`
+reports which samples exist (static `previewUrl` or R2).
+
+Every voice now reads the same `SAMPLE_TEXT` (`lib/tts/voices.ts`) so voices
+are compared on equal terms. Wai Yan and Yuzana lost their static
+`previewUrl` (it played the reference recording, a different sentence), so
+they are generated like the other VoxCPM voices. The Azure MP3s already read
+this sentence.
+
+**Why:** play silently waited a minute on a cold GPU, which read as broken;
+different sample sentences made voices hard to compare.
+
+**Consequence a later reader might "fix":** the percentage is an estimate
+(time-based, ~60s VoxCPM / ~5s Azure, held at 95% until done) — the worker
+reports no progress. Download state is module-level, so it survives closing
+the dialog but not a page reload; a reload during a download shows Download
+again until the request finishes and the list is re-read. Movie Recap's voice
+picker still generates on play.
+
+## 2026-11-11 — Voice previews are cached in R2
+
+**Decision, requested by the user:** `POST voices/preview` looks in R2 first
+(`voice-previews/<voiceId>-<hash>.wav`) and only synthesizes on a miss, then
+stores the WAV there. It returns `{ url }` (the R2 public URL) instead of
+base64. The hash covers the voice id, `sampleText` and `params`, so changing a
+reference, prompt or seed makes a new sample instead of serving the old one.
+
+**Why:** the VoxCPM voices without a static `previewUrl` hit a cold Modal GPU
+on almost every press; the old cache lived only in server memory and was lost
+on every restart or new Vercel instance.
+
+**Rejected:** moving the voice catalog to the database with samples in
+storage — it does not make previews faster, and reference audio is bundled in
+the worker, so a DB-added voice would still need a worker change. The 2026-09-16
+"one catalog in code" decision stands.
+
+**Consequence:** old samples are not deleted when a voice changes; the
+orphaned `voice-previews/` objects are tiny and left in place.
+
+## 2026-11-10 — Voice picker with preview
+
+**Decision, requested by the user:** the editor's voice Select is replaced by
+`components/voice/VoicePicker.tsx` (moved 2026-11-11): the chosen voice with a play button
+beside it, and a dialog listing every lab voice with its own play button and
+a "Use voice" confirm. A backdrop click closes it (changed 2026-11-11 at the user's request; it was blocked at first).
+`POST voices/preview` now accepts `voice_lab` as well as `movie_recap`
+(`requireFeature` takes a list, any one is enough), so lab-only accounts can
+hear samples.
+
+**Why:** there was no way to hear a voice before generating a script with it.
+
+## 2026-11-10 — Lines live in projects
+
+**Decision, requested by the user:** the lab is project-based like Translate
+and Transcript. `/labs/voice` lists `voice_lab_projects` (name, voice);
+`/labs/voice/[id]` is the former single page scoped to one project. Each
+project stores its own voice (`voice_id`), replacing the browser-wide
+localStorage choice. Items endpoints moved to
+`labs/voice/projects/:id/items`; Generate requires `projectId`. Single-line
+edit/delete (`labs/voice/items/:id`) and the worker callback are unchanged.
+Migration `20261110150000_voice_lab_projects.sql` moved every existing line
+(9, with audio) into one "Untitled" project per owner.
+
+**Why:** separate scripts no longer share one list.
+
+**Rejected:** a ZIP / merged download per project — deferred by the user.
+
+**Consequences:** R2 keys stay `voice-lab/<owner>/…`, not per project;
+deleting a project deletes its WAVs by key. The old localStorage voice is not
+migrated — the Untitled project starts on the first voice in the catalog.
+`voice_lab_items` insert/update RLS also checks the project belongs to the
+caller. The migration made `project_id` NOT NULL, so a deploy older than this
+change cannot import lines.
 
 ## 2026-09-15 — Validate self-hosted narration outside Movie Recap
 
@@ -83,7 +211,7 @@ place that has to handle it. A voice's `id` — the value in
 a voice to our own service later is an edit in the catalog, not a migration.
 This follows the existing rule that presets are code constants, not rows.
 
-**Why `surfaces` instead of two catalogs:** the lab and Movie Recap used to keep
+**Why `surfaces` instead of two catalogs** *(superseded 2026-11-11 — `surfaces` removed, see top)*: the lab and Movie Recap used to keep
 separate voice lists (`VOICE_LAB_PROFILES` and `MOVIE_RECAP_VOICES`) that could
 disagree about which voices exist. One catalog with a per-voice `surfaces` list
 keeps the picker and the synthesizer in step, and lets the lab offer both Azure
@@ -148,6 +276,8 @@ a cold start. Modal may scale down sooner when over-provisioned.
 
 ## 2026-09-28 — Share VoxCPM2 profiles with Movie Recap
 
+**Superseded 2026-11-11:** Wai Yan and Yuzana were removed (see top). Kept for the reasoning.
+
 **Decision:** offer the existing Wai Yan and Yu Yu profiles in Movie Recap by
 marking them available on both surfaces in the shared TTS catalog.
 
@@ -162,6 +292,8 @@ which could let the two surfaces drift apart.
 to the Wai Yan profile; rows migrated to `azure-thiha` remain unchanged.
 
 ## 2026-09-28 — Clone the two supplied reference voices
+
+**Superseded 2026-11-11:** Wai Yan and Yuzana were removed (see top). Kept for the reasoning.
 
 **Decision:** use the supplied Wai Yan and Yuzana WAVs as fixed VoxCPM2
 reference profiles in both Voice Lab and Movie Recap. The worker receives a

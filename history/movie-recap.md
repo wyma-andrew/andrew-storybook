@@ -8,6 +8,30 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
+## 2026-11-11 — Transcript source: mode column + one row of actions
+
+**Decision, requested by the user:** the mode switch and the source actions
+share one box. Left column (`bg-sunken`): a Select with "Recap Video" /
+"Raw Video to Recap" (was a button pair). Right column (`bg-panel-2`): Recap Video shows
+`Get Transcript ▾ › Import .txt  OR  Auto-generate from video`; Raw Video to
+Recap shows Read source with a one-line hint. No "Manual"/"Auto" group labels —
+the buttons say what they do, and "or" separates the two sources. Card
+descriptions moved to button tooltips. Progress and errors show under the row.
+
+**Why:** the two cards took a lot of height for three buttons.
+
+**Supersedes:** "Layout: Import and Audio mode are two separate cards" and the
+"Generate Transcript" button label from the 2026-10-04 entry. The two sources
+stay visibly separate ("or"), which was that entry's reason.
+
+## 2026-11-11 — Narration voice uses the shared picker
+
+**Decision, requested by the user:** the Transcript step's "Narration voice"
+grid is replaced by the shared `components/voice/VoicePicker.tsx` (see
+`history/voice-lab.md` 2026-11-11). Still on the Transcript step (2026-09-22)
+and every voice can still be played (Thiha and Nilar from their static MP3s).
+Selection now goes through a dialog with a "Use voice" confirm.
+
 ## 2026-11-10 — Wizard steps and Back/Continue stay fixed; only the step body scrolls
 
 **Decision, requested by the user:** the wizard no longer uses the shared
@@ -228,6 +252,7 @@ transcript, as `MM:SS text` lines.
 - **Layout (by the user):** Import and Audio mode are two separate cards, side
   by side on desktop, not one row joined by "or". They are two different
   sources.
+  *(Superseded 2026-11-11 — one row of actions split by "or", see top.)*
 - **Helper links are one "Get Transcript" dropdown (by the user, supersedes
   "Center Transcript import beside helper links" below):** the YouTube and
   RedNote items open their sites in a new tab. The chevron and Import button

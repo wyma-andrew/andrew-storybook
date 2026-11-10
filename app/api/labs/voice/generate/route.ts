@@ -7,7 +7,8 @@ import { deleteObject, presignPut, putObject } from "@/lib/r2";
 import { synthesize, TtsError } from "@/lib/tts/synthesize";
 import type { Voice } from "@/lib/tts/types";
 import { voiceWorkerHeaders, voiceWorkerUrl } from "@/lib/voice-worker";
-import { getVoiceLabProfile, mapVoiceLabItem, VOICE_LAB_STALE_PROCESSING_MS } from "@/lib/voice-lab";
+import { getVoiceById } from "@/lib/tts/voices";
+import { mapVoiceLabItem, VOICE_LAB_STALE_PROCESSING_MS } from "@/lib/voice-lab";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -95,13 +96,14 @@ export async function POST(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const body = await request.json().catch(() => null);
-  const voice = getVoiceLabProfile(body?.voiceId);
+  const voice = getVoiceById(body?.voiceId);
   if (!voice) return NextResponse.json({ error: "Choose a supported voice profile." }, { status: 400 });
+  if (typeof body?.projectId !== "string") return NextResponse.json({ error: "Choose a project." }, { status: 400 });
   const itemIds: string[] | null = Array.isArray(body?.itemIds) ? body.itemIds.filter((id: unknown) => typeof id === "string") : null;
 
   const db = await supabaseRoute();
   const staleBefore = new Date(Date.now() - VOICE_LAB_STALE_PROCESSING_MS).toISOString();
-  let query = db.from("voice_lab_items").select("id, text, audio_key").order("position");
+  let query = db.from("voice_lab_items").select("id, text, audio_key").eq("project_id", body.projectId).order("position");
   query = itemIds
     ? query.in("id", itemIds)
     : query.or(`status.in.(pending,failed),and(status.eq.processing,updated_at.lt.${staleBefore})`);

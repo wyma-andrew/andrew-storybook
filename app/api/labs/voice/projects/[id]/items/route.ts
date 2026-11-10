@@ -13,12 +13,13 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
+  const { id } = await params;
   const db = await supabaseRoute();
-  const { data, error } = await db.from("voice_lab_items").select("*").order("position");
+  const { data, error } = await db.from("voice_lab_items").select("*").eq("project_id", id).order("position");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // The callback or dispatch response can be lost after the worker accepts a
@@ -50,7 +51,7 @@ export async function GET() {
   return NextResponse.json(items.map(mapVoiceLabItem));
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { user, unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
@@ -61,28 +62,30 @@ export async function POST(req: NextRequest) {
   const lineError = lines.map(validateVoiceLabText).find(Boolean);
   if (lineError) return NextResponse.json({ error: lineError }, { status: 400 });
 
+  const { id } = await params;
   const db = await supabaseRoute();
   const { data: last, error: lastError } = await db
     .from("voice_lab_items")
     .select("position")
+    .eq("project_id", id)
     .order("position", { ascending: false })
     .limit(1);
   if (lastError) return NextResponse.json({ error: lastError.message }, { status: 500 });
-  const count = await db.from("voice_lab_items").select("id", { count: "exact", head: true });
+  const count = await db.from("voice_lab_items").select("id", { count: "exact", head: true }).eq("project_id", id);
   if ((count.count ?? 0) + lines.length > VOICE_LAB_MAX_ITEMS) {
-    return NextResponse.json({ error: `A list holds at most ${VOICE_LAB_MAX_ITEMS} lines.` }, { status: 400 });
+    return NextResponse.json({ error: `A project holds at most ${VOICE_LAB_MAX_ITEMS} lines.` }, { status: 400 });
   }
 
   const start = (last?.[0]?.position ?? 0) + 1;
   const { data, error } = await db
     .from("voice_lab_items")
-    .insert(lines.map((text, index) => ({ owner_id: user!.id, position: start + index, text })))
+    .insert(lines.map((text, index) => ({ owner_id: user!.id, project_id: id, position: start + index, text })))
     .select("*");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data.map(mapVoiceLabItem));
 }
 
-export async function PATCH(req: NextRequest) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
@@ -92,21 +95,23 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "order must be a list of unique item IDs." }, { status: 400 });
   }
 
+  const { id: projectId } = await params;
   const db = await supabaseRoute();
   const results = await Promise.all(
-    (order as string[]).map((id, index) => db.from("voice_lab_items").update({ position: index + 1 }).eq("id", id)),
+    (order as string[]).map((id, index) => db.from("voice_lab_items").update({ position: index + 1 }).eq("id", id).eq("project_id", projectId)),
   );
   const failed = results.find((result) => result.error);
   if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 });
   return NextResponse.json(null);
 }
 
-export async function DELETE() {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { unauthorized } = await requireFeature("voice_lab");
   if (unauthorized) return unauthorized;
 
+  const { id } = await params;
   const db = await supabaseRoute();
-  const { data, error } = await db.from("voice_lab_items").delete().not("id", "is", null).select("audio_key");
+  const { data, error } = await db.from("voice_lab_items").delete().eq("project_id", id).select("audio_key");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   await Promise.allSettled(data.filter((row) => row.audio_key).map((row) => deleteObject(row.audio_key)));
   return NextResponse.json(null);

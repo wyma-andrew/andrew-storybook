@@ -11,7 +11,7 @@ import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
 import type { StoryBundle } from "@/lib/story-transfer";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
-import type { VoiceLabItem } from "@/lib/voice-lab";
+import type { VoiceLabItem, VoiceLabProject } from "@/lib/voice-lab";
 import type { PromptLabPreview, PromptLabRun, PromptLabRunBody, PromptLabRunSummary, PromptLabSceneRunBody, PromptLabVersion, PromptLabVersionBody } from "@/lib/prompt-lab";
 import type { TranslateProgress, TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
 import type { TranscriptProgress, TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
@@ -98,7 +98,16 @@ export type ApiSchema = {
   "translate-projects/:id/render/download": {
     GET: { data: { url: string } };
   };
-  "labs/voice/items": {
+  "labs/voice/projects": {
+    GET: { data: VoiceLabProject[] };
+    POST: { data: VoiceLabProject; body: { name: string } };
+  };
+  "labs/voice/projects/:id": {
+    GET: { data: VoiceLabProject };
+    PATCH: { data: VoiceLabProject; body: { name?: string; voiceId?: string } };
+    DELETE: { data: null };
+  };
+  "labs/voice/projects/:id/items": {
     GET: { data: VoiceLabItem[] };
     POST: { data: VoiceLabItem[]; body: { script: string } };
     PATCH: { data: null; body: { order: string[] } };
@@ -136,11 +145,12 @@ export type ApiSchema = {
     POST: { data: PromptLabRun; body: PromptLabSceneRunBody };
   };
   "labs/voice/generate": {
-    POST: { data: VoiceLabItem[]; body: { voiceId: string; itemIds?: string[] } };
+    POST: { data: VoiceLabItem[]; body: { projectId: string; voiceId: string; itemIds?: string[] } };
   };
   "voices/preview": {
+    GET: { data: Record<string, string | null> };
     POST: {
-      data: { audioBase64: string; contentType: "audio/wav"; cached: boolean };
+      data: { url: string; cached: boolean };
       body: { voiceId: string };
     };
   };

@@ -37,17 +37,19 @@ export async function requireAdmin() {
 
 // For the story and recap tables the RLS policies are the boundary; this only
 // turns what would be an empty result or an opaque insert failure into a 403
-// that says why. Voice Lab has no table of its own, so there this IS the
-// boundary — every one of its routes has to call it.
-export async function requireFeature(feature: FeatureKey) {
+// that says why. Routes with no table behind them (voice preview, the voice
+// worker proxy) have no RLS, so there this IS the boundary.
+// An array means any one of the features is enough.
+export async function requireFeature(feature: FeatureKey | readonly FeatureKey[]) {
   const { user, unauthorized } = await requireUser();
   if (unauthorized) return { user: null, unauthorized };
 
+  const wanted = typeof feature === "string" ? [feature] : feature;
   const features = await readOwnFeatures(user!.id);
-  if (!features[feature]) {
+  if (!wanted.some((key) => features[key])) {
     return {
       user: null,
-      unauthorized: NextResponse.json({ error: `${FEATURE_LABELS[feature]} is not enabled for this account.` }, { status: 403 }),
+      unauthorized: NextResponse.json({ error: `${wanted.map((key) => FEATURE_LABELS[key]).join(" or ")} is not enabled for this account.` }, { status: 403 }),
     };
   }
   return { user, unauthorized: null };

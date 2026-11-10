@@ -20,8 +20,6 @@ DEVICE = os.getenv("VOICE_DEVICE", "auto")
 OPTIMIZE = os.getenv("VOICE_OPTIMIZE", "1") != "0"
 WORKER_TOKEN = os.getenv("VOICE_LAB_WORKER_TOKEN", os.getenv("VOICE_WORKER_TOKEN", "")).strip()
 REFERENCE_AUDIO = {
-    "waiyan": Path(__file__).parent / "reference_audio" / "waiyan.wav",
-    "yuzana": Path(__file__).parent / "reference_audio" / "yuzana.wav",
     "dhamma-1": Path(__file__).parent / "reference_audio" / "dhamma-1.wav",
     "dhamma-3": Path(__file__).parent / "reference_audio" / "dhamma-3.wav",
     "wise-elder": Path(__file__).parent / "reference_audio" / "wise-elder.wav",
@@ -37,7 +35,7 @@ class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     stylePrompt: str = Field(min_length=1, max_length=300)
     seed: int = Field(ge=0, le=2_147_483_647)
-    referenceAudioId: Literal["waiyan", "yuzana", "dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
+    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
     referenceText: str | None = Field(default=None, max_length=1000)
 
 
@@ -110,7 +108,7 @@ class JobRequest(BaseModel):
     items: list[JobItem] = Field(min_length=1, max_length=200)
     stylePrompt: str = Field(min_length=1, max_length=300)
     seed: int = Field(ge=0, le=2_147_483_647)
-    referenceAudioId: Literal["waiyan", "yuzana", "dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
+    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
     referenceText: str | None = Field(default=None, max_length=1000)
     callbackUrl: str
 

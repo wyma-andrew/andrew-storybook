@@ -8,7 +8,7 @@ import {
   isMovieRecapSubtitlePreset,
 } from "@/lib/constants/movie-recap";
 import { abortMultipartUpload, deletePrefix, movieRecapProjectPrefix } from "@/lib/r2";
-import { getVoice } from "@/lib/tts/voices";
+import { getVoiceById } from "@/lib/tts/voices";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 // A source can carry a logo, a watermark and a burned-in subtitle at once, and
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     changesConfiguration = true;
   }
   if (body?.voiceProfileId !== undefined) {
-    if (!getVoice(body.voiceProfileId, "movie-recap")) {
+    if (!getVoiceById(body.voiceProfileId)) {
       return NextResponse.json({ error: "Invalid voice profile." }, { status: 400 });
     }
     patch.voice_profile_id = body.voiceProfileId;

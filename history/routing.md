@@ -1,4 +1,15 @@
-Covers: app/(app)/**, app/page.tsx, app/sign-in/page.tsx, app/sign-up/page.form.tsx, app/api/(story)/**, lib/spoosh.ts (Spoosh keys), lib/supabase/middleware.ts (auth redirects), route.pathname redirects, components/Sidebar.tsx, components/MobileNav.tsx, components/Frame.tsx, components/ui/Layout.tsx (TopBar), components/ChapterHeader.tsx (header layout only)
+Covers: app/(app)/**, app/page.tsx, app/sign-in/page.tsx, app/sign-up/page.form.tsx, app/api/(story)/**, lib/spoosh.ts (Spoosh keys), lib/supabase/middleware.ts (auth redirects), route.pathname redirects, components/Sidebar.tsx, components/other-tools.ts, components/MobileNav.tsx, components/Frame.tsx, components/ui/Layout.tsx (TopBar), components/ChapterHeader.tsx (header layout only)
+
+## 2026-11-11 — Transcript, Translate and Video Cutter under "Other"
+
+**Decision, requested by the user:** the three leave the sidebar and are
+reached from one "Other" entry (`/other`), a grid of cards. The list lives in
+`components/other-tools.ts` and keeps each tool's feature gate: a card shows
+only if its feature is enabled, and "Other" shows only if at least one is.
+"Other" is highlighted while on any of the three tools. Their URLs are
+unchanged.
+
+**Why:** a shorter sidebar for the secondary tools.
 
 ## 2026-09-29 — Keep Stories list order fixed by creation
 

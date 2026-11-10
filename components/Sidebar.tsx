@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Beaker, BookOpen, Clapperboard, Languages, Menu, FileText, FlaskConical, Scissors, Shield } from "lucide-react";
+import { Beaker, BookOpen, Clapperboard, LayoutGrid, Menu, FlaskConical, Shield } from "lucide-react";
+import { OTHER_TOOLS } from "@/components/other-tools";
 import { Drawer } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -22,10 +23,6 @@ import type { FeatureKey } from "@/lib/constants/features";
 const NAV_ITEMS = [
   { href: "/stories", label: "Stories", icon: BookOpen, hidden: false, feature: "stories" },
   { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false, feature: "movie_recap" },
-  { href: "/transcript", label: "Transcript", icon: FileText, hidden: false, feature: "movie_recap" },
-  { href: "/translate", label: "Translate", icon: Languages, hidden: false, feature: "translate" },
-  // A local helper for Movie Recap sources, so it shares that feature's access.
-  { href: "/video-cutter", label: "Video Cutter", icon: Scissors, hidden: false, feature: "movie_recap" },
   { href: "/labs/voice", label: "Voice Lab", icon: Beaker, hidden: false, feature: "voice_lab" },
 ] as const satisfies readonly { href: string; label: string; icon: typeof BookOpen; hidden: boolean; feature: FeatureKey }[];
 
@@ -35,6 +32,8 @@ const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
 const ADMIN_TOOL_ITEMS: Partial<Record<FeatureKey, readonly { href: string; label: string; icon: typeof BookOpen }[]>> = {
   stories: [{ href: "/labs/prompt", label: "Stories Lab", icon: FlaskConical }],
 };
+
+const OTHER_ITEM = { href: "/other", label: "Other", icon: LayoutGrid } as const;
 
 const ADMIN_ITEM = { href: "/admin", label: "Admin", icon: Shield } as const;
 
@@ -48,13 +47,15 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
       item,
       ...(me?.isAdmin ? ADMIN_TOOL_ITEMS[item.feature] ?? [] : []),
     ]),
+    ...(OTHER_TOOLS.some((tool) => me?.features[tool.feature]) ? [OTHER_ITEM] : []),
     ...(me?.isAdmin ? [ADMIN_ITEM] : []),
   ];
 
   return (
     <>
       {items.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+        const matches = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
+        const active = matches(href) || (href === OTHER_ITEM.href && OTHER_TOOLS.some((tool) => matches(tool.href)));
         return (
           <Link
             key={href}

@@ -1,12 +1,9 @@
-import { listVoices } from "../tts/voices";
+import { VOICES } from "../tts/voices";
 // Type-only, so it is erased at build time and creates no import cycle with
 // api/types.ts, which imports the value types from this file.
 import type { MovieRecapRenderStage, MovieRecapTranscriptStage } from "../api/types";
 
 export const MOVIE_RECAP_LANGUAGES = [{ id: "my", name: "Burmese" }] as const;
-// The voices the Transcript step offers, taken from the TTS catalog so the picker
-// and the synthesizer can never disagree about which voices exist.
-export const MOVIE_RECAP_VOICES = listVoices("movie-recap");
 
 export const MOVIE_RECAP_ASPECT_RATIOS = [
   { id: "9:16", name: "9:16" },
@@ -487,7 +484,7 @@ export const MOVIE_RECAP_LOGO_PLACEMENTS = [
 ] as const;
 
 export type MovieRecapLanguage = (typeof MOVIE_RECAP_LANGUAGES)[number]["id"];
-export type MovieRecapVoiceId = (typeof MOVIE_RECAP_VOICES)[number]["id"];
+export type MovieRecapVoiceId = (typeof VOICES)[number]["id"];
 export type MovieRecapAspectRatio = (typeof MOVIE_RECAP_ASPECT_RATIOS)[number]["id"];
 export type MovieRecapFitMode = (typeof MOVIE_RECAP_FIT_MODES)[number]["id"];
 export type MovieRecapLogoPlacement = (typeof MOVIE_RECAP_LOGO_PLACEMENTS)[number]["id"];

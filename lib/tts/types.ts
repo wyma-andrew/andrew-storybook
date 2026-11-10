@@ -1,7 +1,3 @@
-// The surfaces that offer a voice. Profiles can be shared across the lab and
-// production flows while retaining one provider configuration in the catalog.
-export type TtsSurface = "movie-recap" | "voice-lab";
-
 export type AzureVoiceParams = {
   // Azure's own short name, e.g. "my-MM-ThihaNeural".
   voiceName: string;
@@ -13,7 +9,7 @@ export type AzureVoiceParams = {
 export type VoxcpmVoiceParams = {
   stylePrompt: string;
   seed: number;
-  referenceAudioId?: "waiyan" | "yuzana" | "dhamma-1" | "dhamma-3" | "wise-elder" | "grandpa";
+  referenceAudioId?: "dhamma-1" | "dhamma-3" | "wise-elder" | "grandpa";
   referenceAudioHash?: string;
   referenceText?: string;
 };
@@ -26,7 +22,6 @@ type VoiceBase = {
   sampleText: string;
   // Static audio played by the profile preview button, or null if unavailable.
   previewUrl: string | null;
-  surfaces: readonly TtsSurface[];
 };
 
 // Provider-specific settings stay inside the provider's own params object: a

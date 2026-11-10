@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AudioLines, Check, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, Loader2, Pause, Play, ScrollText, Sparkles, Upload } from "lucide-react";
-import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import { useState } from "react";
+import { AudioLines, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, ScrollText, Sparkles, Upload } from "lucide-react";
+import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject } from "@/lib/api/types";
 import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
-import { MOVIE_RECAP_VOICES } from "@/lib/constants/movie-recap";
+import { VOICES } from "@/lib/tts/voices";
+import { VoicePicker } from "@/components/voice/VoicePicker";
 import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
-import { useWrite } from "@/lib/spoosh";
-import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
 import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
 import { RecapLengthMenu } from "./RecapLengthMenu";
 import { recommendedRecapShare } from "@/lib/movie-recap-recap-length";
@@ -309,55 +308,9 @@ export function MovieRecapTranscript({
   const [mode, setMode] = useState<TranscriptMode>(
     project.transcriptDialogueOnly ? "manual" : reading || project.transcriptScript?.trim() || project.transcriptText?.includes(MOVIE_RECAP_SCENE_TAG) ? "auto" : "manual"
   );
-  const { trigger: generateVoicePreview } = useWrite((api) => api("voices/preview").POST());
   const text = project.transcriptText ?? "";
   const script = project.transcriptScript ?? "";
   const story = project.transcriptStory ?? "";
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const previewUrls = useRef(new Map<string, string>());
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
-
-  async function togglePreview(voice: (typeof MOVIE_RECAP_VOICES)[number]) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (playing === voice.id) {
-      audio.pause();
-      return;
-    }
-
-    const cacheKey = voice.providerId === "voxcpm"
-      ? `${voice.id}:${voice.params.referenceAudioHash}:${voice.params.referenceText ?? ""}`
-      : voice.id;
-    let src = voice.previewUrl ?? previewUrls.current.get(cacheKey) ?? null;
-    if (!src) {
-      setPreviewLoading(voice.id);
-      const result = await generateVoicePreview({ body: { voiceId: voice.id }, invalidate: false });
-      setPreviewLoading(null);
-      if (result.error || !result.data) {
-        toast.error(result.error?.error ?? "Could not generate the voice preview.");
-        return;
-      }
-      src = audioUrlFromBase64(result.data.audioBase64, result.data.contentType);
-      previewUrls.current.set(cacheKey, src);
-    }
-
-    audio.src = src;
-    setPlaying(voice.id);
-    void audio.play().catch(() => {
-      setPlaying(null);
-      toast.error("Voice preview audio could not be played.");
-    });
-  }
-
-  useEffect(() => {
-    const urls = previewUrls.current;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-      urls.clear();
-    };
-  }, []);
-
   function confirmReadSource(dialogueOnly: boolean) {
     if (!text.trim()) {
       onReadSource(dialogueOnly);
@@ -383,118 +336,100 @@ export function MovieRecapTranscript({
 
   return (
     <div>
-      <h2 className="mb-1 text-lg font-semibold">Transcript</h2>
-      <p className="mb-3 text-sm text-fg-2">
-        Paste the Burmese story, with a timestamp on each line. The source transcript is optional — it is kept for
-        reference and as the text the translation prompt copies.
-      </p>
-      <div className="mb-4 inline-flex rounded-lg border border-line bg-panel-2 p-1">
-        {([
-          { id: "manual", label: "Recap Video" },
-          { id: "auto", label: "Raw Video to Recap" },
-        ] as const).map((option) => (
-          <AppButton
-            key={option.id}
-            onClick={() => setMode(option.id)}
-            className={`!h-8 !border-0 !px-3 !text-sm ${mode === option.id ? "!bg-accent !text-on-accent" : "!bg-transparent !text-fg-2"}`}
-          >
-            {option.label}
-          </AppButton>
-        ))}
-      </div>
-      {mode === "manual" ? (
-        <div className="mb-6 grid gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-line bg-panel-2 p-4">
-            <div className="mb-1 flex items-center gap-2 text-sm font-medium">
-              <Upload size={14} className="text-fg-3" aria-hidden="true" />
-              Manual transcript
-            </div>
-            <p className="mb-3 text-xs text-fg-3">Download a transcript from YouTube or RedNote, then import the .txt file.</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Menu menuClassName="min-w-[200px] p-1" placement="bottom-start" floatingStrategy="fixed">
-                <MenuTrigger>
-                  {({ toggleMenu }) => (
-                    <AppButton variant="primary" className="inline-flex items-center gap-2" onClick={toggleMenu}>
-                      Get Transcript
-                      <ChevronDown size={15} aria-hidden="true" />
-                    </AppButton>
-                  )}
-                </MenuTrigger>
-                {TRANSCRIPT_SOURCES.map((source) => (
-                  <MenuItem key={source.href} onClick={() => window.open(source.href, "_blank", "noreferrer")}>
-                    <span className="flex w-full items-center justify-between gap-3">
-                      {source.label}
-                      <ExternalLink size={14} className="text-fg-3" aria-hidden="true" />
-                    </span>
-                  </MenuItem>
-                ))}
-              </Menu>
-              <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
-              <AppButton
-                variant="secondary"
-                className="inline-flex items-center gap-2"
-                onClick={() => showTranscriptImport((imported) => {
-                  onChange({ transcriptText: imported });
-                })}
-              >
-                Import
-              </AppButton>
-            </div>
-          </div>
-          <div className="rounded-xl border border-line bg-panel-2 p-4">
-            <div className="mb-1 flex items-center gap-2 text-sm font-medium">
-              <AudioLines size={14} className="text-fg-3" aria-hidden="true" />
-              Auto transcript
-            </div>
-            <p className="mb-3 text-xs text-fg-3">Transcribes the speech already in the uploaded video into the source transcript.</p>
-            <div className="flex items-center gap-2">
-              <LoadingButton
-                variant="primary"
-                loading={readingAudio}
-                disabled={running}
-                className="inline-flex items-center gap-2"
-                onClick={() => confirmReadSource(true)}
-              >
-                <AudioLines size={15} aria-hidden="true" />
-                {project.transcriptDialogueOnly && project.transcriptStatus === "done" ? "Generate again" : "Generate Transcript"}
-              </LoadingButton>
-              {readingAudio && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
-            </div>
-            {project.transcriptDialogueOnly && project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
-              <div className="mt-4">
-                <MovieRecapTranscriptProgress project={project} />
+      <h2 className="mb-3 text-lg font-semibold">Transcript</h2>
+      <div className="mb-6 flex flex-col rounded-xl border border-line md:flex-row">
+        <div className="flex items-center rounded-t-xl border-b border-line bg-sunken p-3 md:w-56 md:rounded-l-xl md:rounded-tr-none md:shrink-0 md:border-r md:border-b-0">
+          <Select value={mode} onChange={(value) => setMode(value as TranscriptMode)} wrapperClassName="w-full !self-center" className="!min-h-[38px]" aria-label="Source type">
+            <SelectOption value="manual" label="Recap Video" />
+            <SelectOption value="auto" label="Raw Video to Recap" />
+          </Select>
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col justify-center rounded-b-xl bg-panel-2 p-3 md:rounded-r-xl md:rounded-bl-none">
+          {mode === "manual" ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Menu menuClassName="min-w-[200px] p-1" placement="bottom-start" floatingStrategy="fixed">
+                  <MenuTrigger>
+                    {({ toggleMenu }) => (
+                      <AppButton variant="primary" className="inline-flex items-center gap-2" title="Download a transcript from YouTube or RedNote" onClick={toggleMenu}>
+                        <Upload size={15} aria-hidden="true" />
+                        Get Transcript
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </AppButton>
+                    )}
+                  </MenuTrigger>
+                  {TRANSCRIPT_SOURCES.map((source) => (
+                    <MenuItem key={source.href} onClick={() => window.open(source.href, "_blank", "noreferrer")}>
+                      <span className="flex w-full items-center justify-between gap-3">
+                        {source.label}
+                        <ExternalLink size={14} className="text-fg-3" aria-hidden="true" />
+                      </span>
+                    </MenuItem>
+                  ))}
+                </Menu>
+                <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
+                <AppButton
+                  variant="secondary"
+                  className="inline-flex items-center gap-2"
+                  title="Import the downloaded .txt file"
+                  onClick={() => showTranscriptImport((imported) => {
+                    onChange({ transcriptText: imported });
+                  })}
+                >
+                  Import .txt
+                </AppButton>
+                <span className="-my-3 flex flex-col items-center gap-1 self-stretch px-1.5 py-1.5" aria-hidden="true">
+                  <span className="w-px flex-1 bg-line-2" />
+                  <span className="text-[10px] font-semibold tracking-wider text-fg-3 uppercase">or</span>
+                  <span className="w-px flex-1 bg-line-2" />
+                </span>
+                <LoadingButton
+                  variant="primary"
+                  loading={readingAudio}
+                  disabled={running}
+                  className="inline-flex items-center gap-2"
+                  title="Transcribes the speech already in the uploaded video into the source transcript."
+                  onClick={() => confirmReadSource(true)}
+                >
+                  <AudioLines size={15} aria-hidden="true" />
+                  {project.transcriptDialogueOnly && project.transcriptStatus === "done" ? "Auto-generate again" : "Auto-generate from video"}
+                </LoadingButton>
+                {readingAudio && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
               </div>
-            )}
-            {project.transcriptDialogueOnly && project.transcriptStatus === "failed" && project.transcriptError && (
-              <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="mb-6 rounded-xl border border-line bg-panel-2 p-4">
-          <p className="mb-3 text-sm text-fg-2">
-            Reads the uploaded video&apos;s dialogue (its subtitle track, or speech recognition) and describes every
-            detected scene, then writes both into the source transcript as timestamped lines. Scene lines are tagged
-            [Scene]. Then: copy the script prompt, paste the recap script below, copy the clip prompt, and paste its
-            timestamped result into the Burmese story.
-          </p>
-          {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly && (
-            <div className="mb-4">
-              <MovieRecapTranscriptProgress project={project} />
-            </div>
+              {project.transcriptDialogueOnly && project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
+                <div className="mt-3">
+                  <MovieRecapTranscriptProgress project={project} />
+                </div>
+              )}
+              {project.transcriptDialogueOnly && project.transcriptStatus === "failed" && project.transcriptError && (
+                <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <LoadingButton variant="primary" loading={reading} disabled={running} className="inline-flex items-center gap-2" onClick={() => confirmReadSource(false)}>
+                  <Sparkles size={15} aria-hidden="true" />
+                  {project.transcriptStatus === "done" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly ? "Read again" : "Read source"}
+                </LoadingButton>
+                {reading && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
+                <p className="min-w-60 flex-1 text-xs text-fg-3">
+                  Reads the video&apos;s dialogue and scenes into the source transcript ([Scene] lines). Then copy the script
+                  prompt → paste the recap script → copy the clip prompt → paste its result into the Burmese story.
+                </p>
+              </div>
+              {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly && (
+                <div className="mt-3">
+                  <MovieRecapTranscriptProgress project={project} />
+                </div>
+              )}
+              {project.transcriptStatus === "failed" && project.transcriptError && !project.transcriptDialogueOnly && (
+                <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
+              )}
+            </>
           )}
-          {project.transcriptStatus === "failed" && project.transcriptError && !project.transcriptDialogueOnly && (
-            <p className="mb-3 text-sm text-danger">{project.transcriptError}</p>
-          )}
-          <div className="flex items-center gap-2">
-            <LoadingButton variant="primary" loading={reading} disabled={running} className="inline-flex items-center gap-2" onClick={() => confirmReadSource(false)}>
-              <Sparkles size={15} aria-hidden="true" />
-              {project.transcriptStatus === "done" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly ? "Read again" : "Read source"}
-            </LoadingButton>
-            {reading && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
-          </div>
         </div>
-      )}
+      </div>
 
       <div className="space-y-5">
         <div className="overflow-hidden rounded-xl border border-line bg-panel-2">
@@ -614,31 +549,7 @@ export function MovieRecapTranscript({
 
         <div className="rounded-xl border border-line bg-panel-2 p-4">
           <div className="mb-3 text-sm font-medium">Narration voice</div>
-          <div className="grid grid-cols-2 gap-2">
-            {MOVIE_RECAP_VOICES.map((voice) => {
-              const selected = project.voiceProfileId === voice.id;
-              return (
-                <div key={voice.id} className={`flex items-center gap-2 rounded-xl border p-3 ${selected ? "border-accent bg-accent-dim" : "border-line bg-panel"}`}>
-                  <AppButton
-                    aria-label={playing === voice.id ? `Pause ${voice.name} voice preview` : `Play ${voice.name} voice preview`}
-                    disabled={previewLoading !== null}
-                    onClick={() => void togglePreview(voice)}
-                    className="!h-9 !w-9 shrink-0 !rounded-full !border-0 !bg-accent !p-0 !text-on-accent"
-                  >
-                    {previewLoading === voice.id ? <Loader2 size={15} className="animate-spin" /> : playing === voice.id ? <Pause size={15} /> : <Play size={15} />}
-                  </AppButton>
-                  <AppButton
-                    onClick={() => onChange({ voiceProfileId: voice.id })}
-                    className="!h-9 min-w-0 flex-1 !justify-between !border-0 !bg-transparent !px-2 !text-fg"
-                  >
-                    <span className="font-semibold">{voice.name}</span>
-                    {selected && <Check size={16} className="text-accent" aria-label="Selected" />}
-                  </AppButton>
-                </div>
-              );
-            })}
-          </div>
-          <audio ref={audioRef} onPause={() => setPlaying(null)} onEnded={() => setPlaying(null)} />
+          <VoicePicker voices={VOICES} value={project.voiceProfileId} onChange={(id) => onChange({ voiceProfileId: id })} />
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 This local Python service loads `openbmb/VoxCPM2` and returns short WAV clips to
 the Next.js Voice Lab. The model is lazy-loaded on the first generation.
-Wai Yan, Yuzana, the two Dhamma profiles, and ပညာရှိအဘိုး use fixed 16 kHz reference files
+The two Dhamma profiles, ပညာရှိအဘိုး and Grandpa use fixed 16 kHz reference files
 in `reference_audio/`; the Modal app attaches that directory to the worker runtime.
 See the [official model card](https://huggingface.co/openbmb/VoxCPM2) and
 [repository](https://github.com/OpenBMB/VoxCPM) for model and license details.

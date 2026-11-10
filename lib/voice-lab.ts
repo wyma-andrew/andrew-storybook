@@ -1,17 +1,5 @@
-import { getVoice, listVoices } from "./tts/voices";
 
 export const VOICE_LAB_MAX_TEXT_LENGTH = 600;
-
-// The lab picker is every voice flagged for the lab surface — both the paid
-// Azure voices and the self-hosted ones, so the two can be compared on the same
-// line of text. The catalog in lib/tts/voices.ts owns the entries themselves.
-export const VOICE_LAB_PROFILES = listVoices("voice-lab");
-
-export type VoiceLabProfileId = (typeof VOICE_LAB_PROFILES)[number]["id"];
-
-export function getVoiceLabProfile(id: unknown) {
-  return getVoice(id, "voice-lab");
-}
 
 export function validateVoiceLabText(value: unknown) {
   if (typeof value !== "string") return "Enter Burmese text to generate.";
@@ -61,3 +49,32 @@ export function mapVoiceLabItem(row: Record<string, unknown>): VoiceLabItem {
 // A worker that died mid-job never reports back; past this a "processing" row
 // is treated as failed so Generate can pick it up again.
 export const VOICE_LAB_STALE_PROCESSING_MS = 30 * 60 * 1000;
+
+export type VoiceLabProject = {
+  id: string;
+  name: string;
+  voiceId: string | null;
+  lineCount: number;
+  doneCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function validateVoiceLabProjectName(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "Enter a project name.";
+  if (value.trim().length > 120) return "Keep the name under 120 characters.";
+  return null;
+}
+
+export function mapVoiceLabProject(row: Record<string, unknown>): VoiceLabProject {
+  const items = (row.voice_lab_items as { status: VoiceLabItemStatus }[] | undefined) ?? [];
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    voiceId: (row.voice_id as string | null) ?? null,
+    lineCount: items.length,
+    doneCount: items.filter((item) => item.status === "done").length,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  };
+}

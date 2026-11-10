@@ -63,16 +63,17 @@ app/
     (transcript)/
       transcript/              Burmese transcript list, upload and viewer (URL: /transcript)
     account/                   Email display and password change
+    other/                     Grid of secondary tools (Transcript, Translate, Video Cutter)
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
-    labs/voice/                Burmese narration generation test bench
+    labs/voice/                Burmese narration test bench: project list + per-project line editor
     labs/prompt/               Admin-only Stories Lab (Prompt Lab): inspect, edit, run and compare storyboard and asset prompts
     settings/                  Read-only styles and system prompts
   sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Stories Lab (admin), Movie Recap, Transcript, Translate, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories, Stories Lab (admin), Movie Recap, Voice Lab, Other (Transcript, Translate, Video Cutter via `components/other-tools.ts`), Admin.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -396,11 +397,12 @@ download. No timestamps are kept.
 
 ### Burmese Voice Lab
 
-- UI: `app/(app)/labs/voice/`
+- UI: `app/(app)/labs/voice/` (project list, `[id]` editor) and `components/voice-lab/VoiceLabEditor.tsx`
 - API proxy: `app/api/labs/voice/`
 - Worker: `workers/voice-lab/` (deployed to Modal scale-to-zero GPU via `modal_app.py`)
 
-The authenticated lab keeps a saved list of Burmese lines (`voice_lab_items`):
+The lab is organised in projects (`voice_lab_projects`: name and chosen voice),
+each holding a saved list of Burmese lines (`voice_lab_items.project_id`):
 Import splits pasted text into one editable row per line. Generate renders the
 unfinished lines with the chosen voice through the TTS layer (`lib/tts/`). Azure
 voices are rendered by the route; VoxCPM2 lines go to the worker as one job that
@@ -411,7 +413,7 @@ authenticates the callback. See `history/voice-lab.md`.
 If job acceptance times out during a Modal cold start, rows remain processing;
 polling recovers completed WAVs from R2 or eventually marks stale rows failed.
 
-Wai Yan, Yuzana, and the Voice Lab-only `ပညာရှိအဘိုး` / `ဓမ္မသံ ၁` / `ဓမ္မသံ ၃` profiles use fixed
+The VoxCPM2 profiles (`ပညာရှိအဘိုး`, Grandpa, `ဓမ္မသံ ၁`, `ဓမ္မသံ ၃`) use fixed
 16 kHz reference WAVs bundled into the worker runtime. The server sends a
 reference ID and exact transcript; the worker maps that ID to its local WAV
 path and passes only the requested narration text to VoxCPM2.
@@ -419,9 +421,9 @@ path and passes only the requested narration text to VoxCPM2.
 ### Text to speech
 
 - Contract and voice catalog: `lib/tts/types.ts`, `lib/tts/voices.ts`
-- Voice previews: static audio in `public/movie-recap/voices/`; Azure MP3s are
-  generated from the catalog, while Wai Yan and Yuzana play their supplied WAVs.
-  `app/api/voices/preview/` remains the fallback when a profile has no file
+- Voice previews: Azure MP3s in `public/movie-recap/voices/` (generated from the
+  catalog); every other voice's sample is generated once by `app/api/voices/preview/`
+  and kept in R2 (`voice-previews/`)
 - Providers: `lib/tts/providers/azure.ts`, `lib/tts/providers/voxcpm.ts`
 - Entry point: `lib/tts/synthesize.ts`
 
@@ -430,8 +432,8 @@ provider's own parameters (Azure voice name and SSML prosody, or VoxCPM2 style
 prompt and seed). `synthesize()` picks the provider off the voice, so callers —
 the lab route and the render pipeline — never name a service. A voice's `id` is
 what the database stores, so moving a voice between providers is a code edit.
-`surfaces` decides where a voice is offered: Movie Recap and the lab share four
-Burmese voices, while the three story narration profiles are available only in Voice Lab.
+`VOICES` is the one list: Voice Lab and Movie Recap offer exactly the same voices
+through the shared `components/voice/VoicePicker.tsx`.
 
 ### Script
 
