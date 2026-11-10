@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Beaker, BookOpen, Clapperboard, Languages, Menu, FileText, FlaskConical, Scissors, Shield, Sparkles } from "lucide-react";
+import { Beaker, BookOpen, Clapperboard, Languages, Menu, FileText, FlaskConical, Scissors, Shield } from "lucide-react";
 import { Drawer } from "@geckoui/geckoui";
 import { Button } from "@/components/ui/Button";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
@@ -22,7 +22,6 @@ import type { FeatureKey } from "@/lib/constants/features";
 const NAV_ITEMS = [
   { href: "/stories", label: "Stories", icon: BookOpen, hidden: false, feature: "stories" },
   { href: "/movie-recap", label: "Movie Recap", icon: Clapperboard, hidden: false, feature: "movie_recap" },
-  { href: "/recap-v2", label: "Recap V2", icon: Sparkles, hidden: false, feature: "movie_recap" },
   { href: "/transcript", label: "Transcript", icon: FileText, hidden: false, feature: "movie_recap" },
   { href: "/translate", label: "Translate", icon: Languages, hidden: false, feature: "translate" },
   // A local helper for Movie Recap sources, so it shares that feature's access.
@@ -32,9 +31,9 @@ const NAV_ITEMS = [
 
 const VISIBLE_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.hidden);
 
-// Admin-only tools nested under the feature they test.
-const ADMIN_SUB_ITEMS: Partial<Record<FeatureKey, readonly { href: string; label: string; icon: typeof BookOpen }[]>> = {
-  stories: [{ href: "/labs/prompt", label: "Prompt Lab", icon: FlaskConical }],
+// Admin-only tools listed right after the feature they test.
+const ADMIN_TOOL_ITEMS: Partial<Record<FeatureKey, readonly { href: string; label: string; icon: typeof BookOpen }[]>> = {
+  stories: [{ href: "/labs/prompt", label: "Stories Lab", icon: FlaskConical }],
 };
 
 const ADMIN_ITEM = { href: "/admin", label: "Admin", icon: Shield } as const;
@@ -46,15 +45,15 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   const { data: me } = useRead((api) => api("auth/me").GET());
   const items = [
     ...VISIBLE_NAV_ITEMS.filter((item) => me?.features[item.feature]).flatMap((item) => [
-      { ...item, sub: false },
-      ...(me?.isAdmin ? ADMIN_SUB_ITEMS[item.feature] ?? [] : []).map((child) => ({ ...child, sub: true })),
+      item,
+      ...(me?.isAdmin ? ADMIN_TOOL_ITEMS[item.feature] ?? [] : []),
     ]),
-    ...(me?.isAdmin ? [{ ...ADMIN_ITEM, sub: false }] : []),
+    ...(me?.isAdmin ? [ADMIN_ITEM] : []),
   ];
 
   return (
     <>
-      {items.map(({ href, label, icon: Icon, sub }) => {
+      {items.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
@@ -66,7 +65,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
               // The drawer is touched, not clicked: 44px rows there, the denser
               // desktop row otherwise.
               onNavigate ? "min-h-11 px-3 py-2.5" : collapsed ? "justify-center px-0 py-2" : "px-2.5 py-2"
-            } ${sub && !collapsed ? "ml-5 text-[13px]" : ""} ${active ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"}`}
+            } ${active ? "bg-accent text-on-accent" : "text-fg-2 hover:bg-hover hover:text-fg"}`}
           >
             <Icon size={16} className="shrink-0" />
             {!collapsed && label}

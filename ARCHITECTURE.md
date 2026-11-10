@@ -49,7 +49,6 @@ app/
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
     (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
-    (recap-v2)/recap-v2-projects/ Recap V2 CRUD, upload, transcribe, translate, Smart Sync render
     (transcript)/transcript-projects/ Burmese video upload and speech-to-text
     labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
     labs/prompt/               Admin-only: storyboard / asset-extraction preview, sandbox runs
@@ -61,21 +60,19 @@ app/
       movie-recap/             Recap project list + five-step editor (URL: /movie-recap)
     (translate)/
       translate/               Translate project list, upload and editor (URL: /translate)
-    (recap-v2)/
-      recap-v2/                Recap V2 project list, upload and editor (URL: /recap-v2)
     (transcript)/
       transcript/              Burmese transcript list, upload and viewer (URL: /transcript)
     account/                   Email display and password change
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
     labs/voice/                Burmese narration generation test bench
-    labs/prompt/               Admin-only Prompt Lab: inspect, edit, run and compare storyboard and asset prompts
+    labs/prompt/               Admin-only Stories Lab (Prompt Lab): inspect, edit, run and compare storyboard and asset prompts
     settings/                  Read-only styles and system prompts
   sign-in/, sign-up/           Supabase Auth UI (standalone Frame, no sidebar, no session yet)
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories (admin: Prompt Lab nested under it), Movie Recap, Recap V2, Transcript, Translate, Voice Lab.
+  Sidebar.tsx                  Persistent left nav: Stories, Stories Lab (admin), Movie Recap, Transcript, Translate, Voice Lab.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -384,28 +381,6 @@ discarding either; an explicit delete removes synced timing. The server download
 and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 The editor follows a render through `GET translate-projects/:id/progress`.
 
-### Recap V2
-
-- UI: `app/(app)/(recap-v2)/recap-v2/` and `components/recap-v2/RecapV2Editor.tsx`
-- API: `app/api/(recap-v2)/recap-v2-projects/`
-- Storage: `recap_v2_projects` (gated by `movie_recap`) and `recap-v2/<id>/` in R2
-
-A Chinese-narrated recap video becomes a Burmese-narrated one. **Transcribe**
-(`lib/recap-v2-transcribe.ts`) reads the speech with the FunASR worker's
-character timestamps and `buildRecapV2Units()` cuts it into ~4.2s units whose
-picture windows tile the whole source; units live as JSONB on the row, and the
-raw speech transcript is kept in R2 so `…/resplit` can rebuild units for free.
-**Translate** (`lib/recap-v2-translate.ts`) builds a story memory, then
-translates ID-locked batches with OpenAI; each line stays editable. **Render**
-(`lib/recap-v2-render.ts`) synthesizes each line through `lib/tts/` (raw clip
-cached by content in R2), optionally trims its edge silence ("Short pauses"),
-retimes each window's picture to its line (max 1.25×, then the window's tail
-is cut; frame-locked to the cumulative narration clock), applies source-frame blur and
-Movie Recap's `buildShotFilter` look, concatenates, burns captions, and muxes.
-All three share one job slot (`job_*` columns). The editor polls
-`GET recap-v2-projects/:id/progress` and fetches the full row when the job leaves
-`running`.
-
 ### Transcript
 
 - UI: `app/(app)/(transcript)/transcript/` and `components/transcript/TranscriptEditor.tsx`
@@ -413,7 +388,7 @@ All three share one job slot (`job_*` columns). The editor polls
 - Storage: `transcript_projects` (gated by `movie_recap`) and `transcripts/<id>/` in R2
 - Worker: `workers/whisper-mm/` (Whisper large-v3 on Modal, `lib/transcript-worker.ts`)
 
-A Burmese video uploads to R2 (same multipart flow as Recap V2); Transcribe
+A Burmese video uploads to R2 (same multipart flow as Translate); Transcribe
 extracts Opus audio and sends it to the Whisper worker, while the editor polls
 `GET transcript-projects/:id/progress`; the segments become
 plain text (`transcript_text`), shown in a Transcript tab with copy and .txt

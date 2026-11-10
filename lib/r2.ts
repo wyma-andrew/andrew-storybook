@@ -118,24 +118,6 @@ export function transcriptObjectKey(projectId: string, fileName: string) {
   return `${transcriptProjectPrefix(projectId)}source/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
-export function recapV2ProjectPrefix(projectId: string) {
-  return `recap-v2/${projectId}/`;
-}
-
-export function recapV2ObjectKey(projectId: string, kind: "source" | "render", fileName: string) {
-  return `${recapV2ProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
-}
-
-// The speech worker's raw segments and character stamps, so lines can be
-// re-split after a segmentation change without listening again.
-export function recapV2AsrKey(projectId: string) {
-  return `${recapV2ProjectPrefix(projectId)}asr/transcript.json`;
-}
-
-export function recapV2NarrationKey(projectId: string, hash: string) {
-  return `${recapV2ProjectPrefix(projectId)}narration/${hash}.wav`;
-}
-
 export function movieRecapAssetPrefix(projectId: string, kind: "source" | "narration" | "render" | "subtitle" | "analysis") {
   return `${movieRecapProjectPrefix(projectId)}${kind}/`;
 }

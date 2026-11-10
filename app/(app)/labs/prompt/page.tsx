@@ -1335,7 +1335,7 @@ export default function PromptLabPage() {
               <FlaskConical size={18} />
               <span className="text-xs font-medium tracking-wider uppercase">Story pass test bench</span>
             </div>
-            <h1 className="text-2xl font-semibold">Prompt Lab</h1>
+            <h1 className="text-2xl font-semibold">Stories Lab</h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fg-2">
               See exactly what a pass sends for a chapter, edit it, run it on any model, and compare the copied prompts side by side.
             </p>

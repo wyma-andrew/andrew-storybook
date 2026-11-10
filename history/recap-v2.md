@@ -4,6 +4,22 @@ Covers: `app/(app)/(recap-v2)/**`, `app/api/(recap-v2)/**`,
 `components/recap-v2/**`, `lib/recap-v2*.ts`,
 `lib/prompts/recap-v2-translation.ts`, and the `recap_v2_projects` migration.
 
+## 2026-11-10 — Recap V2 removed entirely
+
+**Decision, requested by the user:** Recap V2 is gone — page, nav item, API,
+`components/recap-v2/`, `lib/recap-v2*.ts`, its prompt, the Spoosh schema and
+the R2 key helpers. Migration `20261110140000_drop_recap_v2_projects.sql`
+dropped `recap_v2_projects` (2 projects) and every object under `recap-v2/`
+in R2 (95 files, 0.71 GB) was deleted. Both were confirmed by the user as
+permanent.
+
+**Why:** the user no longer uses it; Movie Recap is the recap flow.
+
+**Consequence:** the entries below describe code that no longer exists. They
+stay as the record of what was tried, should a Chinese-to-Burmese re-narration
+flow come back. The two `recap_v2` create migrations remain in
+`supabase/migrations/` because migration history is append-only.
+
 ## 2026-11-05 — The poller reads progress columns, not the whole row
 
 **Decision, approved by the user:** the editor's tick reads

@@ -8,6 +8,18 @@ Covers: `app/(app)/labs/prompt/**`, `app/api/labs/prompt/**`, `lib/prompt-lab.ts
 `20261029090000_prompt_lab_parts.sql`, `20261029120000_prompt_lab_versions.sql`, `20261030090000_prompt_lab_motion_overrides.sql`; `lib/prompts/parts.ts` and the
 `*SystemPromptParts` builders and `sceneScopePrompt` in `lib/prompts/storyboard.ts` / `extract-assets.ts`.
 
+## 2026-11-10 — Nav label is "Stories Lab", a top-level row
+
+**Decision, requested by the user:** the sidebar entry is renamed "Stories Lab"
+(page heading too) and is its own top-level row directly after Stories, no
+longer indented as a sub-item. Still admin-only; URL stays `/labs/prompt`
+for the same reasons as before.
+
+**Why:** the user wanted a flat nav.
+
+**Supersedes:** "Nav sits under Stories" in the original entry below. Code,
+table and history names keep "Prompt Lab"; only the visible label changed.
+
 ## 2026-11-02 — Re-shoot one scene of a storyboard run
 
 **Decision.** Each scene column of a storyboard run has a Re-shoot button. It sends
@@ -198,7 +210,7 @@ stored shot prompt. Two runs can be compared scene by scene, side by side.
 - **Runs store the prompts as sent**, with `*_edited` flags, so an old run
   stays reproducible after the code constant changes. "Load prompts" puts a
   run's prompts back into the editor.
-- **Nav sits under Stories**, as an indented admin-only sub-item, because it
+- **Nav sits under Stories** *(superseded 2026-11-10, see top)*, as an indented admin-only sub-item, because it
   tests the Stories storyboard pass. The URL stays `/labs/prompt`: moving it
   under `/stories` would also light up the Stories item and put it behind the
   `stories` feature layout instead of the admin gate.
