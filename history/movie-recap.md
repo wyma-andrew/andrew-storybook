@@ -4,9 +4,104 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `app/api/(movie-recap)/movie-recaps/**`, `components/movie-recap/**`,
 `lib/constants/movie-recap.ts`, `lib/movie-recap.ts`,
 `lib/movie-recap-render.ts`, `lib/movie-recap-range.ts`, `lib/prompts/movie-recap-narration.ts`,
-`lib/r2.ts`, `lib/spoosh.ts`, `lib/tts/**`, `lib/recap-job-dispatch.ts`,
-`scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`
-and `movie_recap_range_renders` migrations.
+`lib/r2.ts`, `lib/facebook.ts`, `lib/constants/facebook.ts`, `app/api/facebook/**`, `app/api/(movie-recap)/movie-recap-social-posts/**`, `components/ui/FacebookLogo.tsx`, `lib/spoosh.ts`, `lib/tts/**`, `lib/recap-job-dispatch.ts`,
+`scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
+`movie_recap_range_renders` and `movie_recap_social_posts` migrations.
+
+## 2026-11-10 — Full renders schedule to the Facebook Page as Reels
+
+**Decision, approved by the user:** Review's full render gets a **Publish to
+social** button (admins only, not on mock previews) beside Download in the Full
+video header that asks for a caption and a publish time and calls
+`POST movie-recaps/:id/facebook` (`lib/facebook.ts`). Every recap goes out as a
+Reel whatever its aspect ratio — the user chose that over picking Reel vs.
+regular video by ratio. Range renders do not get the button.
+
+**Why:** one click from the finished render to a scheduled post on the user's
+own Page. The Page token (`FB_PAGE_ID`, `FB_PAGE_TOKEN`) is a single
+never-expiring Page token for one Page, which is why the route is admin-only on
+top of RLS: any user with Movie Recap access could otherwise post to that Page.
+
+**How:** Reels Publishing API start → hosted-file upload → finish with
+`video_state=SCHEDULED`. Meta pulls the MP4 from a presigned R2 URL that lives
+an hour (the browser download one lives five minutes, too short for Meta's
+fetch), so the bytes never pass through Next.
+
+**Composer:** the dialog mimics a Facebook post composer — Page name and
+avatar (`GET facebook/page`), caption, removable hashtag chips, GeckoUI
+`DateInput` plus a 15-minute time `Select`, and a live preview with the render.
+Defaults live in `lib/constants/facebook.ts` (user's choice over a DB setting or
+`.env`): the next 8:00 PM that is at least ten minutes away, and the default
+hashtags. Changing a default is a code change.
+
+**Facebook logo — approved exception to the lucide-only icon rule:** the user
+asked for the composer to read as Facebook at a glance. lucide 1.x ships no
+brand logos, so `components/ui/FacebookLogo.tsx` inlines the Simple Icons (CC0)
+"f" mark as a badge on the Page avatar. Its colour is
+the `facebook` / `on-facebook` tokens, the same Meta blue in both palettes
+because the brand colour does not change with theme. Rejected: a plain
+"Facebook · Reel" text chip (stays inside the rule, but does not read as
+Facebook). This exception covers brand marks only; UI icons stay lucide.
+
+**Accepted consequences:** Meta enforces the Reel limits (length, ratio) and the
+scheduling window; its error message is shown as is. Only the ten-minute minimum
+lead is checked locally.
+
+**Superseded the same day (see "Scheduled posts are stored and managed"):**
+this entry first stored nothing about the post — the toast and Meta Business
+Suite were the only record, and scheduling twice made two posts.
+
+## 2026-11-10 — Scheduled posts are stored and managed
+
+**Decision, approved by the user:** every scheduled Reel is saved in
+`movie_recap_social_posts` (project, Facebook video id, caption, publish time,
+status, permalink). The Full video card lists them for admins with Edit
+(caption and time, `PATCH movie-recap-social-posts/:id`), Cancel (deletes the
+video on Facebook, then marks the row cancelled) and a link once published.
+Scheduling a recap that already has a scheduled or published post shows a
+warning but still allows it.
+
+**Why:** with nothing stored, the app could not show what was scheduled, and a
+second click silently posted twice. The user wanted to keep managing posts here
+rather than in Meta Business Suite.
+
+**How status stays current:** `GET movie-recaps/:id/social-posts` re-reads every
+`scheduled` row from the Graph API (`status`, `permalink_url`) and writes back
+published/failed. A lookup that errors leaves the row unchanged — a token or
+network hiccup must not mark a live post cancelled. There is no background
+sync; a row only updates when someone opens the list.
+
+**Traps:** if the Facebook schedule succeeds but the row insert fails, the route
+answers 500 with a message saying not to schedule again — the Reel is live on
+Facebook and a retry would duplicate it. Editing the time uses the Video node's
+`scheduled_publish_time`; whether Meta accepts that for Reels was not verified
+against a real post when this shipped. If it is refused, the Graph error is shown
+and the fallback is Cancel + schedule again. Deleting a recap project cascades
+its rows but leaves the Facebook posts in place.
+
+**Rejected:** a background job polling Facebook (no scheduler exists in this
+app, and the list is the only place the status is read).
+
+## 2026-11-10 — Video render card is one toolbar row
+
+**Decision, approved by the user:** the Video render card has no heading — the
+user found it self-evident. One wrapping row holds the Full/Range select, the Start/End beat selects (Range only), the render action
+and the more menu on one wrapping row, with `p-3` padding. The visible field
+labels ("Render selection", "Start beat", "End beat") are gone; each select
+keeps its name as a hover title.
+
+**Why:** the card took three rows (heading, labels, controls) for one select and
+one button. The selects already show their value, so the labels repeated it.
+
+**Kept from earlier entries:** the render action still sits directly after its
+selectors (2026-09-29 "Align render actions"), the three Range selectors stay
+together, Mock Preview stays in the more menu, and progress stays its own
+section. **Supersedes** the grid with fixed selector columns from "Keep range
+selectors together": the beat selects are now fixed-width (`w-56`) items in a
+row that wraps on narrow screens instead of holding a minimum width.
+
+**Rejected:** merging the render controls into the Full video card header — it
+would undo "Separate Review progress from render controls"' separate section.
 
 ## 2026-11-05 — The poller reads progress columns, not the whole row
 

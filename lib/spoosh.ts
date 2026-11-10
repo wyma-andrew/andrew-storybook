@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender, MovieRecapSocialPost } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
@@ -331,6 +331,19 @@ export type ApiSchema = {
   };
   "movie-recaps/:id/render/download": {
     GET: { data: { url: string } };
+  };
+  "facebook/page": {
+    GET: { data: { name: string; pictureUrl: string | null } };
+  };
+  "movie-recaps/:id/facebook": {
+    POST: { data: MovieRecapSocialPost; body: { description: string; publishAt: string } };
+  };
+  "movie-recaps/:id/social-posts": {
+    GET: { data: MovieRecapSocialPost[] };
+  };
+  "movie-recap-social-posts/:id": {
+    PATCH: { data: MovieRecapSocialPost; body: { description?: string; publishAt?: string } };
+    DELETE: { data: MovieRecapSocialPost };
   };
   "movie-recaps/:id/render/cancel": {
     POST: { data: { cancelled: boolean } };

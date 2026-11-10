@@ -76,6 +76,8 @@
   --color-thumb-to: var(--c-thumb-to);
   --color-avatar-from: var(--c-avatar-from);
   --color-avatar-to: var(--c-avatar-to);
+  --color-facebook: var(--c-facebook);
+  --color-on-facebook: var(--c-on-facebook);
 }
 
 :root,
@@ -139,6 +141,9 @@ html.dark {
   --c-thumb-to: #090c11;
   --c-avatar-from: #2c3440;
   --c-avatar-to: #141820;
+  /* Meta brand blue; identical in both themes by brand rule. */
+  --c-facebook: #0866ff;
+  --c-on-facebook: #ffffff;
 
   /* Scene badge hue: the hue itself is computed per scene in
      lib/constants/scene-colors.ts; only its weight changes with the theme. A
@@ -255,6 +260,8 @@ html.light {
   --c-thumb-to: #e8ecf2;
   --c-avatar-from: #d5dce6;
   --c-avatar-to: #edf0f5;
+  --c-facebook: #0866ff;
+  --c-on-facebook: #ffffff;
 
   --scene-s: 72%;
   --scene-l: 36%;

@@ -67,6 +67,20 @@ export type MovieRecapRangeRender = {
   createdAt: string;
 };
 
+export type MovieRecapSocialPost = {
+  id: string;
+  projectId: string;
+  platform: "facebook";
+  kind: "reel";
+  externalId: string;
+  description: string;
+  publishAt: string;
+  status: "scheduled" | "published" | "cancelled" | "failed";
+  permalinkUrl: string | null;
+  error: string | null;
+  createdAt: string;
+};
+
 export type MovieRecapProject = {
   id: string;
   name: string;

@@ -298,7 +298,11 @@ combined MP4, the processed footage-only MP4, and the cached narration master
 WAV. Review plays and downloads the combined MP4; the other artifacts remain
 internal. Download GETs validate project access through RLS, then return
 short-lived R2 URLs with attachment filenames; large media bytes do not pass
-through the Next server.
+through the Next server. Admins can also schedule the full render to the
+Facebook Page as a Reel (`POST movie-recaps/:id/facebook`, `lib/facebook.ts`);
+Meta pulls the MP4 from a presigned R2 URL. Each scheduled post is a
+`movie_recap_social_posts` row that Review lists with edit/cancel; listing re-reads
+scheduled rows' status from the Graph API.
 
 Review can also render an inclusive start/end beat range as a standalone MP4.
 It reuses the saved narration master, trims audio at the selected beat
@@ -602,6 +606,7 @@ auth.users
 auth.users
   -> movie_recap_projects.owner_id
        -> movie_recap_range_renders.project_id
+       -> movie_recap_social_posts.project_id
   -> translate_projects.owner_id
 
 voice_over_segments.start_shot_id / end_shot_id -> shots.id
@@ -621,6 +626,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `prompt_lab_runs` | Prompt Lab sandbox runs (storyboard or asset extraction): prompts as sent, model, context, raw/parsed output, usage, optional source asset run |
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
 | `movie_recap_range_renders` | Saved output and beat bounds for standalone range renders |
+| `movie_recap_social_posts` | Facebook Reels scheduled from a full render: video id, caption, publish time, status |
 | `translate_projects` | Owned source upload, SRT, blur/subtitle settings, and rendered MP4 |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;

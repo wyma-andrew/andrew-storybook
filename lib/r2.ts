@@ -209,7 +209,7 @@ export function presignPut(objectKey: string, contentType: string) {
   );
 }
 
-export function presignDownload(objectKey: string, filename: string) {
+export function presignDownload(objectKey: string, filename: string, expiresIn = 300) {
   return getSignedUrl(
     r2(),
     new GetObjectCommand({
@@ -217,7 +217,7 @@ export function presignDownload(objectKey: string, filename: string) {
       Key: objectKey,
       ResponseContentDisposition: `attachment; filename="${filename.replace(/["\\]/g, "-")}"`,
     }),
-    { expiresIn: 300 }
+    { expiresIn }
   );
 }
 

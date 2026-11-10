@@ -1,22 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Download } from "lucide-react";
-import { toast } from "@geckoui/geckoui";
-import { LoadingButton } from "@/components/ui/Button";
+import { Download, Send } from "lucide-react";
+import { Dialog, toast } from "@geckoui/geckoui";
+import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
-import { apiClient } from "@/lib/spoosh";
+import { apiClient, useRead } from "@/lib/spoosh";
+import { FacebookReelComposer } from "./FacebookReelComposer";
 
-// Subtitles are burned into the rendered file by libass, so the player draws
-// nothing over the video and carries no subtitle track — what you see here is
-// the exported frame.
-//
-// The box is NOT sized from `project.aspectRatio`: this player shows what came
-// out of the render, and forcing the configured ratio onto it would hide a
-// mismatch between the two — exactly the thing worth seeing here. The video
-// keeps its own shape and the frame shrinks to fit it.
-export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject }) {
+export function MovieRecapRenderActions({ project }: { project: MovieRecapProject }) {
   const [downloading, setDownloading] = useState(false);
+  const { data: me } = useRead((api) => api("auth/me").GET());
 
   async function downloadVideo() {
     setDownloading(true);
@@ -31,23 +25,43 @@ export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject
     }
   }
 
+  function openPublishDialog() {
+    Dialog.show({
+      className: "max-w-[860px] w-full",
+      dismissOnOutsideClick: false,
+      content: ({ dismiss }) => <FacebookReelComposer project={project} dismiss={dismiss} />,
+    });
+  }
+
   return (
-    <div className="mt-4 space-y-4">
-      <div className="mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-line-2 bg-black">
-        {/* Not muted: the export carries the synthesized narration now, and a
-            muted-by-default player would hide the half of the render that is
-            hardest to check. */}
-        <video
-          controls
-          crossOrigin="anonymous"
-          preload="metadata"
-          src={project.renderOutputUrl ?? undefined}
-          className="block h-auto max-h-[70vh] w-auto max-w-full"
-        />
-      </div>
-      <div className="flex justify-center">
-        <LoadingButton loading={downloading} loadingText="Preparing download..." disabled={downloading} onClick={() => void downloadVideo()}><Download size={16} /> Download video</LoadingButton>
-      </div>
+    <div className="ml-auto flex items-center gap-2">
+      <LoadingButton size="sm" className="!h-8" loading={downloading} loadingText="Preparing..." disabled={downloading} onClick={() => void downloadVideo()}><Download size={14} /> Download</LoadingButton>
+      {me?.isAdmin && !project.renderIsMock && <Button size="sm" className="!h-8" variant="primary" onClick={openPublishDialog}><Send size={14} /> Publish to social</Button>}
+    </div>
+  );
+}
+
+// Subtitles are burned into the rendered file by libass, so the player draws
+// nothing over the video and carries no subtitle track — what you see here is
+// the exported frame.
+//
+// The box is NOT sized from `project.aspectRatio`: this player shows what came
+// out of the render, and forcing the configured ratio onto it would hide a
+// mismatch between the two — exactly the thing worth seeing here. The video
+// keeps its own shape and the frame shrinks to fit it.
+export function MovieRecapRenderPlayer({ project }: { project: MovieRecapProject }) {
+  return (
+    <div className="mx-auto mt-4 w-fit max-w-full overflow-hidden rounded-lg border border-line-2 bg-black">
+      {/* Not muted: the export carries the synthesized narration now, and a
+          muted-by-default player would hide the half of the render that is
+          hardest to check. */}
+      <video
+        controls
+        crossOrigin="anonymous"
+        preload="metadata"
+        src={project.renderOutputUrl ?? undefined}
+        className="block h-auto max-h-[70vh] w-auto max-w-full"
+      />
     </div>
   );
 }

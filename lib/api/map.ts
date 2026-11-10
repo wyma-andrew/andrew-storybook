@@ -13,6 +13,7 @@ import type {
   MovieRecapProgress,
   MovieRecapProject,
   MovieRecapRangeRender,
+  MovieRecapSocialPost,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
 import { DEFAULT_ASPECT_RATIO } from "@/lib/constants/aspect-ratios";
@@ -23,6 +24,22 @@ import { resolveStoryFormat } from "@/lib/constants/story-formats";
 import { normalizeMovieRecapNarrationManifest } from "../movie-recap-manifest";
 
 type Row = Record<string, unknown>;
+
+export function mapMovieRecapSocialPost(r: Row): MovieRecapSocialPost {
+  return {
+    id: r.id as string,
+    projectId: r.project_id as string,
+    platform: r.platform as MovieRecapSocialPost["platform"],
+    kind: r.kind as MovieRecapSocialPost["kind"],
+    externalId: r.external_id as string,
+    description: (r.description as string) ?? "",
+    publishAt: r.publish_at as string,
+    status: r.status as MovieRecapSocialPost["status"],
+    permalinkUrl: (r.permalink_url as string) ?? null,
+    error: (r.error as string) ?? null,
+    createdAt: r.created_at as string,
+  };
+}
 
 export function mapMovieRecapRangeRender(r: Row): MovieRecapRangeRender {
   return {

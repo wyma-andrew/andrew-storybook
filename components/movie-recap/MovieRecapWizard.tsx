@@ -24,7 +24,8 @@ import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
 import { apiClient, useQueue, useRead, useWrite } from "@/lib/spoosh";
 import { MovieRecapPreview } from "./MovieRecapPreview";
-import { MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
+import { MovieRecapRenderActions, MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
+import { MovieRecapSocialPosts } from "./MovieRecapSocialPosts";
 import { MovieRecapScript } from "./MovieRecapScript";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 import MovieRecapRenderHistory from "./MovieRecapRenderHistory";
@@ -1279,10 +1280,20 @@ function Review({
         {project.renderStatus === "failed" && project.renderError && <p className="mt-3 text-sm text-danger">{project.renderError}</p>}
       </div>
     )}
-    <div className={`${project.renderStatus !== "idle" ? "mt-5 " : ""}rounded-xl border border-line bg-panel-2 p-4`}>
-      <div className="mb-3 flex items-center gap-2">
-        <Clapperboard size={16} className="text-accent" />
-        <span className="text-sm font-medium">Video render</span>
+    <div className={`${project.renderStatus !== "idle" ? "mt-5 " : ""}rounded-xl border border-line bg-panel-2 p-3`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div title="Render selection" className="w-28">
+          <Select value={renderMode} onChange={chooseRenderMode}>
+            <SelectOption value="full" label="Full" />
+            <SelectOption value="range" label="Range" />
+          </Select>
+        </div>
+        {renderMode === "range" && <>
+          <div title="Start beat" className="w-56 min-w-0"><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
+          <div title="End beat" className="w-56 min-w-0"><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
+        </>}
+        {renderMode === "full" && <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>}
+        {renderMode === "range" && <LoadingButton variant="primary" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { queuedRange.current = await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
         <Menu className="ml-auto" menuClassName="min-w-[190px] p-0" placement="bottom-end">
           <MenuTrigger>
             {({ toggleMenu }) => <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="More render actions" disabled={rendering || project.renderStatus === "running"} onClick={toggleMenu}><MoreHorizontal size={16} /></Button>}
@@ -1290,23 +1301,8 @@ function Review({
           <MenuItem disabled={rendering || project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</MenuItem>
         </Menu>
       </div>
-      <div className={renderMode === "range" ? "grid min-w-[640px] grid-cols-[repeat(3,minmax(0,1fr))_max-content] items-end gap-3" : "grid grid-cols-[minmax(0,20rem)_max-content] items-end gap-3"}>
-        <div className="min-w-0">
-          <div className="mb-1.5 text-xs font-medium text-fg-2">Render selection</div>
-          <Select value={renderMode} onChange={chooseRenderMode}>
-            <SelectOption value="full" label="Full" />
-            <SelectOption value="range" label="Range" />
-          </Select>
-        </div>
-        {renderMode === "range" && <>
-          <div className="min-w-0"><div className="mb-1.5 text-xs font-medium text-fg-2">Start beat</div><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
-          <div className="min-w-0"><div className="mb-1.5 text-xs font-medium text-fg-2">End beat</div><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
-        </>}
-        {renderMode === "full" && <LoadingButton variant="primary" className="justify-self-start" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>}
-        {renderMode === "range" && <LoadingButton variant="primary" className="justify-self-start" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { queuedRange.current = await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
-      </div>
       {((renderMode === "full" && !beatCount) || project.renderStatus === "running") && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           {renderMode === "full" && !beatCount && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
           {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
         </div>
@@ -1314,9 +1310,10 @@ function Review({
     </div>
 
     <div ref={fullVideoSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "full" ? "" : "hidden"}`}>
-      <div className="flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">{project.renderIsMock ? "Mock preview" : "Full video"}</span></div>
+      <div className="flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">{project.renderIsMock ? "Mock preview" : "Full video"}</span>{project.renderOutputUrl && <MovieRecapRenderActions project={project} />}</div>
       {project.renderOutputUrl && project.renderWarning && <Alert variant="warning" condensed title="Timeline warning" description={project.renderWarning} className="mt-4" />}
       {project.renderOutputUrl ? <MovieRecapRenderPlayer project={project} /> : <p className="mt-4 rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No full video yet.</p>}
+      <MovieRecapSocialPosts project={project} />
     </div>
 
     <div ref={rangeVideosSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "range" ? "" : "hidden"}`}>
