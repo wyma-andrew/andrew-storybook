@@ -9,7 +9,7 @@ export type AzureVoiceParams = {
 export type VoxcpmVoiceParams = {
   stylePrompt: string;
   seed: number;
-  referenceAudioId?: "dhamma-1" | "dhamma-3" | "wise-elder" | "grandpa";
+  referenceAudioId?: "dhamma-1" | "dhamma-3" | "wise-elder" | "grandpa" | "young-male" | "young-female";
   referenceAudioHash?: string;
   referenceText?: string;
 };

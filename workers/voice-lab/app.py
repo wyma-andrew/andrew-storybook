@@ -24,6 +24,8 @@ REFERENCE_AUDIO = {
     "dhamma-3": Path(__file__).parent / "reference_audio" / "dhamma-3.wav",
     "wise-elder": Path(__file__).parent / "reference_audio" / "wise-elder.wav",
     "grandpa": Path(__file__).parent / "reference_audio" / "grandpa.wav",
+    "young-male": Path(__file__).parent / "reference_audio" / "young-male.wav",
+    "young-female": Path(__file__).parent / "reference_audio" / "young-female.wav",
 }
 
 app = FastAPI(title="AI Storybook Voice Lab Worker")
@@ -35,7 +37,7 @@ class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     stylePrompt: str = Field(min_length=1, max_length=300)
     seed: int = Field(ge=0, le=2_147_483_647)
-    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
+    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa", "young-male", "young-female"] | None = None
     referenceText: str | None = Field(default=None, max_length=1000)
 
 
@@ -108,7 +110,7 @@ class JobRequest(BaseModel):
     items: list[JobItem] = Field(min_length=1, max_length=200)
     stylePrompt: str = Field(min_length=1, max_length=300)
     seed: int = Field(ge=0, le=2_147_483_647)
-    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa"] | None = None
+    referenceAudioId: Literal["dhamma-1", "dhamma-3", "wise-elder", "grandpa", "young-male", "young-female"] | None = None
     referenceText: str | None = Field(default=None, max_length=1000)
     callbackUrl: str
 

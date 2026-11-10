@@ -5,6 +5,44 @@ Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
 `workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
 `lib/tts/**`.
 
+## 2026-11-11 — Two young narrator reference voices
+
+**Decision, chosen by the user:** samples `young-male-3` and `young-female-4`
+from the narrator design experiment become reference profiles `young-male`
+("Andrew") and `young-female` ("Yusaku"), listed right after Thiha and Nilar. Each is a 16 kHz
+mono PCM copy in `workers/voice-lab/reference_audio/` with its hash and
+`referenceText` (`NARRATOR_REFERENCE_TEXT`, the line the sample says). Both are
+in the one catalog, so Voice Lab and Movie Recap offer them.
+
+**Why:** the user liked their fluent, connected delivery; a fixed reference
+holds the speaker steadier than the design description and seed alone.
+
+Their preview samples were seeded straight into R2 (`voice-previews/`, the
+key the preview route computes) from the chosen WAVs, so the picker shows Play
+without a GPU run. The Modal worker was redeployed with the two references.
+
+**Consequence:**
+`NARRATOR_REFERENCE_TEXT` equals `SAMPLE_TEXT` today but must not follow it —
+it is the transcript of the WAV. Display names can change freely (the id is
+what is stored).
+
+## 2026-11-11 — Compare movie-recap narrator designs (mid-age and young)
+
+**Decision, requested by the user:** `scripts/try-voice-design.py` gains four
+voice-design candidates for cinematic recap narration — `female-1`,
+`female-2`, `male-1`, `male-2` (Burmese, around 40), plus `young-female-1/2` and
+`young-male-1/2` (around 25–30) — read on the catalog's
+`SAMPLE_TEXT` line with the same seed as the earlier experiments. Samples are
+written to the gitignored `voice-design-samples/`. Listening feedback: the
+young designs paused between words (worst: `young-female-1`); the second young
+round (`young-female-3/4`, `young-male-3/4`) drops "pauses" from the
+description and asks for fluent, connected speech at a brisk natural pace. As with the 2026-10-11 elder
+experiment, they are NOT catalog profiles; a sample the user picks becomes a
+fixed reference profile (16 kHz WAV in the worker + hash + `referenceText`).
+
+**Why:** a design description and seed alone drift between lines (2026-10-11);
+listening first, then locking a reference, is the path that worked.
+
 ## 2026-11-11 — One voice list for every surface
 
 **Decision, requested by the user:** `surfaces` is gone. `VOICES` in

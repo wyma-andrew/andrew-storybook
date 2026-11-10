@@ -33,6 +33,10 @@ const AZURE_NARRATION_RATE = "+20%";
 // R2 preview and needs scripts/generate-voice-previews.ts for the Azure files.
 const SAMPLE_TEXT = "ဒီဇာတ်လမ်းရဲ့ နောက်ကွယ်က အကြောင်းအရာတွေကို အတူတူ လေ့လာကြရအောင်။";
 
+// What the young narrator reference WAVs actually say. Kept apart from
+// SAMPLE_TEXT on purpose: changing the preview line must not change this.
+const NARRATOR_REFERENCE_TEXT = "ဒီဇာတ်လမ်းရဲ့ နောက်ကွယ်က အကြောင်းအရာတွေကို အတူတူ လေ့လာကြရအောင်။";
+
 export const VOICES: readonly Voice[] = [
   {
     id: "azure-thiha",
@@ -51,6 +55,36 @@ export const VOICES: readonly Voice[] = [
     previewUrl: "/movie-recap/voices/azure-nilar.mp3",
     providerId: "azure",
     params: { voiceName: "my-MM-NilarNeural", rate: AZURE_NARRATION_RATE },
+  },
+  {
+    id: "young-male",
+    name: "Andrew",
+    description: "ရုပ်ရှင် recap အတွက် အသက် ၂၅–၃၀ ဝန်းကျင် အမျိုးသား၊ ကြည်လင်ချောမွေ့စွာ ဆက်တိုက်ပြောသော VoxCPM2 အသံ။",
+    sampleText: SAMPLE_TEXT,
+    previewUrl: null,
+    providerId: "voxcpm",
+    params: {
+      stylePrompt: "A Burmese man in his late twenties narrating a movie recap, clear warm voice, fluent and continuous speech with smoothly connected words, confident natural speed",
+      seed: 20261011,
+      referenceAudioId: "young-male",
+      referenceAudioHash: "deed4560373394188075616301638122f2c27a4c08e426c8155a730d4f53fa25",
+      referenceText: NARRATOR_REFERENCE_TEXT,
+    },
+  },
+  {
+    id: "young-female",
+    name: "Yusaku",
+    description: "ရုပ်ရှင် recap အတွက် အသက် ၂၅–၃၀ ဝန်းကျင် အမျိုးသမီး၊ တောက်ပဖော်ရွေပြီး သွက်သွက်ပြောသော VoxCPM2 အသံ။",
+    sampleText: SAMPLE_TEXT,
+    previewUrl: null,
+    providerId: "voxcpm",
+    params: {
+      stylePrompt: "A young Burmese female YouTube storyteller around 27, bright friendly voice, speaks fluently in one smooth flow, confident and engaging, brisk natural pace",
+      seed: 20261011,
+      referenceAudioId: "young-female",
+      referenceAudioHash: "e50517087c3dcb693bdf516a2f14bc7fd243cd2710b156c138d36f334a72bac7",
+      referenceText: NARRATOR_REFERENCE_TEXT,
+    },
   },
   {
     id: "wise-elder",

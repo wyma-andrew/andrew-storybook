@@ -6,12 +6,12 @@ import { DEFAULT_MOVIE_RECAP_VOICE_ID, getVoiceById, resolveMovieRecapVoice, VOI
 
 describe("tts voice catalog", () => {
   it("is one list for every surface", () => {
-    expect(VOICES.map((voice) => voice.id)).toEqual(["azure-thiha", "azure-nilar", "wise-elder", "grandpa", "dhamma-1", "dhamma-3"]);
+    expect(VOICES.map((voice) => voice.id)).toEqual(["azure-thiha", "azure-nilar", "young-male", "young-female", "wise-elder", "grandpa", "dhamma-1", "dhamma-3"]);
     expect(getVoiceById("unknown")).toBeNull();
   });
 
   it("binds each VoxCPM profile to its fixed reference WAV", () => {
-    for (const id of ["wise-elder", "grandpa", "dhamma-1", "dhamma-3"]) {
+    for (const id of ["wise-elder", "grandpa", "dhamma-1", "dhamma-3", "young-male", "young-female"]) {
       const voice = getVoiceById(id);
       expect(voice?.providerId).toBe("voxcpm");
       if (voice?.providerId !== "voxcpm") continue;
