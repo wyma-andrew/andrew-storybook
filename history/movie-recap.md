@@ -8,6 +8,23 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
+## 2026-11-10 — Wizard steps and Back/Continue stay fixed; only the step body scrolls
+
+**Decision, requested by the user:** the wizard no longer uses the shared
+`Body` scroller. It is a flex column: the step tabs (top) and the Back/Continue
+bar (bottom) are `shrink-0`, and only the middle step content is
+`flex-1 overflow-auto`.
+
+**Why:** on long steps (Script with hundreds of beats) Back/Continue sat at the
+very bottom of the page and was out of reach.
+
+**Rejected:** `sticky` header/footer inside `Body` — the whole page would still
+scroll and the scrollbar would run behind the bars.
+
+**Consequence:** the Script beat auto-scroll (`scrollIntoView`) now scrolls the
+middle region, not the page. On small screens the two fixed bars take more of
+the height; the step-tab grid wraps to three rows there.
+
 ## 2026-11-10 — Full renders schedule to the Facebook Page as Reels
 
 **Decision, approved by the user:** Review's full render gets a **Publish to

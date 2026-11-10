@@ -863,277 +863,288 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   return (
     <>
       <TopBar><Crumb><Link href="/movie-recap">Movie Recap</Link> / <span className="text-fg">{project?.name ?? "New project"}</span></Crumb></TopBar>
-      <Body>
-        <Wrap wide>
-          <div className="mb-8 grid grid-cols-2 gap-2 md:grid-cols-5">
-            {STEP_NAMES.map((name, index) => {
-              const number = (index + 1) as StepNumber;
-              const active = step === number;
-              const available = number <= maxStep;
-              return (
-                <Button key={name} disabled={!available || (savingBeats.size > 0 && !active)} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
-                  <span className={`mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
-                  <span className="truncate text-xs sm:text-sm">{name}</span>
-                </Button>
-              );
-            })}
-          </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 border-b border-line py-4">
+          <Wrap wide>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+              {STEP_NAMES.map((name, index) => {
+                const number = (index + 1) as StepNumber;
+                const active = step === number;
+                const available = number <= maxStep;
+                return (
+                  <Button key={name} disabled={!available || (savingBeats.size > 0 && !active)} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
+                    <span className={`mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
+                    <span className="truncate text-xs sm:text-sm">{name}</span>
+                  </Button>
+                );
+              })}
+            </div>
+          </Wrap>
+        </div>
 
-          {step === 1 && <MovieRecapSource project={project} onProject={(next, preview) => { setProject(next); setLocalVideoUrl(preview ?? null); }} />}
+        <div className="min-h-0 flex-1 overflow-auto py-5 md:py-8">
+          <Wrap wide>
+            {step === 1 && <MovieRecapSource project={project} onProject={(next, preview) => { setProject(next); setLocalVideoUrl(preview ?? null); }} />}
 
-          {step === 2 && project && (
-            <MovieRecapTranscript
-              project={project}
-              onChange={merge}
-              onReadSource={(dialogueOnly) => void readSourceTranscript(dialogueOnly)}
-              onCancelRead={() => void cancelTranscriptRead()}
-              cancellingRead={cancellingTranscript}
-            />
-          )}
-
-          {step === 3 && project && (
-            <div>
-              <h2 className="mb-1 text-lg font-semibold">Narrative Script</h2>
-              <p className="mb-6 text-sm text-fg-2">
-                Your story stays on the selected scenes while narration defines the timing. Edit and Re Build only the
-                beat that needs adjustment; the other cached beats are reused.
-              </p>
-              <MovieRecapScript
+            {step === 2 && project && (
+              <MovieRecapTranscript
                 project={project}
-                onBuild={buildRecapScript}
-                onSave={saveScriptBeat}
-                onCancel={cancelScriptRun}
-                onDirtyChange={setDirtyBeats}
-                onApplyBeats={applyScriptBeats}
-                applyingBeats={applyingBeats}
-                building={buildingScript}
-                checking={checkingBeat}
-                savingBeats={savingBeats}
-                cancelling={cancellingScript}
+                onChange={merge}
+                onReadSource={(dialogueOnly) => void readSourceTranscript(dialogueOnly)}
+                onCancelRead={() => void cancelTranscriptRead()}
+                cancellingRead={cancellingTranscript}
               />
-            </div>
-          )}
+            )}
 
-          {step === 4 && project && (
-            <div>
-              <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project and preview how framing and overlays will be applied.</p>
-              <Field label="Project name"><Input value={project.name} onChange={(event) => merge({ name: event.target.value })} maxLength={200} /></Field>
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
-                <MovieRecapPreview project={project} videoUrl={videoUrl} previewZoom={effectiveMovieRecapZoom(project)} selectedBlur={selectedBlur} onBlurSelect={setSelectedBlur} onBlurChange={(index, rect) => updateBlur(index, rect)} />
-                <div className="rounded-xl border border-line bg-panel-2 p-4">
-                  <div className="mb-5 grid grid-cols-4 gap-2">
-                    {CUSTOMIZE_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => void setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
-                  </div>
-                  {tab === "aspect" && <div>
-                    <div className="grid grid-cols-3 gap-3">{MOVIE_RECAP_ASPECT_RATIOS.map((item) => {
-                      const Icon = item.id === "9:16" ? RectangleVertical : item.id === "1:1" ? Square : RectangleHorizontal;
-                      return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} showSelectedIndicator={false} onClick={() => setAspectRatio(item.id)}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
-                    })}</div>
-                    <div className="mt-5 grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
-                    <label className="mt-5 block">
-                      <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
-                        <span>Zoom</span>
-                        <span>
-                          {effectiveMovieRecapZoom(project).toFixed(2)}x
-                          {project.copyrightZoom === null ? " · recommended" : ""}
-                        </span>
-                      </span>
-                      <input
-                        aria-label="Zoom"
-                        type="range"
-                        min={MOVIE_RECAP_ZOOM.min}
-                        max={MOVIE_RECAP_ZOOM.max}
-                        step={MOVIE_RECAP_ZOOM.step}
-                        value={effectiveMovieRecapZoom(project)}
-                        onChange={(event) => merge({ copyrightZoom: Number(event.target.value) })}
-                        className="w-full accent-accent"
-                      />
-                      <span className="mt-2 block text-[11px] text-fg-3">
-                        1.00x keeps the original framing. Ratio and fit-mode changes preserve your zoom.
-                      </span>
-                    </label>
-                    <label className="mt-5 flex items-center justify-between gap-3">
-                      <span><span className="block text-sm font-medium">Mirror video</span><span className="text-xs text-fg-3">Flip the footage left to right. Text in the source reads backwards.</span></span>
-                      <Switch checked={project.mirrorEnabled} onChange={(checked) => merge({ mirrorEnabled: checked })} />
-                    </label>
-                  </div>}
-                  {tab === "subtitle" && <div>
-                    <div className="space-y-5">
-                      <label className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-medium">Show subtitles</span>
-                        <Switch checked={project.subtitlesEnabled} onChange={(checked) => merge({ subtitlesEnabled: checked })} />
-                      </label>
-                      <div><div className="mb-2 text-xs font-medium text-fg-2">Caption style</div>
-                        <div className="grid grid-cols-2 gap-2">
-                          {MOVIE_RECAP_SUBTITLE_PRESETS.map((item) => (
-                            <ChoiceButton key={item.id} selected={project.subtitlePreset === item.id} onClick={() => merge({ subtitlePreset: item.id })}>
-                              <span>
-                                <span className="block text-sm" style={{ fontWeight: item.weight, color: item.color, WebkitTextStrokeWidth: `${(item.outlineEm * 0.75).toFixed(3)}em`, WebkitTextStrokeColor: item.outlineColor, paintOrder: "stroke fill" }}>{item.name}</span>
-                                <span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span>
-                              </span>
-                            </ChoiceButton>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-fg-2">
-                          <span>Text size (% of frame height)</span>
-                          {project.subtitleSize !== null && <Button variant="ghost" className="!h-7 !px-2 !text-xs" onClick={() => merge({ subtitleSize: null })}>Use default</Button>}
-                        </div>
-                        <PercentNumberField label="Subtitle text size" min={1} max={10} value={project.subtitleSize ?? MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]} onCommit={(value) => merge({ subtitleSize: value })} />
-                        {project.subtitleSize === null && <p className="mt-1 text-xs text-fg-3">Default for {project.aspectRatio}: {MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}%.</p>}
-                      </div>
-                      <div><div className="mb-2 text-xs font-medium text-fg-2">Position</div><div className="grid grid-cols-3 gap-2">{MOVIE_RECAP_SUBTITLE_POSITIONS.map((item) => <Button key={item.id} onClick={() => merge({ subtitlePosition: item.id })} className={project.subtitlePosition === item.id ? "!border-accent !bg-accent-dim !text-fg" : ""}>{item.name}</Button>)}</div></div>
-                      {project.subtitlePosition !== "middle" && <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Edge distance</span><span>{Math.round(project.subtitleOffset * 2) / 2}%</span></span><input aria-label="Subtitle edge distance" type="range" min={0} max={45} step={0.5} value={project.subtitleOffset} onChange={(event) => merge({ subtitleOffset: Number(event.target.value) })} className="w-full accent-accent" /></label>}
-                    </div>
-                  </div>}
-                  {tab === "logo" && <div>
-                    <div className="mb-5">
-                      <div className="mb-2 text-xs font-medium text-fg-2">Logo template</div>
-                      <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1">
-                          <Select
-                            value={activeLogoTemplateId}
-                            clearable
-                            placeholder="No template selected"
-                            onChange={(value) => selectLogoTemplate(value || null)}
-                          >
-                            {logoTemplates.map((template) => <SelectOption key={template.id} value={template.id} label={template.name} />)}
-                          </Select>
-                        </div>
-                        <Button disabled={logoBusy} className="shrink-0" onClick={openCreateLogoTemplate}><Plus size={14} /> Create</Button>
-                      </div>
-                    </div>
-
-                    {activeLogoTemplateId && <div className="mb-5 flex items-center gap-3 rounded-lg border border-line bg-panel p-2.5 text-xs text-fg-3">
-                      <Image src={project.logoUrl ?? ""} alt="Selected logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-fg">{logoTemplates.find((template) => template.id === activeLogoTemplateId)?.name}</div>
-                        <div className="mt-1 truncate"><span className="font-medium text-fg-2">Watermark:</span> {project.logoWatermarkText || "None"}</div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Button variant="ghost" aria-label="Edit logo template" title="Edit logo template" className="!h-8 !w-8 !p-0" onClick={openEditLogoTemplate}><Pencil size={15} /></Button>
-                        <Button disabled={deletingLogoTemplate} variant="danger" aria-label="Delete logo template" title="Delete logo template" className="!h-8 !w-8 !p-0" onClick={() => void deleteSelectedLogoTemplate()}><Trash2 size={15} /></Button>
-                      </div>
-                    </div>}
-
-                    <label className="mb-5 flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Add Logo</span><span className="text-xs text-fg-3">Overlay a saved template or one-off brand mark.</span></span><Switch checked={project.logoEnabled} onChange={(checked) => checked ? merge({ logoEnabled: true }) : clearLogoDraft()} /></label>
-                    {project.logoEnabled && <div>
-                      {!activeLogoTemplateId && <div className="mb-5">
-                        <div className="mb-2 text-xs font-medium text-fg-2">Brand logo file</div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {project.logoUrl && <Image src={project.logoUrl} alt="Logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />}
-                          <LoadingButton loading={logoBusy} onClick={() => openLogoPicker({ multiple: false })}><Upload size={15} /> {project.logoUrl ? "Replace" : "Upload logo"}</LoadingButton>
-                          {project.logoUrl && <Button variant="danger" aria-label="Clear logo" title="Clear logo" className="!h-9 !w-9 !p-0" onClick={clearLogoDraft}><X size={16} /></Button>}
-                          {project.logoFileName && <p className="w-full truncate text-xs text-fg-3">{project.logoFileName} · {formatBytes(project.logoSizeBytes ?? 0)}</p>}
-                        </div>
-                      </div>}
-                      {!activeLogoTemplateId && <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Watermark text <span className="font-normal text-fg-3">(optional)</span></div><Input value={project.logoWatermarkText ?? ""} maxLength={120} placeholder="Text over the logo" onChange={(event) => merge({ logoWatermarkText: event.target.value })} /></div>}
-                      <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Logo placement</div><Select value={project.logoPlacement} onChange={(value) => merge({ logoPlacement: value })}>{MOVIE_RECAP_LOGO_PLACEMENTS.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></div>
-                      <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Logo opacity</span><span>{project.logoOpacity}%</span></span><input aria-label="Logo opacity" type="range" min={0} max={100} value={project.logoOpacity} onChange={(event) => merge({ logoOpacity: Number(event.target.value) })} className="w-full accent-accent" /></label>
-                    </div>}
-                  </div>}
-                  {tab === "blur" && <div data-blur-panel>
-                    <label className="mb-5 flex items-center justify-between gap-3">
-                      <span><span className="block text-sm font-medium">Dynamic background blur</span><span className="text-xs text-fg-3">Use a moving blurred copy behind the video in Contain mode.</span></span>
-                      <Switch checked={project.dynamicBackgroundBlurEnabled} onChange={(checked) => merge({ dynamicBackgroundBlurEnabled: checked })} />
-                    </label>
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium">Blur areas</span>
-                      <Button
-                        className="!h-8 !px-2.5 !text-xs"
-                        disabled={project.blurRegions.length >= MAX_BLUR_REGIONS}
-                        onClick={() => {
-                          // Offset each new box from the last so a second one is
-                          // not created exactly under the first, invisible.
-                          const step = project.blurRegions.length * 6;
-                          const region = clampBlurRect({ x: 35 + step, y: 40 + step, width: 30, height: 20 });
-                          merge({ blurRegions: [...project.blurRegions, region] });
-                          setSelectedBlur(project.blurRegions.length);
-                        }}
-                      >
-                        <Plus size={14} /> Add
-                      </Button>
-                    </div>
-
-                    {project.blurRegions.length === 0 && (
-                      <p className="text-xs text-fg-3">No blur areas. Add one to cover a logo or a watermark.</p>
-                    )}
-
-                    <div className="space-y-2">
-                      {project.blurRegions.map((region, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Button
-                            variant={index === selectedBlur ? "primary" : "secondary"}
-                            className="!h-8 flex-1 !justify-start !px-2 text-xs"
-                            onClick={() => setSelectedBlur(index)}
-                          >
-                            Area {index + 1} · {Math.round(region.width)} × {Math.round(region.height)}%
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            className="!h-8 !px-2"
-                            aria-label={`Remove blur area ${index + 1}`}
-                            onClick={() => {
-                              merge({ blurRegions: project.blurRegions.filter((_, i) => i !== index) });
-                              setSelectedBlur(null);
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    {selectedBlurRegion && selectedBlur !== null && (
-                      <div className="mt-3 grid grid-cols-2 gap-3">
-                        {(["x", "y", "width", "height"] as const).map((field) => (
-                          <label key={`${selectedBlur}:${field}`} className="text-xs text-fg-2">
-                            <span className="mb-1 block capitalize">{field} %</span>
-                            <PercentNumberField
-                              label={`Blur area ${selectedBlur + 1} ${field}`}
-                              min={field === "width" || field === "height" ? 5 : 0}
-                              value={selectedBlurRegion[field]}
-                              onCommit={(value) => updateBlur(selectedBlur, { [field]: value })}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 5 && project && (
-            <Review
-              project={project}
-              onRenderPreview={renderRecapPreview}
-              rendering={rendering}
-              onRenderRange={renderRecapRange}
-              renderingRange={renderingRange}
-              onCancelRender={cancelRecapRender}
-              cancelling={cancelling}
-            />
-          )}
-
-          <div className="mt-8 flex items-center justify-between border-t border-line pt-5">
-            {step > 1 ? <Button onClick={() => goToStep((step - 1) as StepNumber)}><ChevronLeft size={16} /> Back</Button> : <span />}
-            {step === 1 && <LoadingButton variant="primary" disabled={project?.sourceUploadStatus !== "ready"} loading={saving} onClick={() => saveAndGo(2)}>Continue <ChevronRight size={16} /></LoadingButton>}
-            {step === 2 && (
-              <div className="flex items-center gap-2">
-                <LoadingButton loading={saving} onClick={() => void saveTranscript()}>Save</LoadingButton>
-                {/* The BURMESE STORY is what gates this, not the source
-                    transcript: the story with its timestamps is what the script
-                    run reads, and nothing downstream touches the source text. */}
-                <LoadingButton variant="primary" disabled={!project?.transcriptStory?.trim()} loading={saving} onClick={() => saveAndGo(3)}>Continue <ChevronRight size={16} /></LoadingButton>
+            {step === 3 && project && (
+              <div>
+                <h2 className="mb-1 text-lg font-semibold">Narrative Script</h2>
+                <p className="mb-6 text-sm text-fg-2">
+                  Your story stays on the selected scenes while narration defines the timing. Edit and Re Build only the
+                  beat that needs adjustment; the other cached beats are reused.
+                </p>
+                <MovieRecapScript
+                  project={project}
+                  onBuild={buildRecapScript}
+                  onSave={saveScriptBeat}
+                  onCancel={cancelScriptRun}
+                  onDirtyChange={setDirtyBeats}
+                  onApplyBeats={applyScriptBeats}
+                  applyingBeats={applyingBeats}
+                  building={buildingScript}
+                  checking={checkingBeat}
+                  savingBeats={savingBeats}
+                  cancelling={cancellingScript}
+                />
               </div>
             )}
-            {step === 3 && <LoadingButton variant="primary" loading={saving} disabled={savingBeats.size > 0} onClick={() => saveAndGo(4)}>Continue <ChevronRight size={16} /></LoadingButton>}
-            {step === 4 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(5)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
-          </div>
-        </Wrap>
-      </Body>
+
+            {step === 4 && project && (
+              <div>
+                <h2 className="mb-1 text-lg font-semibold">Customize Video</h2><p className="mb-6 text-sm text-fg-2">Name the project and preview how framing and overlays will be applied.</p>
+                <Field label="Project name"><Input value={project.name} onChange={(event) => merge({ name: event.target.value })} maxLength={200} /></Field>
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)]">
+                  <MovieRecapPreview project={project} videoUrl={videoUrl} previewZoom={effectiveMovieRecapZoom(project)} selectedBlur={selectedBlur} onBlurSelect={setSelectedBlur} onBlurChange={(index, rect) => updateBlur(index, rect)} />
+                  <div className="rounded-xl border border-line bg-panel-2 p-4">
+                    <div className="mb-5 grid grid-cols-4 gap-2">
+                      {CUSTOMIZE_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => void setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
+                    </div>
+                    {tab === "aspect" && <div>
+                      <div className="grid grid-cols-3 gap-3">{MOVIE_RECAP_ASPECT_RATIOS.map((item) => {
+                        const Icon = item.id === "9:16" ? RectangleVertical : item.id === "1:1" ? Square : RectangleHorizontal;
+                        return <ChoiceButton key={item.id} selected={project.aspectRatio === item.id} showSelectedIndicator={false} onClick={() => setAspectRatio(item.id)}><span className="flex items-center gap-2"><Icon size={18} /><span className="text-sm font-semibold">{item.name}</span></span></ChoiceButton>;
+                      })}</div>
+                      <div className="mt-5 grid grid-cols-2 gap-2">{MOVIE_RECAP_FIT_MODES.map((item) => <ChoiceButton key={item.id} selected={project.fitMode === item.id} onClick={() => setFitMode(item.id)}><span><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span></span></ChoiceButton>)}</div>
+                      <label className="mt-5 block">
+                        <span className="mb-2 flex justify-between text-xs font-medium text-fg-2">
+                          <span>Zoom</span>
+                          <span>
+                            {effectiveMovieRecapZoom(project).toFixed(2)}x
+                            {project.copyrightZoom === null ? " · recommended" : ""}
+                          </span>
+                        </span>
+                        <input
+                          aria-label="Zoom"
+                          type="range"
+                          min={MOVIE_RECAP_ZOOM.min}
+                          max={MOVIE_RECAP_ZOOM.max}
+                          step={MOVIE_RECAP_ZOOM.step}
+                          value={effectiveMovieRecapZoom(project)}
+                          onChange={(event) => merge({ copyrightZoom: Number(event.target.value) })}
+                          className="w-full accent-accent"
+                        />
+                        <span className="mt-2 block text-[11px] text-fg-3">
+                          1.00x keeps the original framing. Ratio and fit-mode changes preserve your zoom.
+                        </span>
+                      </label>
+                      <label className="mt-5 flex items-center justify-between gap-3">
+                        <span><span className="block text-sm font-medium">Mirror video</span><span className="text-xs text-fg-3">Flip the footage left to right. Text in the source reads backwards.</span></span>
+                        <Switch checked={project.mirrorEnabled} onChange={(checked) => merge({ mirrorEnabled: checked })} />
+                      </label>
+                    </div>}
+                    {tab === "subtitle" && <div>
+                      <div className="space-y-5">
+                        <label className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-medium">Show subtitles</span>
+                          <Switch checked={project.subtitlesEnabled} onChange={(checked) => merge({ subtitlesEnabled: checked })} />
+                        </label>
+                        <div><div className="mb-2 text-xs font-medium text-fg-2">Caption style</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {MOVIE_RECAP_SUBTITLE_PRESETS.map((item) => (
+                              <ChoiceButton key={item.id} selected={project.subtitlePreset === item.id} onClick={() => merge({ subtitlePreset: item.id })}>
+                                <span>
+                                  <span className="block text-sm" style={{ fontWeight: item.weight, color: item.color, WebkitTextStrokeWidth: `${(item.outlineEm * 0.75).toFixed(3)}em`, WebkitTextStrokeColor: item.outlineColor, paintOrder: "stroke fill" }}>{item.name}</span>
+                                  <span className="mt-1 block whitespace-normal text-xs text-fg-2">{item.description}</span>
+                                </span>
+                              </ChoiceButton>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-fg-2">
+                            <span>Text size (% of frame height)</span>
+                            {project.subtitleSize !== null && <Button variant="ghost" className="!h-7 !px-2 !text-xs" onClick={() => merge({ subtitleSize: null })}>Use default</Button>}
+                          </div>
+                          <PercentNumberField label="Subtitle text size" min={1} max={10} value={project.subtitleSize ?? MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]} onCommit={(value) => merge({ subtitleSize: value })} />
+                          {project.subtitleSize === null && <p className="mt-1 text-xs text-fg-3">Default for {project.aspectRatio}: {MOVIE_RECAP_SUBTITLE_SIZE_PCT[project.aspectRatio]}%.</p>}
+                        </div>
+                        <div><div className="mb-2 text-xs font-medium text-fg-2">Position</div><div className="grid grid-cols-3 gap-2">{MOVIE_RECAP_SUBTITLE_POSITIONS.map((item) => <Button key={item.id} onClick={() => merge({ subtitlePosition: item.id })} className={project.subtitlePosition === item.id ? "!border-accent !bg-accent-dim !text-fg" : ""}>{item.name}</Button>)}</div></div>
+                        {project.subtitlePosition !== "middle" && <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Edge distance</span><span>{Math.round(project.subtitleOffset * 2) / 2}%</span></span><input aria-label="Subtitle edge distance" type="range" min={0} max={45} step={0.5} value={project.subtitleOffset} onChange={(event) => merge({ subtitleOffset: Number(event.target.value) })} className="w-full accent-accent" /></label>}
+                      </div>
+                    </div>}
+                    {tab === "logo" && <div>
+                      <div className="mb-5">
+                        <div className="mb-2 text-xs font-medium text-fg-2">Logo template</div>
+                        <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <Select
+                              value={activeLogoTemplateId}
+                              clearable
+                              placeholder="No template selected"
+                              onChange={(value) => selectLogoTemplate(value || null)}
+                            >
+                              {logoTemplates.map((template) => <SelectOption key={template.id} value={template.id} label={template.name} />)}
+                            </Select>
+                          </div>
+                          <Button disabled={logoBusy} className="shrink-0" onClick={openCreateLogoTemplate}><Plus size={14} /> Create</Button>
+                        </div>
+                      </div>
+
+                      {activeLogoTemplateId && <div className="mb-5 flex items-center gap-3 rounded-lg border border-line bg-panel p-2.5 text-xs text-fg-3">
+                        <Image src={project.logoUrl ?? ""} alt="Selected logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium text-fg">{logoTemplates.find((template) => template.id === activeLogoTemplateId)?.name}</div>
+                          <div className="mt-1 truncate"><span className="font-medium text-fg-2">Watermark:</span> {project.logoWatermarkText || "None"}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button variant="ghost" aria-label="Edit logo template" title="Edit logo template" className="!h-8 !w-8 !p-0" onClick={openEditLogoTemplate}><Pencil size={15} /></Button>
+                          <Button disabled={deletingLogoTemplate} variant="danger" aria-label="Delete logo template" title="Delete logo template" className="!h-8 !w-8 !p-0" onClick={() => void deleteSelectedLogoTemplate()}><Trash2 size={15} /></Button>
+                        </div>
+                      </div>}
+
+                      <label className="mb-5 flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Add Logo</span><span className="text-xs text-fg-3">Overlay a saved template or one-off brand mark.</span></span><Switch checked={project.logoEnabled} onChange={(checked) => checked ? merge({ logoEnabled: true }) : clearLogoDraft()} /></label>
+                      {project.logoEnabled && <div>
+                        {!activeLogoTemplateId && <div className="mb-5">
+                          <div className="mb-2 text-xs font-medium text-fg-2">Brand logo file</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {project.logoUrl && <Image src={project.logoUrl} alt="Logo preview" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />}
+                            <LoadingButton loading={logoBusy} onClick={() => openLogoPicker({ multiple: false })}><Upload size={15} /> {project.logoUrl ? "Replace" : "Upload logo"}</LoadingButton>
+                            {project.logoUrl && <Button variant="danger" aria-label="Clear logo" title="Clear logo" className="!h-9 !w-9 !p-0" onClick={clearLogoDraft}><X size={16} /></Button>}
+                            {project.logoFileName && <p className="w-full truncate text-xs text-fg-3">{project.logoFileName} · {formatBytes(project.logoSizeBytes ?? 0)}</p>}
+                          </div>
+                        </div>}
+                        {!activeLogoTemplateId && <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Watermark text <span className="font-normal text-fg-3">(optional)</span></div><Input value={project.logoWatermarkText ?? ""} maxLength={120} placeholder="Text over the logo" onChange={(event) => merge({ logoWatermarkText: event.target.value })} /></div>}
+                        <div className="mb-5"><div className="mb-2 text-xs font-medium text-fg-2">Logo placement</div><Select value={project.logoPlacement} onChange={(value) => merge({ logoPlacement: value })}>{MOVIE_RECAP_LOGO_PLACEMENTS.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}</Select></div>
+                        <label className="block"><span className="mb-2 flex justify-between text-xs font-medium text-fg-2"><span>Logo opacity</span><span>{project.logoOpacity}%</span></span><input aria-label="Logo opacity" type="range" min={0} max={100} value={project.logoOpacity} onChange={(event) => merge({ logoOpacity: Number(event.target.value) })} className="w-full accent-accent" /></label>
+                      </div>}
+                    </div>}
+                    {tab === "blur" && <div data-blur-panel>
+                      <label className="mb-5 flex items-center justify-between gap-3">
+                        <span><span className="block text-sm font-medium">Dynamic background blur</span><span className="text-xs text-fg-3">Use a moving blurred copy behind the video in Contain mode.</span></span>
+                        <Switch checked={project.dynamicBackgroundBlurEnabled} onChange={(checked) => merge({ dynamicBackgroundBlurEnabled: checked })} />
+                      </label>
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium">Blur areas</span>
+                        <Button
+                          className="!h-8 !px-2.5 !text-xs"
+                          disabled={project.blurRegions.length >= MAX_BLUR_REGIONS}
+                          onClick={() => {
+                            // Offset each new box from the last so a second one is
+                            // not created exactly under the first, invisible.
+                            const step = project.blurRegions.length * 6;
+                            const region = clampBlurRect({ x: 35 + step, y: 40 + step, width: 30, height: 20 });
+                            merge({ blurRegions: [...project.blurRegions, region] });
+                            setSelectedBlur(project.blurRegions.length);
+                          }}
+                        >
+                          <Plus size={14} /> Add
+                        </Button>
+                      </div>
+
+                      {project.blurRegions.length === 0 && (
+                        <p className="text-xs text-fg-3">No blur areas. Add one to cover a logo or a watermark.</p>
+                      )}
+
+                      <div className="space-y-2">
+                        {project.blurRegions.map((region, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Button
+                              variant={index === selectedBlur ? "primary" : "secondary"}
+                              className="!h-8 flex-1 !justify-start !px-2 text-xs"
+                              onClick={() => setSelectedBlur(index)}
+                            >
+                              Area {index + 1} · {Math.round(region.width)} × {Math.round(region.height)}%
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="!h-8 !px-2"
+                              aria-label={`Remove blur area ${index + 1}`}
+                              onClick={() => {
+                                merge({ blurRegions: project.blurRegions.filter((_, i) => i !== index) });
+                                setSelectedBlur(null);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedBlurRegion && selectedBlur !== null && (
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          {(["x", "y", "width", "height"] as const).map((field) => (
+                            <label key={`${selectedBlur}:${field}`} className="text-xs text-fg-2">
+                              <span className="mb-1 block capitalize">{field} %</span>
+                              <PercentNumberField
+                                label={`Blur area ${selectedBlur + 1} ${field}`}
+                                min={field === "width" || field === "height" ? 5 : 0}
+                                value={selectedBlurRegion[field]}
+                                onCommit={(value) => updateBlur(selectedBlur, { [field]: value })}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && project && (
+              <Review
+                project={project}
+                onRenderPreview={renderRecapPreview}
+                rendering={rendering}
+                onRenderRange={renderRecapRange}
+                renderingRange={renderingRange}
+                onCancelRender={cancelRecapRender}
+                cancelling={cancelling}
+              />
+            )}
+
+          </Wrap>
+        </div>
+
+        <div className="shrink-0 border-t border-line py-3">
+          <Wrap wide>
+            <div className="flex items-center justify-between">
+              {step > 1 ? <Button onClick={() => goToStep((step - 1) as StepNumber)}><ChevronLeft size={16} /> Back</Button> : <span />}
+              {step === 1 && <LoadingButton variant="primary" disabled={project?.sourceUploadStatus !== "ready"} loading={saving} onClick={() => saveAndGo(2)}>Continue <ChevronRight size={16} /></LoadingButton>}
+              {step === 2 && (
+                <div className="flex items-center gap-2">
+                  <LoadingButton loading={saving} onClick={() => void saveTranscript()}>Save</LoadingButton>
+                  {/* The BURMESE STORY is what gates this, not the source
+                      transcript: the story with its timestamps is what the script
+                      run reads, and nothing downstream touches the source text. */}
+                  <LoadingButton variant="primary" disabled={!project?.transcriptStory?.trim()} loading={saving} onClick={() => saveAndGo(3)}>Continue <ChevronRight size={16} /></LoadingButton>
+                </div>
+              )}
+              {step === 3 && <LoadingButton variant="primary" loading={saving} disabled={savingBeats.size > 0} onClick={() => saveAndGo(4)}>Continue <ChevronRight size={16} /></LoadingButton>}
+              {step === 4 && <LoadingButton variant="primary" loading={saving} onClick={() => saveAndGo(5)}>Save & Continue <ChevronRight size={16} /></LoadingButton>}
+            </div>
+          </Wrap>
+        </div>
+      </div>
     </>
   );
 }
