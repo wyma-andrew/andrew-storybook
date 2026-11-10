@@ -93,44 +93,57 @@ async function cancelledElsewhere(db: Db, projectId: string) {
  * Writes its own status rather than throwing, so the caller just re-reads the
  * row — same contract as the render.
  */
-export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
+// `revoice` keeps the beats as they are — text, edits, footage — and only speaks
+// them again with the project's current voice. For a voice change; Resync is the
+// path that rebuilds beats from the story.
+export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { revoice = false }: { revoice?: boolean } = {}) {
   const controller = new AbortController();
   activeScriptRuns.set(project.id, controller);
   const signal = controller.signal;
   const workDir = await mkdtemp(path.join(tmpdir(), "movie-recap-script-"));
 
   try {
-    const blocks = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds);
-    if (!blocks.length) {
-      throw new Error("Add the Burmese story, with its timestamps, at the Transcript step first.");
+    let narration: MovieRecapNarrationSegment[];
+    let analysisKey = project.renderAnalysisKey;
+    if (revoice) {
+      if (!project.renderScript?.length) throw new Error("There is no script to re-voice yet. Build it first.");
+      narration = project.renderScript.map((beat) => ({ ...beat, audioStale: undefined }));
+    } else {
+      const blocks = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds);
+      if (!blocks.length) {
+        throw new Error("Add the Burmese story, with its timestamps, at the Transcript step first.");
+      }
+
+      await setStage(db, project.id, "downloading_source");
+      const sourcePath = path.join(workDir, "source.mp4");
+      await downloadMovieRecapSource(project, sourcePath, {
+        signal,
+        report: (done, total) => setStage(db, project.id, "downloading_source", done, total),
+      });
+
+      const crop = await detectContentCrop(sourcePath, project.sourceDurationSeconds, signal).catch(() => null);
+      if (crop) {
+        console.log(
+          `[MovieRecapScript] project=${project.id} source carries letterbox — picture is ${crop.width}x${crop.height} at ${crop.x},${crop.y}`
+        );
+      }
+
+      await setStage(db, project.id, "writing_script", 0, blocks.length);
+      if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+      narration = blocks.map((block, blockIndex) => ({
+        shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
+        text: block.text,
+        originalText: block.text,
+        blockIndex,
+        blockStartS: block.startS,
+        blockEndS: block.endS,
+      }));
+      if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
+      await setStage(db, project.id, "writing_script", blocks.length, blocks.length);
+      const analysis: MovieRecapRenderAnalysis = { crop };
+      analysisKey = movieRecapObjectKey(project.id, "analysis", "analysis.json");
+      await putObject(analysisKey, Buffer.from(JSON.stringify(analysis)), "application/json");
     }
-
-    await setStage(db, project.id, "downloading_source");
-    const sourcePath = path.join(workDir, "source.mp4");
-    await downloadMovieRecapSource(project, sourcePath, {
-      signal,
-      report: (done, total) => setStage(db, project.id, "downloading_source", done, total),
-    });
-
-    const crop = await detectContentCrop(sourcePath, project.sourceDurationSeconds, signal).catch(() => null);
-    if (crop) {
-      console.log(
-        `[MovieRecapScript] project=${project.id} source carries letterbox — picture is ${crop.width}x${crop.height} at ${crop.x},${crop.y}`
-      );
-    }
-
-    await setStage(db, project.id, "writing_script", 0, blocks.length);
-    if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
-    const narration: MovieRecapNarrationSegment[] = blocks.map((block, blockIndex) => ({
-      shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
-      text: block.text,
-      originalText: block.text,
-      blockIndex,
-      blockStartS: block.startS,
-      blockEndS: block.endS,
-    }));
-    if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
-    await setStage(db, project.id, "writing_script", blocks.length, blocks.length);
 
     // Narration is the master timeline. Speak each beat once, keep the
     // content-addressed clips, then save a combined narration.wav and its beat
@@ -164,13 +177,9 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject) {
     });
 
     console.log(
-      `[MovieRecapScript] project=${project.id} ${blocks.length} timestamp block(s) -> ` +
+      `[MovieRecapScript] project=${project.id} ${revoice ? "re-voiced" : "built"} ` +
         `${narration.length} beat(s); ${cacheHits} clip(s) from cache.`
     );
-
-    const analysis: MovieRecapRenderAnalysis = { crop };
-    const analysisKey = movieRecapObjectKey(project.id, "analysis", "analysis.json");
-    await putObject(analysisKey, Buffer.from(JSON.stringify(analysis)), "application/json");
 
     await db
       .from("movie_recap_projects")

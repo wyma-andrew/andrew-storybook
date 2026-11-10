@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -10,6 +10,7 @@ import { MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap
 import { formatDuration } from "@/lib/movie-recap";
 import { apiClient } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
+import { resolveMovieRecapVoice } from "@/lib/tts/voices";
 
 function formatHms(seconds: number) {
   const total = Math.round(seconds);
@@ -28,6 +29,7 @@ import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 export function MovieRecapScript({
   project,
   onBuild,
+  onRevoice,
   onSave,
   onCancel,
   onDirtyChange,
@@ -40,6 +42,7 @@ export function MovieRecapScript({
 }: {
   project: MovieRecapProject;
   onBuild: () => void;
+  onRevoice: () => void;
   /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
   /** Rebuilds this beat's audio and the combined narration master. */
   onSave: (index: number, text: string) => void;
@@ -283,6 +286,9 @@ export function MovieRecapScript({
                     </Button>
                   )}
                 </MenuTrigger>
+                <MenuItem disabled={busy || savingBeats.size > 0} onClick={() => confirmRevoice(onRevoice, resolveMovieRecapVoice(project.voiceProfileId).name)}>
+                  <span className="flex items-center gap-2"><AudioLines size={14} /> Re-voice with {resolveMovieRecapVoice(project.voiceProfileId).name}</span>
+                </MenuItem>
                 <MenuItem
                   disabled={busy || savingBeats.size > 0 || !project.transcriptStory?.trim()}
                   onClick={() => confirmResync(onBuild, dirtyCount)}
@@ -497,6 +503,19 @@ export function MovieRecapScript({
 // Rebuilding goes back to the Transcript step's text, so every beat edited here
 // is lost. Normal work — rebuilding one line — reads the beats below
 // and never touches the transcript, which is why only this one asks.
+function confirmRevoice(run: () => void, voiceName: string) {
+  ConfirmDialog.show({
+    title: `Re-voice with ${voiceName}?`,
+    content: `Every beat keeps its text and footage; only the narration is spoken again with ${voiceName} and the timings are measured again. Use this after changing the voice.`,
+    confirmButtonLabel: "Re-voice",
+    cancelButtonLabel: "Cancel",
+    onConfirm: ({ dismiss }) => {
+      dismiss();
+      run();
+    },
+  });
+}
+
 function confirmResync(run: () => void, dirtyCount: number) {
   ConfirmDialog.show({
     title: "Resync with Main Script",

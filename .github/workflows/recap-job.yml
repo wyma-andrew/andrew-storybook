@@ -19,6 +19,10 @@ on:
       mock:
         type: string
         default: "false"
+      revoice:
+        description: Script only — re-speak the existing beats with the current voice
+        type: string
+        default: "false"
       range_id:
         type: string
         default: ""
@@ -99,13 +103,14 @@ jobs:
           KIND: ${{ inputs.kind }}
           PROJECT_ID: ${{ inputs.project_id }}
           MOCK: ${{ inputs.mock }}
+          REVOICE: ${{ inputs.revoice }}
           RANGE_ID: ${{ inputs.range_id }}
           START_BEAT: ${{ inputs.start_beat }}
           END_BEAT: ${{ inputs.end_beat }}
           PREVIOUS: ${{ inputs.previous }}
         run: |
           case "$KIND" in
-            script) npx tsx scripts/recap-job.ts script "$PROJECT_ID" ;;
+            script) npx tsx scripts/recap-job.ts script "$PROJECT_ID" $([ "$REVOICE" = "true" ] && echo --revoice) ;;
             render) npx tsx scripts/recap-job.ts render "$PROJECT_ID" $([ "$MOCK" = "true" ] && echo --mock) ;;
             range)  npx tsx scripts/recap-job.ts range "$PROJECT_ID" "$RANGE_ID" "$START_BEAT" "$END_BEAT" "$PREVIOUS" ;;
           esac

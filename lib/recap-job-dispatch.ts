@@ -17,7 +17,7 @@
 import type { MovieRecapProject } from "@/lib/api/types";
 
 export type RecapJob =
-  | { kind: "script"; projectId: string }
+  | { kind: "script"; projectId: string; revoice?: boolean }
   | { kind: "render"; projectId: string; mock: boolean }
   | {
       kind: "range";
@@ -51,6 +51,9 @@ export async function dispatchRecapJob(job: RecapJob) {
   // workflow_dispatch inputs are strings only.
   const inputs: Record<string, string> = { kind: job.kind, project_id: job.projectId };
   if (job.kind === "render") inputs.mock = String(job.mock);
+  // Only when set: GitHub rejects an input the dispatched ref's workflow does
+  // not declare, so a plain build must not depend on the revoice input existing.
+  if (job.kind === "script" && job.revoice) inputs.revoice = "true";
   if (job.kind === "range") {
     inputs.range_id = job.rangeId;
     inputs.start_beat = String(job.startBeat);

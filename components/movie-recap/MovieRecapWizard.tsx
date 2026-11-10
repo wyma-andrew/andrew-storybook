@@ -411,14 +411,15 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     else if (!result.data?.cancelled) toast.error("No transcript read is running for this project.");
   }
 
-  async function buildRecapScript() {
+  async function buildRecapScript(options?: { revoice?: boolean }) {
     if (!project) return;
+    const revoice = options?.revoice === true;
     // Optimistic, for the same reason the render is: the POST does not resolve
     // until the whole run finishes, and the polling effect reads local state.
     merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
-    const result = await buildScript({ params: { id: project.id } });
+    const result = await buildScript({ params: { id: project.id }, body: { revoice } });
     if (result.error || !result.data) {
-      toast.error(result.error?.error ?? "Could not build the script.");
+      toast.error(result.error?.error ?? (revoice ? "Could not re-voice the script." : "Could not build the script."));
       // Re-read the row rather than guessing. A 409 means a run is ALREADY
       // going — often one this browser started and then lost track of — and
       // leaving the local status on the optimistic "running" would show a bar
@@ -905,7 +906,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                 </p>
                 <MovieRecapScript
                   project={project}
-                  onBuild={buildRecapScript}
+                  onBuild={() => void buildRecapScript()}
+                  onRevoice={() => void buildRecapScript({ revoice: true })}
                   onSave={saveScriptBeat}
                   onCancel={cancelScriptRun}
                   onDirtyChange={setDirtyBeats}

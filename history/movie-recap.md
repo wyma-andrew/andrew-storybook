@@ -8,6 +8,25 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
+## 2026-11-11 — Re-voice the existing script
+
+**Decision, requested by the user:** the Script step's ⋯ menu gets "Re-voice
+with <current voice>" above "Resync with Main Script". It calls
+`POST movie-recaps/:id/script` with `{ revoice: true }`: `runMovieRecapScript`
+keeps every beat of `render_script` (text, edits, shots, groups,
+`originalText`) and only speaks it again with the project's current voice,
+re-measuring `rawAudioS` / `audioS` and the narration master. No source
+download, no story re-parse, and `render_analysis_key` is kept. It clears
+`audioStale`. The GitHub runner gets a `revoice` workflow input
+(`scripts/recap-job.ts script <id> --revoice`).
+
+**Why:** after changing the voice the user wants new narration and timings
+without losing edited beats, which Resync would rebuild from the story.
+
+**Consequence:** a new voice changes beat lengths, so overruns can appear or
+disappear — the same check as after any re-measure. The workflow input must
+exist on the dispatched ref (`main`) before production can dispatch it.
+
 ## 2026-11-11 — Transcript source: mode column + one row of actions
 
 **Decision, requested by the user:** the mode switch and the source actions

@@ -69,7 +69,7 @@ async function main() {
 
   if (kind === "script") {
     const project = await loadProject(args[0]);
-    await runMovieRecapScript(db, project);
+    await runMovieRecapScript(db, project, { revoice: args.includes("--revoice") });
     const after = await loadProject(project.id);
     console.log(`[recap-job] script ${project.id} -> ${after.scriptStatus}${after.scriptError ? `: ${after.scriptError}` : ""}`);
     return after.scriptStatus === "ready";

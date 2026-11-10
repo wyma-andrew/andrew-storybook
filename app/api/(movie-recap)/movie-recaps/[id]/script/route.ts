@@ -10,8 +10,9 @@ export const maxDuration = 300;
 // Build and MEASURE the script, stopping before anything is cut. Approving what
 // it produces is a separate call, and the render refuses to run without it — see
 // history/movie-recap.md.
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const revoice = (await req.json().catch(() => null))?.revoice === true;
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -20,8 +21,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (project.sourceUploadStatus !== "ready" || !project.sourceUrl) {
     return NextResponse.json({ error: "The source video is not ready." }, { status: 400 });
   }
-  if (!project.transcriptStory?.trim()) {
-    return NextResponse.json({ error: "Add the Burmese story, with its timestamps, first." }, { status: 400 });
+  if (revoice ? !project.renderScript?.length : !project.transcriptStory?.trim()) {
+    return NextResponse.json({ error: revoice ? "There is no script to re-voice yet." : "Add the Burmese story, with its timestamps, first." }, { status: 400 });
   }
 
   // Claimed in one statement for the same reason the render is: read-then-act is
@@ -38,14 +39,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (remoteRecapJobsEnabled()) {
     // The poller watches the row from here; see lib/recap-job-dispatch.ts.
     try {
-      await dispatchRecapJob({ kind: "script", projectId: id });
+      await dispatchRecapJob({ kind: "script", projectId: id, revoice });
     } catch (dispatchError) {
       const message = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
       await db.from("movie_recap_projects").update({ script_status: "failed", script_error: message }).eq("id", id);
       return NextResponse.json({ error: message }, { status: 502 });
     }
   } else {
-    await runMovieRecapScript(db, project);
+    await runMovieRecapScript(db, project, { revoice });
   }
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();

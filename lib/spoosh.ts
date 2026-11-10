@@ -250,7 +250,7 @@ export type ApiSchema = {
   // overrun is a number the user can act on. Synchronous like the render, with
   // the browser polling the project row for its stage.
   "movie-recaps/:id/script": {
-    POST: { data: MovieRecapProject };
+    POST: { data: MovieRecapProject; body?: { revoice?: boolean } };
   };
   "movie-recaps/:id/script/cancel": {
     POST: { data: MovieRecapProject };
