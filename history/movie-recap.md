@@ -8,20 +8,6 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
-## 2026-11-11 — Quieter runner logs, one step per stage
-
-**Decision, requested by the user:** `recap-job.yml` splits setup into
-"Install npm dependencies", "Install ffmpeg", "Install Myanmar fonts" and
-"Check ffmpeg filters and encoders", and the job into one step per `kind`
-(`if: inputs.kind == ...`). `apt-get` runs `-qq` with stdout to `/dev/null`;
-`npm ci` runs `--no-audit --no-fund --loglevel=error`.
-
-**Why:** the logs were too large to read; apt alone printed hundreds of lines.
-
-**Consequence:** apt errors still reach stderr and fail the step, but a
-successful install prints nothing. The two run steps that don't match `kind`
-show as skipped. That is expected. "Mark row failed" still runs on any failure.
-
 ## 2026-11-11 — Re-voice the existing script
 
 **Decision, requested by the user:** the Script step's ⋯ menu gets "Re-voice

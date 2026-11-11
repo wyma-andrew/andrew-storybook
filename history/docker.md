@@ -72,18 +72,3 @@ Running `migrate` on every deploy, as Executive Homes does with Prisma.
   `RECAP_JOB_RUNNER=github`, a running job's row can stay `running`.
 - GitHub reserves the `GITHUB_` secret prefix, so the dispatch token's secret is
   `RECAP_DISPATCH_TOKEN`.
-
-## 2026-11-11 — Quieter deploy logs, one SSH step per stage
-
-**Decision, requested by the user:** after GitHub Actions logs grew too large,
-the single "Deploy to VPS" step became five `ssh-action` steps (sync repo,
-write `.env.docker`, pull image, restart container, prune images). `git` runs
-with `-q`, `docker compose pull` with `--quiet`, `up` with `--quiet-pull`, and
-prune output goes to `/dev/null`.
-
-**Why:** a failure now points at the stage that broke, and the noisy progress
-output is gone. No `--verbose` flags existed to remove.
-
-**Consequence:** each step opens its own SSH connection. A failed stage stops
-the later ones, so a failed pull leaves the old container running. The Docker
-build step's log is unchanged.
