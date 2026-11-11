@@ -2,7 +2,7 @@
 
 Covers: `Dockerfile`, `docker-entrypoint.sh`, `docker-compose.yml`,
 `.dockerignore`, `.env.example`, `next.config.ts`,
-`.github/workflows/deploy.yml`, `.github/DEPLOYMENT.md`
+`.github/DEPLOYMENT.md` (formerly `.github/workflows/deploy.yml`)
 
 ## 2026-09-23 — Distributable image, no source needed
 
@@ -43,6 +43,8 @@ runs `supabase db push --db-url`, keeping the "db push only" rule.
 
 ## 2026-11-04 — Container on the shared Contabo server
 
+*Superseded by 2026-11-11: production runs on Vercel and `deploy.yml` is deleted.*
+
 **Decision.** Production moves to a container on the Contabo server that already
 runs Executive Homes, using that project's flow: `deploy.yml` builds, pushes to
 Docker Hub, and SSH-deploys with compose. The image runs `next start` with
@@ -72,3 +74,15 @@ Running `migrate` on every deploy, as Executive Homes does with Prisma.
   `RECAP_JOB_RUNNER=github`, a running job's row can stay `running`.
 - GitHub reserves the `GITHUB_` secret prefix, so the dispatch token's secret is
   `RECAP_DISPATCH_TOKEN`.
+
+## 2026-11-11 — Production on Vercel; VPS deploy workflow deleted
+
+**Decision, requested by the user:** production is deployed by Vercel, not the
+Contabo VPS. `.github/workflows/deploy.yml` is deleted.
+
+**Why:** it ran on every push to `main` and failed with "missing server host",
+since no VPS secrets are set. Vercel deploys from the repo on its own.
+
+**Consequence:** the Dockerfile, compose file and `.github/DEPLOYMENT.md` remain
+for running the image by hand, but nothing in CI builds or pushes it. The recap
+job still runs on Actions through `recap-job.yml` when `RECAP_JOB_RUNNER=github`.

@@ -111,10 +111,9 @@ proxy.ts                       Session refresh and page-route auth redirects
 
 ### Deployment
 
-Production is one Docker container on a shared Contabo server, behind its reverse
-proxy (`.github/DEPLOYMENT.md`). A push to `main` runs
-`.github/workflows/deploy.yml`. ffmpeg-based work runs in that container unless
-`RECAP_JOB_RUNNER=github` sends recap script and render jobs to Actions.
+Production deploys on Vercel from `main`. There is no CI deploy workflow.
+`RECAP_JOB_RUNNER=github` sends recap script and render jobs to Actions
+(`.github/workflows/recap-job.yml`).
 Migrations are not part of deploy.
 
 ### Browser to API
