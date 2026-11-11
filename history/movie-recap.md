@@ -8,6 +8,23 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
+## 2026-11-12 — apt install fails fast and retries
+
+**Decision, requested by the user:** "Install ffmpeg" runs `apt-get update` with
+`APT::Update::Error-Mode=any`, wraps update + install in a 3-attempt retry with
+backoff, limits each install to 300s with `timeout`, and caps the step at 15
+minutes.
+
+**Why:** a run hit a runner DNS failure (`Temporary failure resolving
+'azure.archive.ubuntu.com'`). By default apt only warns on that, so install ran
+against stale indexes, stalled ~46 minutes on `security.ubuntu.com`, then looped
+"Tried to start delayed item … but failed" until the log was truncated. The job
+timeout of 300 minutes was the only limit.
+
+**Consequence:** a network failure now fails the step within minutes, and
+"Mark row failed" runs, instead of hanging. "apt attempt N failed" on stderr
+followed by success is normal, not a bug.
+
 ## 2026-11-11 — Quieter runner logs, one step per stage
 
 **Decision, requested by the user:** `recap-job.yml` splits setup into

@@ -86,11 +86,23 @@ jobs:
         run: npm ci --no-audit --no-fund --loglevel=error
 
       # apt output goes to /dev/null; errors still reach stderr and fail the step.
+      # Error-Mode=any: a DNS failure during update is only a warning by default,
+      # and install then runs against stale indexes and can hang for hours.
+      # See history/movie-recap.md 2026-11-12.
       - name: Install ffmpeg
+        timeout-minutes: 15
         run: |
-          sudo apt-get update -qq > /dev/null
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            -o Dpkg::Use-Pty=0 ffmpeg fonts-noto-core fontconfig > /dev/null
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for attempt in 1 2 3; do
+            if sudo apt-get update -qq $APT_OPTS -o APT::Update::Error-Mode=any > /dev/null &&
+               sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y -qq --no-install-recommends \
+                 $APT_OPTS -o Dpkg::Use-Pty=0 ffmpeg fonts-noto-core fontconfig > /dev/null; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          exit 1
 
       - name: Install Myanmar fonts
         run: |
