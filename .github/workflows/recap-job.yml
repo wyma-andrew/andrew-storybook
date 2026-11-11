@@ -82,12 +82,18 @@ jobs:
 
       # Before ffmpeg, so the "Mark row failed" step can still run tsx if the
       # apt install is what breaks.
-      - run: npm ci
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund --loglevel=error
 
-      - name: Install ffmpeg and Myanmar fonts
+      # apt output goes to /dev/null; errors still reach stderr and fail the step.
+      - name: Install ffmpeg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-core fontconfig
+          sudo apt-get update -qq > /dev/null
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            -o Dpkg::Use-Pty=0 ffmpeg fonts-noto-core fontconfig > /dev/null
+
+      - name: Install Myanmar fonts
+        run: |
           curl -fsSL -o /tmp/noto.zip "https://github.com/notofonts/myanmar/releases/download/NotoSansMyanmar-v${NOTO_MYANMAR_VERSION}/NotoSansMyanmar-v${NOTO_MYANMAR_VERSION}.zip"
           python3 -m zipfile -e /tmp/noto.zip /tmp/noto
           sudo mkdir -p /usr/share/fonts/truetype/noto-myanmar
@@ -95,25 +101,35 @@ jobs:
                   /tmp/noto/NotoSansMyanmar/hinted/ttf/NotoSansMyanmar-SemiBold.ttf \
                   /usr/share/fonts/truetype/noto-myanmar/
           sudo fc-cache -f
+
+      - name: Check ffmpeg filters and encoders
+        run: |
           ffmpeg -hide_banner -filters | grep -E ' (subtitles|ass|drawtext) '
           ffmpeg -hide_banner -encoders | grep libopus
 
-      - name: Run job
+      - name: Run script job
+        if: inputs.kind == 'script'
         env:
-          KIND: ${{ inputs.kind }}
+          PROJECT_ID: ${{ inputs.project_id }}
+          REVOICE: ${{ inputs.revoice }}
+        run: npx tsx scripts/recap-job.ts script "$PROJECT_ID" $([ "$REVOICE" = "true" ] && echo --revoice)
+
+      - name: Run render job
+        if: inputs.kind == 'render'
+        env:
           PROJECT_ID: ${{ inputs.project_id }}
           MOCK: ${{ inputs.mock }}
-          REVOICE: ${{ inputs.revoice }}
+        run: npx tsx scripts/recap-job.ts render "$PROJECT_ID" $([ "$MOCK" = "true" ] && echo --mock)
+
+      - name: Run range job
+        if: inputs.kind == 'range'
+        env:
+          PROJECT_ID: ${{ inputs.project_id }}
           RANGE_ID: ${{ inputs.range_id }}
           START_BEAT: ${{ inputs.start_beat }}
           END_BEAT: ${{ inputs.end_beat }}
           PREVIOUS: ${{ inputs.previous }}
-        run: |
-          case "$KIND" in
-            script) npx tsx scripts/recap-job.ts script "$PROJECT_ID" $([ "$REVOICE" = "true" ] && echo --revoice) ;;
-            render) npx tsx scripts/recap-job.ts render "$PROJECT_ID" $([ "$MOCK" = "true" ] && echo --mock) ;;
-            range)  npx tsx scripts/recap-job.ts range "$PROJECT_ID" "$RANGE_ID" "$START_BEAT" "$END_BEAT" "$PREVIOUS" ;;
-          esac
+        run: npx tsx scripts/recap-job.ts range "$PROJECT_ID" "$RANGE_ID" "$START_BEAT" "$END_BEAT" "$PREVIOUS"
 
       # A killed runner (timeout, cancelled from the Actions tab) never reaches
       # the pipeline's own catch; without this the row stays "running" forever.
