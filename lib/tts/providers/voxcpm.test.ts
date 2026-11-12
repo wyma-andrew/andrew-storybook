@@ -25,6 +25,15 @@ describe("voxcpm provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a 408, as Modal returns when an input never reaches the container", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("", { status: 408 })).mockResolvedValueOnce(ok());
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = voxcpmProvider.synthesize({ text: "မင်္ဂလာပါ", voice });
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ durationSeconds: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry a 4xx", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "bad" }), { status: 422 }));
     vi.stubGlobal("fetch", fetchMock);

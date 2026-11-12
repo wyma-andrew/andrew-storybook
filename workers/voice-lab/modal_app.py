@@ -18,10 +18,11 @@ app = modal.App("voice-lab")
 hf_cache = modal.Volume.from_name("voice-lab-hf-cache", create_if_missing=True)
 
 
-# L40S since 2026-11-11 (T4 measured ~16 s per line; see history/voice-lab.md).
+# Tried in order. L40S alone waited 6+ min for capacity, past Modal's 150 s web
+# limit; see history/voice-lab.md 2026-11-13. All three support bf16.
 GPU_FUNCTION = dict(
     image=image,
-    gpu=os.environ.get("VOICE_LAB_GPU", "L40S"),
+    gpu=os.environ.get("VOICE_LAB_GPU", "L40S,L4,A10G").split(","),
     cpu=1,
     memory=8192,
     volumes={"/cache": hf_cache},
@@ -30,10 +31,6 @@ GPU_FUNCTION = dict(
     max_containers=1,
     scaledown_window=30,
 )
-
-# Movie Recap narration sends MOVIE_RECAP_NARRATION_CONCURRENCY lines at once;
-# each container serves one, so `web` may scale to that many.
-WEB_MAX_CONTAINERS = int(os.environ.get("VOICE_LAB_WEB_MAX_CONTAINERS", "3"))
 
 
 # Batch jobs run here, not in `web`: a container with no request in flight can
@@ -45,7 +42,7 @@ def process_job(payload: dict):
     run_job(JobRequest(**payload))
 
 
-@app.function(timeout=300, **{**GPU_FUNCTION, "max_containers": WEB_MAX_CONTAINERS})
+@app.function(timeout=300, **GPU_FUNCTION)
 @modal.asgi_app()
 def web():
     import app as worker_module

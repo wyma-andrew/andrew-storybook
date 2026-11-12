@@ -28,8 +28,9 @@ export const voxcpmProvider: TtsProvider = {
 
     // Modal can preempt a GPU container mid-request; the caller then sees a bare
     // 5xx or a dropped connection, and the same request succeeds on the next
-    // container. Generation is seeded, so retrying is safe. 4xx and aborts are
-    // not retried. See history/voice-lab.md 2026-11-11.
+    // container. Modal also answers 408 when an input never reached the
+    // container (asgi_app, SDK >= 1.1.4). Generation is seeded, so retrying is
+    // safe. Other 4xx and aborts are not retried. See history/voice-lab.md.
     let result: Record<string, unknown> | null = null;
     for (let attempt = 1; ; attempt++) {
       let response: Response | null = null;
@@ -53,7 +54,7 @@ export const voxcpmProvider: TtsProvider = {
         result = await response.json().catch(() => null);
         if (response.ok) break;
         const message = typeof result?.detail === "string" ? result.detail : `Voice worker returned ${response.status}.`;
-        if (response.status < 500) throw new TtsError(message, response.status);
+        if (response.status < 500 && response.status !== 408) throw new TtsError(message, response.status);
         failure = new TtsError(message, 502);
       }
 

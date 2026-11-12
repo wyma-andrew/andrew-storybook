@@ -5,7 +5,77 @@ Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
 `workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
 `lib/tts/**`.
 
+## 2026-11-13 — GPU fallback L40S → L4 → A10G; no warm-up
+
+**Decision, chosen by the user:** the worker's `gpu` is the list `L40S, L4, A10G`.
+Modal takes the first one that has capacity. The warm-up from 2026-11-12
+(`POST /warmup` pinged during the source download) was removed.
+
+**Why:** the Modal dashboard showed `/warmup` requests enqueued at 21:23 and
+21:27 that only started at 21:30. L40S had no capacity for over 6 minutes. That
+is far past Modal's 150 s web limit (see the 408 entry below), and also past the
+warm-up's 5-minute cap, so warm-up could not hide it. L4 and A10G are slower per
+line than L40S but faster than T4, and both support bf16.
+
+**Rejected:** warm-up (built 2026-11-12, then removed the same night). It billed
+idle GPU time and still lost to a capacity wait this long. L40S only, which is
+the cause of the waits.
+
+**Consequence:** the GPU type can differ between runs, so per-line speed varies.
+Output is the same model and seed on any of them, but the numbers may not be
+bit-identical across GPU types.
+
+## 2026-11-12 — Narration back to one line at a time
+
+**Decision, chosen by the user:** a Movie Recap script run speaks its lines one
+after another again, and the worker's `web` function is back to one container.
+`MOVIE_RECAP_NARRATION_CONCURRENCY` and `VOICE_LAB_WEB_MAX_CONTAINERS` are gone.
+The L40S GPU stays. This supersedes the "three narration lines at once" part of
+the 2026-11-11 L40S entry below.
+
+**Why:** after the switch to three lines at once, a run with Andrew failed with
+Modal's 408. Three containers mean three cold starts and more scale-up and
+scale-down, so there are more chances for a request to be dropped. L40S alone is
+much faster than T4 (about 3–4 s per line, estimated), so sequential narration
+is acceptable.
+
+**Rejected:** keeping parallel narration and relying only on the 408/5xx retry.
+The retry covers single failures, but the user prefers one predictable container.
+
+**Consequence:** the full-master fallbacks in `lib/movie-recap-narration.ts` and
+the beat edit path still call `narrationClip` 6 at a time. On a cache miss those
+requests queue at Modal's single container. That was already the case before the
+parallel change.
+
+## 2026-11-12 — Retry Modal's 408 like a 5xx
+
+**Decision:** the VoxCPM provider retries a 408 the same way as a 5xx (up to 3
+attempts). Other 4xx are still not retried. This replaces "4xx are not retried"
+in the 2026-11-11 entry below.
+
+**Why:** a Movie Recap script run with Andrew failed with a bare "Voice worker
+returned 408." Modal's `asgi_app` returns 408 when an input never reaches the
+container (Modal SDK 1.1.4 changelog), for example after a cancellation or
+preemption. This happens more often now that three L40S containers cold-start
+at once. The worker was already deployed with the Andrew reference (v14), so the
+voice itself was not the cause. One line failing like this ended the whole
+script run.
+
+**Rejected:** retrying every 4xx. A 401/422 from the handler is a real request
+error and repeating it only wastes GPU time.
+
+**Measured after the 2026-11-12 deploy:** a cold L40S request took about 2.5 min
+before the model was loaded, about 2 min of that waiting for a container. That
+is past Modal's 150 s web request limit, so Modal answers the POST with a 303.
+Node's fetch follows the 303 as a GET to the result URL, and that GET can end in
+the 408 (the Modal log showed `GET /generate -> 408`). T4 cold starts (~80 s)
+fit inside 150 s, which is why recaps worked before the L40S switch. The retry
+lands on the container that is warm by then.
+
 ## 2026-11-11 — L40S worker, three narration lines at once
+
+**Superseded in part 2026-11-12:** narration is sequential again and `web` has one
+container; L40S stays.
 
 **Decision, chosen by the user:** the Modal worker runs on L40S (was T4) and
 its `web` function scales to 3 containers. A Movie Recap script run speaks

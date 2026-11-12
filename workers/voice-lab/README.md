@@ -57,8 +57,8 @@ modal deploy modal_app.py
 
 Set the printed `https://<workspace>--voice-lab-web.modal.run` URL as
 `VOICE_LAB_WORKER_URL` in the Next.js `.env`, with the same token. The default
-GPU is L40S (`VOICE_LAB_GPU=L4 modal deploy modal_app.py` switches it), and
-`web` scales to 3 containers (`VOICE_LAB_WEB_MAX_CONTAINERS`) so Movie Recap
-can speak 3 lines at once. Set a
+GPU is L40S, falling back to L4 then A10G when L40S has no capacity
+(`VOICE_LAB_GPU=L4 modal deploy modal_app.py` pins one; comma-separate a list), and
+`web` runs one container, speaking one line at a time. Set a
 workspace spend limit in the Modal dashboard so usage stops at the free credit.
 The first generation after 30 idle seconds pays a cold start.
