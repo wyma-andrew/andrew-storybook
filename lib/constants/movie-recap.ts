@@ -141,6 +141,11 @@ export const MOVIE_RECAP_EDIT = {
   minSourceS: 0.05,
 } as const;
 
+// Dissolve over each cadence skip. It blends source frames from the start of the
+// skipped second into the next clip, so the segment keeps its frame count and
+// no timing calculation changes. See history/movie-recap.md 2026-11-12.
+export const MOVIE_RECAP_CUT_CROSSFADE_S = 0.2;
+
 export const MOVIE_RECAP_PLAYBACK_SPEED = MOVIE_RECAP_EDIT.playbackSpeed;
 // The mirror case: a beat with footage to spare speeds up to at most this before
 // the rest is trimmed, so more of the scene is seen. 10% over real time does not

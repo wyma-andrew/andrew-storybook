@@ -30,6 +30,30 @@ in exact numeric form.
 Character-based duration estimates treat digits as short, so words make them
 more accurate, not less.
 
+## 2026-11-12 — Dissolve over each cadence skip
+
+**Decision, chosen by the user:** the 3-on/1-off cadence stays (2026-09-21).
+Each clip that follows a forward skip opens with a 0.2s `xfade` dissolve
+(`MOVIE_RECAP_CUT_CROSSFADE_S`) from a tail: source starting at the previous
+clip's end, played at the previous clip's speed. The cut first continues the
+previous motion, then dissolves into the next clip.
+
+**Why:** the 1-second skip read as a jump cut every 3 seconds. The dissolve sits
+inside the next segment and is trimmed to its own frame count, so segment
+lengths, the timing plan, captions and `concat -c copy` are unchanged.
+
+**Rejected:** making the skip optional (would reopen the 2026-09-19 toggle
+removal and the 2026-09-21 cadence); shortening the skip to 0.5s; aligning skips
+to the film's own cuts (most work); `xfade` across segments at concat time (it
+shortens the timeline by the overlap and needs one graph over hundreds of
+inputs).
+
+**Consequence:** the first 0.2s after a skip show up to ~0.23 source seconds of
+the skipped second, blended. That is the dissolve, not a cadence bug. No dissolve
+on the first clip, a backward jump, a skip shorter than the tail, or a slot of
+12 frames or less. The silent timing diagnostic still uses the hard `select`
+cut.
+
 ## 2026-11-12 — apt install fails fast and retries
 
 **Decision, requested by the user:** "Install ffmpeg" runs `apt-get update` with

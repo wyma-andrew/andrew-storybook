@@ -31,6 +31,7 @@ import {
   MOVIE_RECAP_MOCK_SOURCE_SECONDS,
   MOVIE_RECAP_BLUR,
   MOVIE_RECAP_EDIT,
+  MOVIE_RECAP_CUT_CROSSFADE_S,
   MOVIE_RECAP_TARGET_DIMENSIONS,
   movieRecapBlurRadius,
   movieRecapPacing,
@@ -477,6 +478,33 @@ export function dialogueForScene(transcript: TranscriptSegment[], startS: number
     .trim();
 }
 
+// The tail is the source right after the previous clip, at that clip's speed,
+// so the cut first continues the motion and then dissolves into the next clip.
+// Only for a forward skip long enough to hold the tail: a backward jump or an
+// overlap would show the next clip's frames twice.
+export function crossfadeFromPreviousClip({
+  previousEndS,
+  previousSpeed,
+  nextStartS,
+  slotFrames,
+  fps = MOVIE_RECAP_TARGET_FPS,
+  crossfadeS = MOVIE_RECAP_CUT_CROSSFADE_S,
+}: {
+  previousEndS: number | null;
+  previousSpeed: number | null;
+  nextStartS: number;
+  slotFrames: number;
+  fps?: number;
+  crossfadeS?: number;
+}) {
+  const frames = Math.round(crossfadeS * fps);
+  if (previousEndS === null || !previousSpeed || frames < 1 || slotFrames <= frames * 2) return null;
+  const durationS = frames / fps;
+  const tailSourceS = (frames + 1) / fps * previousSpeed;
+  if (nextStartS - previousEndS < tailSourceS) return null;
+  return { frames, durationS, tailStartS: previousEndS, tailSourceS };
+}
+
 export function silentTimingFilter() {
   const retainFrames = Math.round(MOVIE_RECAP_EDIT.retainSourceS * MOVIE_RECAP_TARGET_FPS);
   const cycleFrames = Math.round(
@@ -775,6 +803,7 @@ export async function runMovieRecapRender(
     // frame, and a silent version of it shipped once.
     const shotLog: MovieRecapRenderShot[] = [];
     let lastSourceEndS: number | null = null;
+    let lastSpeed: number | null = null;
     let cursor = 0;
     let encodedFrameBudget = 0;
     let plannedVideoDurationS: number | null = null;
@@ -936,10 +965,24 @@ export async function runMovieRecapRender(
         // Input-side seeking makes `-t` a DURATION from the seek point, where
         // output-side `-to` was an absolute timestamp — so the branches above hand
         // over how much source to read, not where to stop.
+        const fade = crossfadeFromPreviousClip({
+          previousEndS: lastSourceEndS,
+          previousSpeed: lastSpeed,
+          nextStartS: shot.sourceStartS,
+          slotFrames,
+        });
+        const shotInput = ["-ss", shot.sourceStartS.toFixed(3), "-t", usedS.toFixed(3), "-i", sourceForClips];
+        const graph = fade
+          ? ["-ss", fade.tailStartS.toFixed(3), "-t", fade.tailSourceS.toFixed(3), "-i", sourceForClips, ...shotInput,
+             "-filter_complex",
+             `[0:v]${segmentFilters(vf, `setpts=PTS/${lastSpeed}`)},trim=end_frame=${fade.frames},setpts=PTS-STARTPTS,format=yuv420p[tail];` +
+               `[1:v]${filters},format=yuv420p[shot];` +
+               `[tail][shot]xfade=transition=fade:duration=${fade.durationS.toFixed(6)}:offset=0[v]`,
+             "-map", "[v]"]
+          : [...shotInput, "-vf", filters];
         await run(
           FFMPEG,
-          ["-y", "-ss", shot.sourceStartS.toFixed(3), "-t", usedS.toFixed(3), "-i", sourceForClips, "-an",
-           "-vf", filters, "-frames:v", String(slotFrames),
+          ["-y", ...graph, "-an", "-frames:v", String(slotFrames),
            "-c:v", "libx264", "-pix_fmt", "yuv420p", segPath],
           signal
         );
@@ -957,6 +1000,7 @@ export async function runMovieRecapRender(
           skipS: lastSourceEndS === null ? null : round2(shot.sourceStartS - lastSourceEndS),
         });
         lastSourceEndS = shot.sourceStartS + usedS;
+        lastSpeed = beatVideoSpeed;
       }
       beatDurations.push(mock || firstSceneBeat ? beatS : 0);
 
