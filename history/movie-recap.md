@@ -8,6 +8,28 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders` and `movie_recap_social_posts` migrations.
 
+## 2026-11-13 — Narration numbers are spelled out in Burmese words
+
+**Decision, approved by the user:** the shared `NARRATION_WORDING` rule (used by
+the copied translation prompt and the other narration prompts) now says to write
+every number as Burmese words, never digits: `သုံးနှစ်`, not `၃ နှစ်`;
+`တစ်ထောင့်ကိုးရာကိုးဆယ့်ကိုး ခုနှစ်`, not `၁၉၉၉`. Codes read digit by digit
+stay digit by digit, in words (`007 → သုညသုညခုနစ်`). Timestamps are untouched.
+
+**Why:** a translation came back with `၃ နှစ်`. With digits, the TTS model has to
+guess how to say the number, and voices can read it differently; with words it
+reads exactly what is written. The old example (`80,000 feet → ပေ ၈သောင်း`)
+still left a digit in, so digits did not look wrong to the model. This agrees
+with the earlier finding that `နှစ်ယောက် → ၂ ယောက်` flattened the narrator.
+
+**Supersedes:** the 2026-09-22 "spoken forms for quantities" rule and its
+`ပေ ၈သောင်း` example, along with its exemption that kept codes and identifiers
+in exact numeric form.
+
+**Consequence:** spelled-out lines have more characters for the same speech.
+Character-based duration estimates treat digits as short, so words make them
+more accurate, not less.
+
 ## 2026-11-12 — apt install fails fast and retries
 
 **Decision, requested by the user:** "Install ffmpeg" runs `apt-get update` with

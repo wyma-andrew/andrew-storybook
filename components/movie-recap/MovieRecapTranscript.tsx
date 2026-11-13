@@ -37,7 +37,9 @@ const NARRATION_WORDING = `WORDING
 - Rewrite English sentence structure into natural Burmese word order. Never translate word-for-word.
 - Omit subjects and pronouns where Burmese speech naturally allows it, and avoid repeating the same name unnecessarily.
 - For English names, acronyms and terms that will be read aloud, use Burmese phonetic spelling when it helps TTS pronunciation (e.g. CIA → စီအိုင်အေ).
-- Write numbers and quantities in spoken form when appropriate (e.g. 80,000 feet → ပေ ၈သောင်း), but keep codes, model numbers, coordinates and other exact identifiers unchanged.
+- Write every number in the narration as Burmese words, never as digits (Burmese or Arabic), so TTS reads it exactly as written: 3 years → သုံးနှစ်; in 1999 → တစ်ထောင့်ကိုးရာကိုးဆယ့်ကိုး ခုနှစ်မှာ; 80,000 feet → ပေ ရှစ်သောင်း; 2.5 → နှစ်ဒသမငါး; 50% → ငါးဆယ်ရာခိုင်နှုန်း.
+- Codes and names that are read digit by digit stay digit by digit, in words: 007 → သုညသုညခုနစ်.
+- Timestamps stay exactly as they are.
 - Avoid formal fillers such as "ဖြစ်ကြောင်း", "ဟုဆိုသည်", "တွေ့ရှိရသည်", "လုပ်ဆောင်ခဲ့သည်".
 - Avoid hearsay endings such as "တဲ့", "လို့ဆိုပါတယ်", "လို့သိရပါတယ်" when describing what happens on screen; use them only for reported speech.
 - Avoid "လုပ်ရတယ်" unless the source actually means "must / has to".`;
