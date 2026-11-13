@@ -200,6 +200,7 @@ export async function runMovieRecapScript(
       beat.audioS = round2(master.timings[index].durationS);
       beat.narrationRate = rates.narrationRate;
       beat.videoSpeed = rates.videoSpeed;
+      beat.voiceId = project.voiceProfileId;
     });
 
     console.log(
@@ -378,6 +379,8 @@ export async function saveMovieRecapBeat(
         audioS: round2(master.timings[i].durationS),
         narrationRate: rates.narrationRate,
         videoSpeed: rates.videoSpeed,
+        // The master is rebuilt in the current voice, so every beat now is.
+        voiceId: project.voiceProfileId,
         ...(i === index ? { audioStale: false } : {}),
       }));
     }

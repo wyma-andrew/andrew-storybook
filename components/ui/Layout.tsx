@@ -29,5 +29,5 @@ export function TopBar({ children }: { children: React.ReactNode }) {
 }
 
 export function Crumb({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-center gap-2 text-[13px] text-fg-3 [&>a]:text-fg-2 [&>a]:no-underline hover:[&>a]:text-fg">{children}</div>;
+  return <div className="flex min-w-0 items-center gap-2 text-[13px] text-fg-3 [&>a]:text-fg-2 [&>a]:no-underline hover:[&>a]:text-fg">{children}</div>;
 }

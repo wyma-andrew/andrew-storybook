@@ -513,13 +513,13 @@ export function MovieRecapSource({
 
       {project && (
         <div className="rounded-xl border border-line bg-panel-2 p-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {details.map(([label, value]) => <div key={label}><div className="text-[11px] uppercase tracking-wide text-fg-3">{label}</div><div className="mt-1 truncate text-sm text-fg">{value}</div></div>)}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {details.map(([label, value], index) => <div key={label} className={`min-w-0 ${index === 0 ? "col-span-2 sm:col-span-1" : ""}`} title={label === "Filename" ? value : undefined}><div className="text-[11px] uppercase tracking-wide text-fg-3">{label}</div><div className="mt-1 truncate text-sm text-fg">{value}</div></div>)}
           </div>
-          <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+          <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-fg-3">Replace the source and keep your settings, or delete the entire project.</p>
-            <div className="flex items-center gap-2">
-              <Button disabled={uploading || deleting} onClick={confirmReplace}>
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <Button className="whitespace-nowrap" disabled={uploading || deleting} onClick={confirmReplace}>
                 <RefreshCw size={15} /> Replace video
               </Button>
               <Menu menuClassName="min-w-[180px] p-0" placement="bottom-end">

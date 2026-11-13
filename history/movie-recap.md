@@ -8,6 +8,35 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-13 — Voice is chosen at Narrative Script
+
+**Decision, approved by the user:** the voice picker moves from under the
+Burmese story (Transcript) to the top of Narrative Script, beside the
+Normal / Episode tabs. A change is saved at once (PATCH `voiceProfileId`), not
+with Continue, because Build script and Re-voice in the same step read it from
+the row. Each beat now records `voiceId`, the voice it was last spoken with; the
+script header shows that voice, and when it differs from the project's a notice
+offers Re-voice.
+
+**Why:** the voice only matters to Build / Re Build / Re-voice, which all live in
+Narrative Script, and arriving there gave no sign of which voice was set — worse
+with episodes, each its own script. The 2026-09-22 reason (choose before Build)
+still holds with the picker next to Build.
+
+**Consequences:**
+- The voice is project-wide: Normal and every episode share it, and each script
+  needs its own Re-voice after a change.
+- A single beat Re Build after a voice change rebuilds the master in the new
+  voice, so every beat of that script is marked with the new voice.
+- Render always speaks with the project's current voice; the notice is a
+  warning, not a gate.
+- Scripts built before this have no `voiceId`: no voice is shown and no notice
+  appears until they are rebuilt or re-voiced.
+
+**Supersedes:** 2026-09-22 "Narration voice is chosen with the Burmese story"
+(placement only; Male/Female presentation was already replaced by the shared
+VoicePicker).
+
 ## 2026-11-13 — Auto read asks Chinese or Other: FunASR or self-hosted Whisper
 
 **Decision, by the user:** both automatic reads (Recap Video's Auto-generate and
@@ -6901,7 +6930,7 @@ mode change returns zoom to its recommendation.
 **Consequence:** an untouched nullable zoom may still resolve through the
 recommendation mechanism, but neither framing control clears a chosen value.
 
-## 2026-09-22 — Narration voice is chosen with the Burmese story
+## 2026-09-22 — Narration voice is chosen with the Burmese story (SUPERSEDED 2026-11-13 — chosen at Narrative Script)
 
 **Decision:** move the Movie Recap voice picker from Customize Video to directly
 below the Burmese story in Transcript. Present the two available choices as

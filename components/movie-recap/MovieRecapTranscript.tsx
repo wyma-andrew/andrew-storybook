@@ -5,8 +5,6 @@ import { AudioLines, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, La
 import { Dialog, Radio, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
-import { VOICES } from "@/lib/tts/voices";
-import { VoicePicker } from "@/components/voice/VoicePicker";
 import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
 import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
 import { RecapLengthMenu } from "./RecapLengthMenu";
@@ -298,7 +296,6 @@ export function MovieRecapTranscript({
     transcriptScript?: string;
     transcriptStory?: string;
     recapShare?: number | null;
-    voiceProfileId?: MovieRecapProject["voiceProfileId"];
   }) => void;
   onReadSource: (dialogueOnly: boolean, language: MovieRecapSpeechLanguage) => void;
   onCancelRead: () => void;
@@ -350,11 +347,11 @@ export function MovieRecapTranscript({
         <div className="flex min-w-0 flex-1 flex-col justify-center rounded-b-xl bg-panel-2 p-3 md:rounded-r-xl md:rounded-bl-none">
           {mode === "manual" ? (
             <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Menu menuClassName="min-w-[200px] p-1" placement="bottom-start" floatingStrategy="fixed">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:flex sm:flex-wrap">
+                <Menu className="min-w-0" menuClassName="min-w-[200px] p-1" placement="bottom-start" floatingStrategy="fixed">
                   <MenuTrigger>
                     {({ toggleMenu }) => (
-                      <AppButton variant="primary" className="inline-flex items-center gap-2" title="Download a transcript from YouTube or RedNote" onClick={toggleMenu}>
+                      <AppButton variant="primary" className="inline-flex w-full items-center gap-2 sm:w-auto" title="Download a transcript from YouTube or RedNote" onClick={toggleMenu}>
                         <Upload size={15} aria-hidden="true" />
                         Get Transcript
                         <ChevronDown size={15} aria-hidden="true" />
@@ -373,7 +370,7 @@ export function MovieRecapTranscript({
                 <ChevronRight size={17} className="text-fg-3" aria-hidden="true" />
                 <AppButton
                   variant="secondary"
-                  className="inline-flex items-center gap-2"
+                  className="inline-flex w-full items-center gap-2 sm:w-auto"
                   title="Import the downloaded .txt file"
                   onClick={() => showTranscriptImport((imported) => {
                     onChange({ transcriptText: imported });
@@ -381,23 +378,23 @@ export function MovieRecapTranscript({
                 >
                   Import .txt
                 </AppButton>
-                <span className="flex flex-col items-center gap-1 px-1.5" aria-hidden="true">
-                  <span className="h-2 w-px bg-line-2" />
+                <span className="col-span-3 flex items-center gap-2 py-0.5 sm:flex-col sm:gap-1 sm:px-1.5 sm:py-0" aria-hidden="true">
+                  <span className="h-px flex-1 bg-line-2 sm:h-2 sm:w-px sm:flex-none" />
                   <span className="text-[10px] leading-none font-semibold tracking-wider text-fg-3 uppercase">or</span>
-                  <span className="h-2 w-px bg-line-2" />
+                  <span className="h-px flex-1 bg-line-2 sm:h-2 sm:w-px sm:flex-none" />
                 </span>
                 <LoadingButton
                   variant="primary"
                   loading={readingAudio}
                   disabled={running}
-                  className="inline-flex items-center gap-2"
+                  className="col-span-3 inline-flex w-full items-center gap-2 sm:w-auto"
                   title="Transcribes the speech already in the uploaded video into the source transcript."
                   onClick={() => confirmReadSource(true)}
                 >
                   <AudioLines size={15} aria-hidden="true" />
                   {project.transcriptDialogueOnly && project.transcriptStatus === "done" ? "Auto-generate again" : "Auto-generate from video"}
                 </LoadingButton>
-                {readingAudio && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
+                {readingAudio && <LoadingButton variant="danger" className="col-span-3 w-full sm:w-auto" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
               </div>
             </>
           ) : (
@@ -543,11 +540,6 @@ export function MovieRecapTranscript({
               placeholder="Paste the Burmese story here."
             />
           </div>
-        </div>
-
-        <div className="rounded-xl border border-line bg-panel-2 p-4">
-          <div className="mb-3 text-sm font-medium">Narration voice</div>
-          <VoicePicker voices={VOICES} value={project.voiceProfileId} onChange={(id) => onChange({ voiceProfileId: id })} />
         </div>
       </div>
     </div>

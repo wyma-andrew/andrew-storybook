@@ -106,19 +106,19 @@ export function EpisodeToolbar({
 }) {
   const selected = episodes.find((episode) => episode.id === selectedId) ?? null;
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex w-full items-center gap-2 sm:w-auto">
       {episodes.length > 0 && (
-        <div title="Episode" className="w-72 min-w-0 max-w-full">
+        <div title="Episode" className="min-w-0 flex-1 sm:w-72 sm:flex-none">
           <Select className={BEAT_SELECT_BUTTON_CLASS} value={selectedId ?? ""} onChange={onSelect}>
             {episodes.map((episode) => <SelectOption key={episode.id} value={episode.id} label={episodeLabel(episode)} />)}
           </Select>
         </div>
       )}
-      <Button disabled={disabled} onClick={onCreate}><Plus size={14} /> New episode</Button>
+      <Button disabled={disabled} onClick={onCreate} aria-label="New episode" title="New episode" className="shrink-0"><Plus size={14} /><span className={episodes.length ? "hidden sm:inline" : ""}>New episode</span></Button>
       {selected && (
         <Menu menuClassName="min-w-[160px] p-0" placement="bottom-end">
           <MenuTrigger>
-            {({ toggleMenu }) => <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="Episode actions" disabled={disabled} onClick={toggleMenu}><MoreHorizontal size={16} /></Button>}
+            {({ toggleMenu }) => <Button variant="ghost" className="!h-8 !w-8 shrink-0 !p-0" aria-label="Episode actions" disabled={disabled} onClick={toggleMenu}><MoreHorizontal size={16} /></Button>}
           </MenuTrigger>
           <MenuItem onClick={() => onRename(selected)}><span className="flex items-center gap-2"><Pencil size={14} /> Rename</span></MenuItem>
           <MenuItem onClick={() => onDelete(selected)}><span className="flex items-center gap-2 text-danger"><Trash2 size={14} /> Delete</span></MenuItem>

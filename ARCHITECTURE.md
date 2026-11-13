@@ -201,7 +201,8 @@ its visual prompt to improve image-model recognition without changing that key.
 
 Users create resumable recap projects, upload one browser-playable source, read
 paste its transcript and Burmese story at the Transcript step,
-choose a Burmese narration voice from the shared TTS catalog, and preview
+choose a Burmese narration voice from the shared TTS catalog at Narrative Script
+(saved at once; each beat records the voice it was spoken with), and preview
 aspect, subtitle, logo, and blur configuration. Blur areas can be added,
 removed, moved, resized, and set by percentage coordinates in Customize. Every shot gets the
 house look from `lib/movie-recap-transform.ts` — a per-project zoom, colour grade, mirror, and a

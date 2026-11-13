@@ -25,6 +25,8 @@ import { appendRenderHistory } from "@/lib/movie-recap-render-history";
 import { parseTimestampedBlocks } from "@/lib/movie-recap-manual-script";
 import { apiClient, useQueue, useRead, useWrite } from "@/lib/spoosh";
 import { EpisodeDialogContent, EpisodeToolbar, episodeLabel } from "./MovieRecapEpisodes";
+import { VoicePicker } from "@/components/voice/VoicePicker";
+import { VOICES } from "@/lib/tts/voices";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderActions, MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapSocialPosts } from "./MovieRecapSocialPosts";
@@ -35,6 +37,7 @@ import { MovieRecapSource } from "./MovieRecapSource";
 import { MovieRecapTranscript } from "./MovieRecapTranscript";
 
 const STEP_NAMES = ["Add Source", "Transcript", "Narrative Script", "Customize Video", "Review"];
+const STEP_SHORT_NAMES = ["Source", "Transcript", "Script", "Customize", "Review"];
 
 // What each step saves, as a list rather than a hand-copied object literal. The
 // literal version silently dropped `fitMode` — the control worked, the value
@@ -45,7 +48,7 @@ type PatchableField = keyof MovieRecapProjectPatch & keyof MovieRecapProject;
 
 const SETTINGS_FIELDS = ["name", "outputLanguage"] as const satisfies readonly PatchableField[];
 
-const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptScript", "transcriptStory", "recapShare", "voiceProfileId"] as const satisfies readonly PatchableField[];
+const TRANSCRIPT_FIELDS = ["transcriptText", "transcriptScript", "transcriptStory", "recapShare"] as const satisfies readonly PatchableField[];
 
 const CUSTOMIZE_FIELDS = [
   "aspectRatio",
@@ -75,7 +78,6 @@ function transcriptPatch(project: MovieRecapProject): MovieRecapProjectPatch {
     transcriptText: project.transcriptText ?? "",
     transcriptScript: project.transcriptScript ?? "",
     transcriptStory: project.transcriptStory ?? "",
-    voiceProfileId: project.voiceProfileId,
     recapShare: project.recapShare,
   };
 }
@@ -402,8 +404,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       return;
     }
     const body: MovieRecapProjectPatch = { currentStep: target };
-    // Transcript fields edit the project draft and this writes them together,
-    // including the voice Build Script will read in the next step.
+    // Transcript fields edit the project draft and this writes them together.
     if (step === 2) {
       Object.assign(body, transcriptPatch(project));
     }
@@ -430,7 +431,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   }
 
   // Same write as Continue's, without leaving the step, so a long transcript
-  // and its narration voice can be parked before the story is finished.
+  // can be parked before the story is finished.
   async function saveTranscript() {
     if (!project) return;
     const body: MovieRecapProjectPatch = {};
@@ -443,6 +444,21 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
   }
 
+  // Saved at once rather than with Continue: Build script and Re-voice in this
+  // same step read the voice from the row.
+  async function chooseVoice(voiceProfileId: string) {
+    if (!project || voiceProfileId === project.voiceProfileId) return;
+    const previous = project.voiceProfileId;
+    merge({ voiceProfileId });
+    const result = await updateProject({ params: { id: project.id }, body: { voiceProfileId } });
+    if (result.error || !result.data) {
+      merge({ voiceProfileId: previous });
+      toast.error(result.error?.error ?? "Could not change the voice.");
+      return;
+    }
+    setProject(result.data);
+  }
+
   async function readSourceTranscript(dialogueOnly: boolean, language: MovieRecapSpeechLanguage) {
     if (!project) return;
     merge({ transcriptStatus: "running", transcriptStoryOnly: false, transcriptDialogueOnly: dialogueOnly, transcriptError: null, transcriptStage: null, transcriptProgressCurrent: null, transcriptProgressTotal: null });
@@ -453,7 +469,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       if (refreshed.data) adoptRow(refreshed.data);
       return;
     }
-    adoptRow(result.data, ["transcriptScript", "transcriptStory", "recapShare", "voiceProfileId"]);
+    adoptRow(result.data, ["transcriptScript", "transcriptStory", "recapShare"]);
     if (result.data.transcriptStatus === "done") toast.success("Source transcript ready.");
     else if (result.data.transcriptStatus === "failed") toast.error(result.data.transcriptError ?? "Could not read the source.");
   }
@@ -1010,19 +1026,20 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
   return (
     <>
-      <TopBar><Crumb><Link href="/movie-recap">Movie Recap</Link> / <span className="text-fg">{project?.name ?? "New project"}</span></Crumb></TopBar>
+      <TopBar><Crumb><Link href="/movie-recap" className="shrink-0 whitespace-nowrap">Movie Recap</Link> <span className="shrink-0">/</span> <span className="min-w-0 truncate text-fg">{project?.name ?? "New project"}</span></Crumb></TopBar>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b border-line py-4">
           <Wrap wide>
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <div className="grid grid-cols-5 gap-1.5 md:gap-2">
               {STEP_NAMES.map((name, index) => {
                 const number = (index + 1) as StepNumber;
                 const active = step === number;
                 const available = number <= maxStep;
                 return (
-                  <Button key={name} disabled={!available || (savingBeats.size > 0 && !active)} onClick={() => available && goToStep(number)} className={`!h-auto !justify-start !rounded-lg !px-3 !py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
-                    <span className={`mr-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
-                    <span className="truncate text-xs sm:text-sm">{name}</span>
+                  <Button key={name} title={name} disabled={!available || (savingBeats.size > 0 && !active)} onClick={() => available && goToStep(number)} className={`!h-auto min-w-0 !flex-col !gap-1 !rounded-lg !px-1 !py-2 md:!flex-row md:!justify-start md:!gap-0 md:!px-3 md:!py-2.5 ${active ? "!border-accent !bg-accent-dim !text-fg" : "!border-line !text-fg-2"}`}>
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs md:mr-2 ${active ? "bg-accent text-on-accent" : "bg-chip text-fg-2"}`}>{number}</span>
+                    <span className="w-full truncate text-[11px] md:hidden">{STEP_SHORT_NAMES[index]}</span>
+                    <span className="hidden truncate text-sm md:inline">{name}</span>
                   </Button>
                 );
               })}
@@ -1047,7 +1064,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             {step === 3 && project && (
               <div>
                 <div className="mb-4 flex flex-col items-start gap-3">
-                  <div role="tablist" aria-label="Script mode" className="inline-flex gap-1 rounded-full border border-line bg-panel-2 p-1">
+                  <div className="flex w-full items-center justify-between gap-2">
+                  <div role="tablist" aria-label="Script mode" className="inline-flex shrink-0 gap-1 rounded-full border border-line bg-panel-2 p-1">
                     {SCRIPT_MODES.map((mode) => (
                       <Button
                         key={mode}
@@ -1061,6 +1079,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                         {mode === "normal" ? "Normal" : "Episode"}
                       </Button>
                     ))}
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2 sm:w-72 sm:flex-none" title="Narration voice">
+                    <span className="hidden shrink-0 text-xs font-medium text-fg-2 sm:inline">Voice</span>
+                    <div className="min-w-0 flex-1">
+                      <VoicePicker voices={VOICES} value={project.voiceProfileId} onChange={(id) => void chooseVoice(id)} />
+                    </div>
+                  </div>
                   </div>
                   {scriptMode === "episode" && (
                     <EpisodeToolbar

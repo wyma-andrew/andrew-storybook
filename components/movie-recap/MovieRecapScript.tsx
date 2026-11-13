@@ -82,6 +82,10 @@ export function MovieRecapScript({
   const running = project.scriptStatus === "running";
   const busy = running || project.renderStatus === "running";
   const stale = script.filter((beat) => beat.audioStale).length;
+  const builtVoiceIds = [...new Set(script.map((beat) => beat.voiceId).filter((id): id is string => Boolean(id)))];
+  const builtVoiceName = builtVoiceIds.length === 1 ? resolveMovieRecapVoice(builtVoiceIds[0]).name : null;
+  const voiceName = resolveMovieRecapVoice(project.voiceProfileId).name;
+  const voiceChanged = builtVoiceIds.length > 1 || (builtVoiceIds.length === 1 && builtVoiceIds[0] !== project.voiceProfileId);
   const totalAudioS = script.reduce((total, beat) => total + (beat.audioS ?? 0), 0);
   // A beat with no measurement is not a beat that fits. A script left by an
   // older render has none at all, and reading `beatOverrunS` alone made the
@@ -267,7 +271,7 @@ export function MovieRecapScript({
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-fg-3" />
             <span className="text-sm font-medium">Narration script</span>
-            {script.length > 0 && <span className="text-xs text-fg-3">{script.length} beats</span>}
+            {script.length > 0 && <span className="text-xs text-fg-3">{script.length} beats{builtVoiceName ? ` · ${builtVoiceName}` : ""}</span>}
           </div>
           <div className="flex items-center gap-2">
             {restorableAll.length > 0 && (
@@ -303,6 +307,17 @@ export function MovieRecapScript({
           </div>
         </div>
 
+        {voiceChanged && !running && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-panel p-3">
+            <AlertTriangle size={16} className="shrink-0 text-warn" />
+            <span className="min-w-0 flex-1 text-sm text-fg-2">
+              {builtVoiceName ? `This script was built with ${builtVoiceName}.` : "This script mixes voices."} Re-voice it to use {voiceName}.
+            </span>
+            <Button disabled={busy || savingBeats.size > 0} onClick={() => confirmRevoice(onRevoice, voiceName)}>
+              <AudioLines size={14} /> Re-voice
+            </Button>
+          </div>
+        )}
         {running && (
           <div className="mb-4 rounded-lg border border-line bg-panel p-3">
             <MovieRecapRenderProgress project={project} phase="script" />

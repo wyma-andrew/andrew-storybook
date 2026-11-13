@@ -278,6 +278,10 @@ export type MovieRecapNarrationSegment = {
   // single-beat preview must reproduce the rendered audio exactly.
   narrationRate?: number;
   videoSpeed?: number;
+  // The voice this beat's audio was last spoken with. Absent on scripts built
+  // before it was recorded; differs from the project's voice after a change
+  // until the script is re-voiced.
+  voiceId?: string;
   // The line as the script run first wrote it. Written once, at the birth of the
   // beat, and carried through every edit — the restore point for a paste or a
   // rewrite that turned out worse than what it replaced.
