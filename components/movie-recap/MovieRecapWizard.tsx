@@ -80,6 +80,27 @@ function transcriptPatch(project: MovieRecapProject): MovieRecapProjectPatch {
   };
 }
 
+type ScriptView = { mode: (typeof SCRIPT_MODES)[number]; episode: string | null };
+
+function readScriptView(projectId: string | undefined): ScriptView {
+  try {
+    const saved = projectId ? JSON.parse(window.localStorage.getItem(`movie-recap:script-view:${projectId}`) ?? "null") : null;
+    if (saved && SCRIPT_MODES.includes(saved.mode)) return { mode: saved.mode, episode: typeof saved.episode === "string" ? saved.episode : null };
+  } catch {
+    // Falls back to Normal when browser storage is unavailable.
+  }
+  return { mode: "normal", episode: null };
+}
+
+function writeScriptView(projectId: string | undefined, view: ScriptView) {
+  if (!projectId) return;
+  try {
+    window.localStorage.setItem(`movie-recap:script-view:${projectId}`, JSON.stringify(view));
+  } catch {
+    // Only the reopen convenience is lost.
+  }
+}
+
 function withoutEpisode(data: MovieRecapProject & { episode?: unknown }): MovieRecapProject {
   const row = { ...data };
   delete row.episode;
@@ -266,8 +287,21 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // project was left (`currentStep`) rather than at step one.
   const [stepSlug, setStepSlug] = useQueryState("step", parseAsStringLiteral(STEP_SLUGS).withOptions({ history: "push" }));
   const [tab, setTab] = useQueryState("tab", parseAsStringLiteral(CUSTOMIZE_TABS.map((item) => item.id)).withDefault("aspect"));
-  const [scriptMode, setScriptMode] = useQueryState("mode", parseAsStringLiteral(SCRIPT_MODES).withDefault("normal"));
-  const [episodeParam, setEpisodeParam] = useQueryState("episode");
+  const [modeParam, setModeParam] = useQueryState("mode", parseAsStringLiteral(SCRIPT_MODES));
+  const [episodeQuery, setEpisodeQuery] = useQueryState("episode");
+  // The URL wins; without one the wizard reopens on the mode and episode last
+  // chosen in this browser, the way `currentStep` reopens the step.
+  const [savedScriptView] = useState(() => readScriptView(initialProject?.id));
+  const scriptMode = modeParam ?? savedScriptView.mode;
+  const episodeParam = episodeQuery ?? savedScriptView.episode;
+  const setScriptMode = (mode: (typeof SCRIPT_MODES)[number]) => {
+    writeScriptView(initialProject?.id, { mode, episode: episodeParam });
+    return setModeParam(mode);
+  };
+  const setEpisodeParam = (episode: string | null) => {
+    writeScriptView(initialProject?.id, { mode: scriptMode, episode });
+    return setEpisodeQuery(episode);
+  };
   const selectedEpisode = episodes.find((episode) => episode.id === episodeParam) ?? episodes[0] ?? null;
   const scriptEpisode = scriptMode === "episode" ? selectedEpisode : null;
   // A hand-typed `?step=review` on a project that never got past step one would
@@ -478,7 +512,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
         title="New episode"
         beats={beats}
         initial={{ name: `Episode ${episodes.length + 1}`, startBeat: 1, endBeat: beats.length }}
-        submitLabel="Create & Build"
+        submitLabel="Create"
         dismiss={dismiss}
         onSubmit={async ({ name, startBeat, endBeat }) => {
           if (!name.trim()) {
@@ -490,10 +524,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             toast.error(result.error?.error ?? "Could not create the episode.");
             return false;
           }
-          const episodeId = result.data.id;
           await reloadEpisodes();
-          void setEpisodeParam(episodeId);
-          void buildRecapScript({ episodeId });
+          void setEpisodeParam(result.data.id);
           return true;
         }}
       />,
@@ -1014,8 +1046,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
             {step === 3 && project && (
               <div>
-                <h2 className="mb-3 text-lg font-semibold">Narrative Script</h2>
-                <div className="mb-4 flex flex-wrap items-center gap-2">
+                <div className="mb-4 flex flex-col items-start gap-3">
                   <div role="tablist" aria-label="Script mode" className="inline-flex gap-1 rounded-full border border-line bg-panel-2 p-1">
                     {SCRIPT_MODES.map((mode) => (
                       <Button

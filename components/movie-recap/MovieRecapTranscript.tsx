@@ -339,7 +339,6 @@ export function MovieRecapTranscript({
 
   return (
     <div>
-      <h2 className="mb-3 text-lg font-semibold">Transcript</h2>
       <div className="mb-6">
       <div className="flex flex-col rounded-xl border border-line md:flex-row">
         <div className="flex items-center rounded-t-xl border-b border-line bg-sunken p-3 md:w-56 md:rounded-l-xl md:rounded-tr-none md:shrink-0 md:border-r md:border-b-0">
@@ -382,10 +381,10 @@ export function MovieRecapTranscript({
                 >
                   Import .txt
                 </AppButton>
-                <span className="-my-3 flex flex-col items-center gap-1 self-stretch px-1.5 py-1.5" aria-hidden="true">
-                  <span className="w-px flex-1 bg-line-2" />
-                  <span className="text-[10px] font-semibold tracking-wider text-fg-3 uppercase">or</span>
-                  <span className="w-px flex-1 bg-line-2" />
+                <span className="flex flex-col items-center gap-1 px-1.5" aria-hidden="true">
+                  <span className="h-2 w-px bg-line-2" />
+                  <span className="text-[10px] leading-none font-semibold tracking-wider text-fg-3 uppercase">or</span>
+                  <span className="h-2 w-px bg-line-2" />
                 </span>
                 <LoadingButton
                   variant="primary"
