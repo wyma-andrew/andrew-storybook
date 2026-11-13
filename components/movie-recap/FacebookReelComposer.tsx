@@ -95,7 +95,7 @@ export function FacebookReelComposer({ project, episode = null, post, dismiss }:
   const validTime = publishAt && !Number.isNaN(publishAt.getTime());
   const tooSoon = validTime && publishAt.getTime() - now < FACEBOOK_MIN_SCHEDULE_LEAD_MS;
   const whenLabel = validTime ? formatPublishTime(publishAt) : "Pick a date";
-  const activePost = posts?.find((p) => p.status === "scheduled" || p.status === "published");
+  const activePost = posts?.find((p) => p.status === "uploading" || p.status === "scheduled" || p.status === "published");
 
   function addTag() {
     const tag = normalizeTag(tagDraft);
@@ -115,7 +115,7 @@ export function FacebookReelComposer({ project, episode = null, post, dismiss }:
           ? await createEpisodePost({ params: { id: project.id, episodeId: episode.id }, body, invalidate })
           : await createProjectPost({ params: { id: project.id }, body, invalidate });
       if (result.data) {
-        toast.success(post ? `Reel updated for ${whenLabel}.` : `Reel scheduled for ${whenLabel}.`);
+        toast.success(post ? `Reel updated for ${whenLabel}.` : `Uploading to Facebook for ${whenLabel}. You can leave this page.`);
         dismiss();
       } else {
         toast.error((result.error as { error?: string } | undefined)?.error ?? "Could not save the Reel.");
@@ -140,7 +140,7 @@ export function FacebookReelComposer({ project, episode = null, post, dismiss }:
             <Alert
               variant="warning"
               condensed
-              title={activePost.status === "published" ? "Already published" : "Already scheduled"}
+              title={activePost.status === "published" ? "Already published" : activePost.status === "uploading" ? "Already uploading" : "Already scheduled"}
               description={`This recap is ${activePost.status} for ${formatPublishTime(new Date(activePost.publishAt))}. Scheduling again posts it a second time.`}
             />
           )}

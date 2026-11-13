@@ -8,6 +8,34 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-13 — Facebook upload runs in the background (`after()`)
+
+**Decision, chosen by the user:** Schedule no longer waits for Facebook. The
+route writes the post row as `uploading` (no video id yet) and returns; the
+Reel start, the `rupload` file pull and the schedule step run in Next's
+`after()` (`lib/movie-recap-social.ts`). The video id is saved as soon as the
+start step returns. Review's post list shows an Uploading badge and polls
+every 5s (Spoosh `pollingPlugin`, added for this) until no row is uploading.
+Closing the tab or reloading does not stop it: `after()` runs on the server.
+
+**Why:** the `rupload` call blocks while Facebook downloads the whole MP4 from
+R2, so the dialog sat on a spinner; and a request cut off part-way left a Reel
+on Facebook with no row here.
+
+**Rejected:** GitHub Actions — a ~30-60s cold start and Actions minutes for
+work that only waits on Facebook. It stays the fallback if real uploads keep
+exceeding the limit below; only the background step would move.
+
+**Consequences:**
+- `after()` shares the route's `maxDuration = 300` (5 min). A run killed there
+  never writes its outcome, so the list marks any row still `uploading` after
+  10 minutes as failed and deletes its Facebook video if one was created.
+  Locally, restarting `next dev` kills it the same way.
+- A failed upload deletes its half-made Facebook video; schedule again to retry.
+- A publish time picked 10-15 minutes ahead can fall inside Facebook's
+  10-minute minimum by the time a slow upload finishes; that fails with
+  Facebook's own message.
+
 ## 2026-11-13 — Episodes can be scheduled to Facebook
 
 **Decision, requested by the user:** an episode's video can be published as a

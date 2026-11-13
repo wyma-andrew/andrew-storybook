@@ -33,13 +33,19 @@ async function reelsPhase(fields: Record<string, string>, step: string) {
 
 // Reels Publishing API: start → hosted-file upload → finish. Meta pulls the file
 // from `fileUrl` itself, so the MP4 never passes through this server.
-export async function scheduleFacebookReel({ fileUrl, description, publishAt }: {
+// Split so the caller can record the video id before the slow part: the upload
+// below waits while Facebook pulls the whole file from R2.
+export async function startFacebookReel() {
+  const { video_id: videoId } = await reelsPhase({ upload_phase: "start" }, "upload start") as { video_id: string };
+  return videoId;
+}
+
+export async function finishFacebookReel({ videoId, fileUrl, description, publishAt }: {
+  videoId: string;
   fileUrl: string;
   description: string;
   publishAt: Date;
 }) {
-  const { video_id: videoId } = await reelsPhase({ upload_phase: "start" }, "upload start") as { video_id: string };
-
   const upload = await fetch(`https://rupload.facebook.com/video-upload/${GRAPH_VERSION}/${videoId}`, {
     method: "POST",
     headers: { Authorization: `OAuth ${PAGE_TOKEN}`, file_url: fileUrl },
@@ -54,8 +60,6 @@ export async function scheduleFacebookReel({ fileUrl, description, publishAt }: 
     scheduled_publish_time: String(Math.floor(publishAt.getTime() / 1000)),
     description,
   }, "schedule");
-
-  return { videoId };
 }
 
 type VideoStatus = {

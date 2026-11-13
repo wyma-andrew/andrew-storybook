@@ -81,10 +81,11 @@ export type MovieRecapSocialPost = {
   episodeId: string | null;
   platform: "facebook";
   kind: "reel";
-  externalId: string;
+  // Null until the background upload has created the Facebook video.
+  externalId: string | null;
   description: string;
   publishAt: string;
-  status: "scheduled" | "published" | "cancelled" | "failed";
+  status: "uploading" | "scheduled" | "published" | "cancelled" | "failed";
   permalinkUrl: string | null;
   error: string | null;
   createdAt: string;

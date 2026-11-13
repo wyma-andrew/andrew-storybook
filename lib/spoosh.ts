@@ -5,6 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
+import { pollingPlugin } from "@spoosh/plugin-polling";
 import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapEpisode, MovieRecapSocialPost, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { CharacterLook } from "@/lib/character-looks";
@@ -504,6 +505,7 @@ const spoosh = new Spoosh<ApiSchema, { error: string }>("/api").use([
   cachePlugin(),
   invalidationPlugin(),
   optimisticPlugin(),
+  pollingPlugin(),
 ]);
 
 export const { useRead, useWrite, usePages, useQueue, useSubscription } = create(spoosh);

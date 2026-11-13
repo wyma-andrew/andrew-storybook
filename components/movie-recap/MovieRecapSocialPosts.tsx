@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, CircleAlert, CircleCheck, CircleSlash, Clock, CalendarX, ExternalLink, Pencil, type LucideIcon } from "lucide-react";
+import { CalendarClock, CircleAlert, Loader2, CircleCheck, CircleSlash, Clock, CalendarX, ExternalLink, Pencil, type LucideIcon } from "lucide-react";
 import { ConfirmDialog, Dialog, toast } from "@geckoui/geckoui";
 import { MiniButton } from "@/components/ui/Button";
 import { FacebookLogo } from "@/components/ui/FacebookLogo";
@@ -9,6 +9,7 @@ import { useRead, useWrite } from "@/lib/spoosh";
 import { FacebookReelComposer, formatPublishTime, socialPostsKey } from "./FacebookReelComposer";
 
 const STATUS_BADGE: Record<MovieRecapSocialPost["status"], { label: string; icon: LucideIcon; className: string }> = {
+  uploading: { label: "Uploading", icon: Loader2, className: "text-fg-2 [&>svg]:animate-spin" },
   scheduled: { label: "Scheduled", icon: CalendarClock, className: "text-accent" },
   published: { label: "Published", icon: CircleCheck, className: "text-ok" },
   cancelled: { label: "Cancelled", icon: CircleSlash, className: "text-fg-3" },
@@ -33,15 +34,20 @@ function CaptionPreview({ description }: { description: string }) {
   );
 }
 
+// The upload finishes in the background after the schedule request returned.
+function pollWhileUploading({ data }: { data: unknown }) {
+  return (data as MovieRecapSocialPost[] | undefined)?.some((post) => post.status === "uploading") ? 5000 : false;
+}
+
 export function MovieRecapSocialPosts({ project, episode = null }: { project: MovieRecapProject; episode?: MovieRecapEpisode | null }) {
   const { data: me } = useRead((api) => api("auth/me").GET());
   const { data: projectPosts } = useRead(
     (api) => api("movie-recaps/:id/social-posts").GET({ params: { id: project.id } }),
-    { enabled: Boolean(me?.isAdmin) && !episode },
+    { enabled: Boolean(me?.isAdmin) && !episode, pollingInterval: pollWhileUploading },
   );
   const { data: episodePosts } = useRead(
     (api) => api("movie-recaps/:id/episodes/:episodeId/social-posts").GET({ params: { id: project.id, episodeId: episode?.id ?? "" } }),
-    { enabled: Boolean(me?.isAdmin) && Boolean(episode) },
+    { enabled: Boolean(me?.isAdmin) && Boolean(episode), pollingInterval: pollWhileUploading },
   );
   const posts = episode ? episodePosts : projectPosts;
   const { trigger: cancelPost } = useWrite((api) => api("movie-recap-social-posts/:id").DELETE());
