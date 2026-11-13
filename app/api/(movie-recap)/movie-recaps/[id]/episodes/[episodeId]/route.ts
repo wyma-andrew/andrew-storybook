@@ -27,6 +27,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   if (data.script_status === "running" || data.render_status === "running") {
     return NextResponse.json({ error: "Cancel this episode's run before deleting it." }, { status: 409 });
   }
+  // Deleting the episode deletes its post rows; a Reel still scheduled on
+  // Facebook would then be unmanageable from here.
+  const { count } = await db.from("movie_recap_social_posts").select("id", { count: "exact", head: true })
+    .eq("episode_id", episodeId).eq("status", "scheduled");
+  if (count) return NextResponse.json({ error: "Cancel this episode's scheduled Facebook Reel before deleting it." }, { status: 409 });
   if (data.output_object_key) {
     try {
       await deleteObject(data.output_object_key);

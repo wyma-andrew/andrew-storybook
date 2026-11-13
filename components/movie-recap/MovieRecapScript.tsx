@@ -29,6 +29,7 @@ import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
 export function MovieRecapScript({
   project,
   episodeId,
+  busyMessage,
   onBuild,
   onRevoice,
   onSave,
@@ -44,6 +45,8 @@ export function MovieRecapScript({
   project: MovieRecapProject;
   /** Set when `project.renderScript` is that episode's beats. */
   episodeId?: string;
+  /** Another script holds the project's one script run. */
+  busyMessage?: string | null;
   onBuild: () => void;
   onRevoice: () => void;
   /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
@@ -80,7 +83,7 @@ export function MovieRecapScript({
   }
 
   const running = project.scriptStatus === "running";
-  const busy = running || project.renderStatus === "running";
+  const busy = running || project.renderStatus === "running" || Boolean(busyMessage);
   const stale = script.filter((beat) => beat.audioStale).length;
   const builtVoiceIds = [...new Set(script.map((beat) => beat.voiceId).filter((id): id is string => Boolean(id)))];
   const builtVoiceName = builtVoiceIds.length === 1 ? resolveMovieRecapVoice(builtVoiceIds[0]).name : null;
@@ -307,6 +310,12 @@ export function MovieRecapScript({
           </div>
         </div>
 
+        {busyMessage && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-panel p-3 text-sm text-fg-2">
+            <Loader2 size={15} className="shrink-0 animate-spin text-fg-3" />
+            {busyMessage}
+          </div>
+        )}
         {voiceChanged && !running && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-panel p-3">
             <AlertTriangle size={16} className="shrink-0 text-warn" />
@@ -491,7 +500,7 @@ export function MovieRecapScript({
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {script.length === 0 && (
+          {script.length === 0 && !busyMessage && (
             <LoadingButton
               variant="primary"
               loading={building}

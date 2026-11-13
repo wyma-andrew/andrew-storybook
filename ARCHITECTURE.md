@@ -299,7 +299,8 @@ short-lived R2 URLs with attachment filenames; large media bytes do not pass
 through the Next server. Admins can also schedule the full render to the
 Facebook Page as a Reel (`POST movie-recaps/:id/facebook`, `lib/facebook.ts`);
 Meta pulls the MP4 from a presigned R2 URL. Each scheduled post is a
-`movie_recap_social_posts` row that Review lists with edit/cancel; listing re-reads
+`movie_recap_social_posts` row that Review lists with edit/cancel (per episode
+under `episodes/:episodeId/{facebook,social-posts}`, `lib/movie-recap-social.ts`); listing re-reads
 scheduled rows' status from the Graph API.
 
 Narrative Script has a Normal / Episode mode (`?mode=`, `?episode=`). An
@@ -607,7 +608,7 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
 | `movie_recap_episodes` | Named beat ranges with their own narration script, run status, and one rendered MP4 |
 | `movie_recap_range_renders` | Legacy: rows from the removed beat-range render; nothing reads it |
-| `movie_recap_social_posts` | Facebook Reels scheduled from a full render: video id, caption, publish time, status |
+| `movie_recap_social_posts` | Facebook Reels scheduled from the default render or an episode (`episode_id`): video id, caption, publish time, status |
 | `translate_projects` | Owned source upload, SRT, blur/subtitle settings, and rendered MP4 |
 
 All tables have RLS. Deleting a story cascades through its owned hierarchy;

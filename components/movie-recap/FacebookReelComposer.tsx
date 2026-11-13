@@ -5,7 +5,7 @@ import { CalendarClock, Clock, Globe, Hash, X } from "lucide-react";
 import { Alert, DateInput, Input, Label, Select, SelectOption, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton, MiniButton } from "@/components/ui/Button";
 import { FacebookLogo } from "@/components/ui/FacebookLogo";
-import type { MovieRecapProject, MovieRecapSocialPost } from "@/lib/api/types";
+import type { MovieRecapEpisode, MovieRecapProject, MovieRecapSocialPost } from "@/lib/api/types";
 import { FACEBOOK_MIN_SCHEDULE_LEAD_MS, FACEBOOK_REEL_DEFAULTS, FACEBOOK_TIME_STEP_MINUTES } from "@/lib/constants/facebook";
 import { useRead, useWrite } from "@/lib/spoosh";
 
@@ -59,10 +59,21 @@ function PageAvatar({ name, pictureUrl, size, badge }: { name: string; pictureUr
   );
 }
 
-export function FacebookReelComposer({ project, post, dismiss }: { project: MovieRecapProject; post?: MovieRecapSocialPost; dismiss: () => void }) {
+export function socialPostsKey(projectId: string, episodeId: string | null) {
+  return episodeId ? `movie-recaps/${projectId}/episodes/${episodeId}/social-posts` : `movie-recaps/${projectId}/social-posts`;
+}
+
+// `episode` set: the episode's own video and posts instead of the default render's.
+export function FacebookReelComposer({ project, episode = null, post, dismiss }: { project: MovieRecapProject; episode?: MovieRecapEpisode | null; post?: MovieRecapSocialPost; dismiss: () => void }) {
   const { data: page } = useRead((api) => api("facebook/page").GET(), { staleTime: 10 * 60 * 1000 });
-  const { data: posts } = useRead((api) => api("movie-recaps/:id/social-posts").GET({ params: { id: project.id } }), { enabled: !post });
-  const { trigger: createPost } = useWrite((api) => api("movie-recaps/:id/facebook").POST());
+  const { data: projectPosts } = useRead((api) => api("movie-recaps/:id/social-posts").GET({ params: { id: project.id } }), { enabled: !post && !episode });
+  const { data: episodePosts } = useRead(
+    (api) => api("movie-recaps/:id/episodes/:episodeId/social-posts").GET({ params: { id: project.id, episodeId: episode?.id ?? "" } }),
+    { enabled: !post && Boolean(episode) },
+  );
+  const posts = episode ? episodePosts : projectPosts;
+  const { trigger: createProjectPost } = useWrite((api) => api("movie-recaps/:id/facebook").POST());
+  const { trigger: createEpisodePost } = useWrite((api) => api("movie-recaps/:id/episodes/:episodeId/facebook").POST());
   const { trigger: updatePost } = useWrite((api) => api("movie-recap-social-posts/:id").PATCH());
   const [initial] = useState(() => initialState(post));
   const [now, setNow] = useState(() => Date.now());
@@ -96,11 +107,13 @@ export function FacebookReelComposer({ project, post, dismiss }: { project: Movi
     if (!validTime || tooSoon) return;
     setSaving(true);
     try {
-      const invalidate = [`movie-recaps/${project.id}/social-posts`];
+      const invalidate = [socialPostsKey(project.id, episode?.id ?? post?.episodeId ?? null)];
       const body = { description, publishAt: publishAt.toISOString() };
       const result = post
         ? await updatePost({ params: { id: post.id }, body, invalidate })
-        : await createPost({ params: { id: project.id }, body, invalidate });
+        : episode
+          ? await createEpisodePost({ params: { id: project.id, episodeId: episode.id }, body, invalidate })
+          : await createProjectPost({ params: { id: project.id }, body, invalidate });
       if (result.data) {
         toast.success(post ? `Reel updated for ${whenLabel}.` : `Reel scheduled for ${whenLabel}.`);
         dismiss();
@@ -204,7 +217,7 @@ export function FacebookReelComposer({ project, post, dismiss }: { project: Movi
               playsInline
               controls
               preload="metadata"
-              src={project.renderOutputUrl ?? undefined}
+              src={(episode ? episode.outputUrl : project.renderOutputUrl) ?? undefined}
               className="block aspect-[9/16] max-h-[360px] w-full bg-black object-contain"
             />
           </div>

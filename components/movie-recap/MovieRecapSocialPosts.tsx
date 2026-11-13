@@ -4,9 +4,9 @@ import { CalendarClock, CircleAlert, CircleCheck, CircleSlash, Clock, CalendarX,
 import { ConfirmDialog, Dialog, toast } from "@geckoui/geckoui";
 import { MiniButton } from "@/components/ui/Button";
 import { FacebookLogo } from "@/components/ui/FacebookLogo";
-import type { MovieRecapProject, MovieRecapSocialPost } from "@/lib/api/types";
+import type { MovieRecapEpisode, MovieRecapProject, MovieRecapSocialPost } from "@/lib/api/types";
 import { useRead, useWrite } from "@/lib/spoosh";
-import { FacebookReelComposer, formatPublishTime } from "./FacebookReelComposer";
+import { FacebookReelComposer, formatPublishTime, socialPostsKey } from "./FacebookReelComposer";
 
 const STATUS_BADGE: Record<MovieRecapSocialPost["status"], { label: string; icon: LucideIcon; className: string }> = {
   scheduled: { label: "Scheduled", icon: CalendarClock, className: "text-accent" },
@@ -33,12 +33,17 @@ function CaptionPreview({ description }: { description: string }) {
   );
 }
 
-export function MovieRecapSocialPosts({ project }: { project: MovieRecapProject }) {
+export function MovieRecapSocialPosts({ project, episode = null }: { project: MovieRecapProject; episode?: MovieRecapEpisode | null }) {
   const { data: me } = useRead((api) => api("auth/me").GET());
-  const { data: posts } = useRead(
+  const { data: projectPosts } = useRead(
     (api) => api("movie-recaps/:id/social-posts").GET({ params: { id: project.id } }),
-    { enabled: Boolean(me?.isAdmin) },
+    { enabled: Boolean(me?.isAdmin) && !episode },
   );
+  const { data: episodePosts } = useRead(
+    (api) => api("movie-recaps/:id/episodes/:episodeId/social-posts").GET({ params: { id: project.id, episodeId: episode?.id ?? "" } }),
+    { enabled: Boolean(me?.isAdmin) && Boolean(episode) },
+  );
+  const posts = episode ? episodePosts : projectPosts;
   const { trigger: cancelPost } = useWrite((api) => api("movie-recap-social-posts/:id").DELETE());
 
   if (!me?.isAdmin || !posts?.length) return null;
@@ -47,7 +52,7 @@ export function MovieRecapSocialPosts({ project }: { project: MovieRecapProject 
     Dialog.show({
       className: "max-w-[860px] w-full",
       dismissOnOutsideClick: false,
-      content: ({ dismiss }) => <FacebookReelComposer project={project} post={post} dismiss={dismiss} />,
+      content: ({ dismiss }) => <FacebookReelComposer project={project} episode={episode} post={post} dismiss={dismiss} />,
     });
   }
 
@@ -58,7 +63,7 @@ export function MovieRecapSocialPosts({ project }: { project: MovieRecapProject 
       confirmButtonLabel: "Cancel Reel",
       cancelButtonLabel: "Keep",
       onConfirm: async ({ dismiss }) => {
-        const result = await cancelPost({ params: { id: post.id }, invalidate: [`movie-recaps/${project.id}/social-posts`] });
+        const result = await cancelPost({ params: { id: post.id }, invalidate: [socialPostsKey(project.id, episode?.id ?? null)] });
         if (result.data) toast.success("Reel cancelled.");
         else toast.error((result.error as { error?: string } | undefined)?.error ?? "Could not cancel the Reel.");
         dismiss();

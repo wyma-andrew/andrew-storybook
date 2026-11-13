@@ -8,6 +8,23 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-13 — Episodes can be scheduled to Facebook
+
+**Decision, requested by the user:** an episode's video can be published as a
+Facebook Reel like the default render. `movie_recap_social_posts.episode_id`
+says which video a post is (null = default render); the episode routes
+`episodes/:episodeId/{facebook,social-posts}` share `lib/movie-recap-social.ts`
+with the project routes, and Review lists each video's own posts under it.
+
+**Rejected:** a query parameter on the existing routes — the Spoosh client has
+no query usage in this app, and path routes invalidate by their own key.
+
+**Consequences:**
+- Deleting an episode deletes its post rows (cascade), so it is refused while
+  one of its Reels is still scheduled; a published Reel stays on Facebook.
+- Re-rendering an episode after scheduling does not change the scheduled Reel:
+  Meta already fetched the file.
+
 ## 2026-11-13 — Voice is chosen at Narrative Script
 
 **Decision, approved by the user:** the voice picker moves from under the

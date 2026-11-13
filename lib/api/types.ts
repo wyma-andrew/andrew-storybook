@@ -77,6 +77,8 @@ export type MovieRecapEpisode = {
 export type MovieRecapSocialPost = {
   id: string;
   projectId: string;
+  // Null for a post of the project's default render.
+  episodeId: string | null;
   platform: "facebook";
   kind: "reel";
   externalId: string;

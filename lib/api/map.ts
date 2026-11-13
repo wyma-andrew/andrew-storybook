@@ -29,6 +29,7 @@ export function mapMovieRecapSocialPost(r: Row): MovieRecapSocialPost {
   return {
     id: r.id as string,
     projectId: r.project_id as string,
+    episodeId: (r.episode_id as string) ?? null,
     platform: r.platform as MovieRecapSocialPost["platform"],
     kind: r.kind as MovieRecapSocialPost["kind"],
     externalId: r.external_id as string,

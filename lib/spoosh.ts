@@ -304,6 +304,12 @@ export type ApiSchema = {
   "movie-recaps/:id/episodes/:episodeId/download": {
     GET: { data: { url: string } };
   };
+  "movie-recaps/:id/episodes/:episodeId/facebook": {
+    POST: { data: MovieRecapSocialPost; body: { description: string; publishAt: string } };
+  };
+  "movie-recaps/:id/episodes/:episodeId/social-posts": {
+    GET: { data: MovieRecapSocialPost[] };
+  };
   "movie-recaps/:id/render/download": {
     GET: { data: { url: string } };
   };

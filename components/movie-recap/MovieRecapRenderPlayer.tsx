@@ -4,13 +4,22 @@ import { useState } from "react";
 import { Download, Send } from "lucide-react";
 import { Dialog, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
-import type { MovieRecapProject } from "@/lib/api/types";
+import type { MovieRecapEpisode, MovieRecapProject } from "@/lib/api/types";
 import { apiClient, useRead } from "@/lib/spoosh";
 import { FacebookReelComposer } from "./FacebookReelComposer";
 
+export function MovieRecapPublishButton({ project, episode = null }: { project: MovieRecapProject; episode?: MovieRecapEpisode | null }) {
+  const { data: me } = useRead((api) => api("auth/me").GET());
+  if (!me?.isAdmin) return null;
+  return <Button size="sm" className="!h-8" variant="primary" onClick={() => Dialog.show({
+    className: "max-w-[860px] w-full",
+    dismissOnOutsideClick: false,
+    content: ({ dismiss }) => <FacebookReelComposer project={project} episode={episode} dismiss={dismiss} />,
+  })}><Send size={14} /> Publish to social</Button>;
+}
+
 export function MovieRecapRenderActions({ project }: { project: MovieRecapProject }) {
   const [downloading, setDownloading] = useState(false);
-  const { data: me } = useRead((api) => api("auth/me").GET());
 
   async function downloadVideo() {
     setDownloading(true);
@@ -25,18 +34,10 @@ export function MovieRecapRenderActions({ project }: { project: MovieRecapProjec
     }
   }
 
-  function openPublishDialog() {
-    Dialog.show({
-      className: "max-w-[860px] w-full",
-      dismissOnOutsideClick: false,
-      content: ({ dismiss }) => <FacebookReelComposer project={project} dismiss={dismiss} />,
-    });
-  }
-
   return (
     <div className="ml-auto flex items-center gap-2">
       <LoadingButton size="sm" className="!h-8" loading={downloading} loadingText="Preparing..." disabled={downloading} onClick={() => void downloadVideo()}><Download size={14} /> Download</LoadingButton>
-      {me?.isAdmin && !project.renderIsMock && <Button size="sm" className="!h-8" variant="primary" onClick={openPublishDialog}><Send size={14} /> Publish to social</Button>}
+      {!project.renderIsMock && <MovieRecapPublishButton project={project} />}
     </div>
   );
 }

@@ -28,7 +28,7 @@ import { EpisodeDialogContent, EpisodeToolbar, episodeLabel } from "./MovieRecap
 import { VoicePicker } from "@/components/voice/VoicePicker";
 import { VOICES } from "@/lib/tts/voices";
 import { MovieRecapPreview } from "./MovieRecapPreview";
-import { MovieRecapRenderActions, MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
+import { MovieRecapPublishButton, MovieRecapRenderActions, MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapSocialPosts } from "./MovieRecapSocialPosts";
 import { MovieRecapScript } from "./MovieRecapScript";
 import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
@@ -306,6 +306,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   };
   const selectedEpisode = episodes.find((episode) => episode.id === episodeParam) ?? episodes[0] ?? null;
   const scriptEpisode = scriptMode === "episode" ? selectedEpisode : null;
+  // Which script the project's one script run belongs to. The episodes list can
+  // lag a run this browser just started, so that start is remembered too.
+  const [startedScriptTarget, setStartedScriptTarget] = useState<string | null>(null);
   // A hand-typed `?step=review` on a project that never got past step one would
   // otherwise render a step its data cannot fill, so the URL is clamped to the
   // furthest step actually reached.
@@ -490,10 +493,12 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     if (!project) return;
     const revoice = options?.revoice === true;
     const episodeId = options?.episodeId;
+    setStartedScriptTarget(episodeId ?? "normal");
     // Optimistic, for the same reason the render is: the POST does not resolve
     // until the whole run finishes, and the polling effect reads local state.
     merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
     const result = await buildScript({ params: { id: project.id }, body: { revoice, episodeId } });
+    setStartedScriptTarget(null);
     if (episodeId) void reloadEpisodes();
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? (revoice ? "Could not re-voice the script." : "Could not build the script."));
@@ -1021,6 +1026,26 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       blurRegions: project.blurRegions.map((region, i) => (i === index ? clampBlurRect({ ...region, ...patch }) : region)),
     });
   }
+  const runningScriptTarget = project?.scriptStatus === "running"
+    ? episodes.find((episode) => episode.scriptStatus === "running")?.id ?? startedScriptTarget ?? "normal"
+    : null;
+  const viewedScriptTarget = scriptEpisode?.id ?? "normal";
+  const runningElsewhere = runningScriptTarget !== null && runningScriptTarget !== viewedScriptTarget;
+  const scriptBusyMessage = !runningElsewhere ? null : runningScriptTarget === "normal"
+    ? "The Normal script is building. This one can be built when it finishes."
+    : `${episodes.find((episode) => episode.id === runningScriptTarget)?.name ?? "An episode"} is building. This one can be built when it finishes.`;
+  // The run's progress belongs to whichever script it is building; the other
+  // views show their own last outcome instead of a borrowed "running".
+  const scriptViewProject = !project ? null : scriptEpisode ? {
+    ...project,
+    renderScript: scriptEpisode.renderScript,
+    scriptStatus: runningElsewhere ? scriptEpisode.scriptStatus === "running" ? "idle" as const : scriptEpisode.scriptStatus : project.scriptStatus === "running" ? "running" as const : scriptEpisode.scriptStatus,
+    scriptError: scriptEpisode.scriptError,
+  } : runningElsewhere ? {
+    ...project,
+    scriptStatus: project.renderScript?.length ? "ready" as const : "idle" as const,
+    scriptError: null,
+  } : project;
   const videoUrl = localVideoUrl ?? project?.sourceUrl ?? null;
   const activeLogoTemplateId = selectedLogoTemplateId;
 
@@ -1105,12 +1130,8 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   </p>
                 ) : <MovieRecapScript
                   key={scriptEpisode?.id ?? "normal"}
-                  project={scriptEpisode ? {
-                    ...project,
-                    renderScript: scriptEpisode.renderScript,
-                    scriptStatus: project.scriptStatus === "running" ? "running" : scriptEpisode.scriptStatus,
-                    scriptError: scriptEpisode.scriptError,
-                  } : project}
+                  project={scriptViewProject ?? project}
+                  busyMessage={scriptBusyMessage}
                   episodeId={scriptEpisode?.id}
                   onBuild={() => void buildRecapScript({ episodeId: scriptEpisode?.id })}
                   onRevoice={() => void buildRecapScript({ revoice: true, episodeId: scriptEpisode?.id })}
@@ -1499,13 +1520,17 @@ function Review({
             <div className="text-sm font-medium">{episode.name}</div>
             <div className="text-xs text-fg-3">Beats {episode.startBeat}–{episode.endBeat}{episode.renderedAt ? ` · ${new Date(episode.renderedAt).toLocaleString()}` : ""}{episode.durationSeconds ? ` · ${formatDuration(episode.durationSeconds)}` : ""}</div>
           </div>
-          {episode.outputUrl && <Button className="!h-8 !px-2 text-xs" onClick={() => void downloadEpisode(episode.id)}>Download</Button>}
+          {episode.outputUrl && <div className="flex shrink-0 items-center gap-2">
+            <Button className="!h-8 !px-2 text-xs" onClick={() => void downloadEpisode(episode.id)}>Download</Button>
+            <MovieRecapPublishButton project={project} episode={episode} />
+          </div>}
         </div>
         {episode.renderStatus === "failed" && episode.renderError && <p className="mt-3 text-sm text-danger">{episode.renderError}</p>}
         {episode.outputUrl && episode.renderWarning && <Alert variant="warning" condensed title="Timeline warning" description={episode.renderWarning} className="mt-4" />}
         {episode.outputUrl
           ? <video key={episode.outputUrl} controls preload="metadata" src={episode.outputUrl} className="mt-4 max-h-[70vh] w-full rounded-md bg-panel" />
           : <p className="mt-4 rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No video for this episode yet.</p>}
+        <MovieRecapSocialPosts key={episode.id} project={project} episode={episode} />
       </>}
     </div>
 
