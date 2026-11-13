@@ -12,7 +12,7 @@ import type {
   VoiceOverSegment,
   MovieRecapProgress,
   MovieRecapProject,
-  MovieRecapRangeRender,
+  MovieRecapEpisode,
   MovieRecapSocialPost,
 } from "./types";
 import type { ResolvedVisualStyle } from "@/lib/visual-styles";
@@ -41,18 +41,24 @@ export function mapMovieRecapSocialPost(r: Row): MovieRecapSocialPost {
   };
 }
 
-export function mapMovieRecapRangeRender(r: Row): MovieRecapRangeRender {
+export function mapMovieRecapEpisode(r: Row): MovieRecapEpisode {
   return {
     id: r.id as string,
     projectId: r.project_id as string,
+    name: r.name as string,
     startBeat: Number(r.start_beat),
     endBeat: Number(r.end_beat),
-    status: r.status as MovieRecapRangeRender["status"],
-    error: (r.error as string) ?? null,
-    warning: (r.warning as string) ?? null,
+    renderScript: normalizeMovieRecapNarrationManifest((r.render_script as MovieRecapEpisode["renderScript"]) ?? null),
+    scriptStatus: r.script_status as MovieRecapEpisode["scriptStatus"],
+    scriptError: (r.script_error as string) ?? null,
+    renderStatus: r.render_status as MovieRecapEpisode["renderStatus"],
+    renderError: (r.render_error as string) ?? null,
+    renderWarning: (r.render_warning as string) ?? null,
     outputUrl: (r.output_url as string) ?? null,
     durationSeconds: r.duration_seconds == null ? null : Number(r.duration_seconds),
+    renderedAt: (r.rendered_at as string) ?? null,
     createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
   };
 }
 

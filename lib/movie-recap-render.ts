@@ -21,7 +21,7 @@ import {
   type SourceWindow,
 } from "./movie-recap-shots";
 import { buildMovieRecapSceneTimingPlan } from "./movie-recap-scene-plan";
-import { selectMovieRecapBeatRange } from "./movie-recap-range";
+import { renderSnapshot, writeMovieRecapScript, type RecapColumnSnapshot } from "./movie-recap-episode";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   movieRecapSubtitleStyle,
@@ -37,11 +37,10 @@ import {
   movieRecapPacing,
   MOVIE_RECAP_PLAYBACK_SPEED,
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
-  MOVIE_RECAP_NARRATION_SAMPLE_RATE,
   MOVIE_RECAP_TARGET_FPS,
   MOVIE_RECAP_TIMELINE_WARNING_FRAME_THRESHOLD,
 } from "./constants/movie-recap";
-import type { MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
+import type { MovieRecapEpisode, MovieRecapNarrationSegment, MovieRecapProject, MovieRecapRenderAnalysis, MovieRecapRenderShot, MovieRecapRenderStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
 
 
@@ -555,37 +554,29 @@ async function loadRenderAnalysis(project: MovieRecapProject): Promise<MovieReca
 export async function runMovieRecapRender(
   db: Db,
   project: MovieRecapProject,
-  { mock = false, silentTiming = false, range }: {
+  { mock = false, silentTiming = false, episode, previous }: {
     mock?: boolean;
     silentTiming?: boolean;
-    range?: { id: string; startBeat: number; endBeat: number };
+    // `project.renderScript` is already the episode's (episodeProject()).
+    episode?: MovieRecapEpisode;
+    // Pre-claim render columns, put back when an episode render ends.
+    previous?: RecapColumnSnapshot;
   } = {}
 ) {
   const controller = new AbortController();
   activeRenders.set(project.id, controller);
   const signal = controller.signal;
   const workDir = await mkdtemp(path.join(tmpdir(), "movie-recap-"));
-  const previousRenderState = {
-    render_status: project.renderStatus,
-    render_is_mock: project.renderIsMock,
-    render_error: project.renderError,
-    render_stage: project.renderStage,
-    render_progress_current: project.renderProgressCurrent,
-    render_progress_total: project.renderProgressTotal,
-    render_started_at: project.renderStartedAt,
-    render_completed_at: project.renderCompletedAt,
-  };
-  let rangeOutputKey: string | null = null;
+  const previousRenderState = previous ?? renderSnapshot(project);
+  let episodeOutputKey: string | null = null;
   let timelineWarning: string | null = null;
   const markFailed = async (error: string) => {
-    if (range) {
-      await db.from("movie_recap_range_renders").update({
-        status: "failed", error: trimFailureMessage(error), warning: null,
-        output_object_key: null, output_url: null, duration_seconds: null,
-        updated_at: new Date().toISOString(),
-      }).eq("id", range.id);
+    if (episode) {
+      await db.from("movie_recap_episodes").update({
+        render_status: "failed", render_error: trimFailureMessage(error), updated_at: new Date().toISOString(),
+      }).eq("id", episode.id);
       await db.from("movie_recap_projects").update(previousRenderState).eq("id", project.id);
-      if (rangeOutputKey) await deleteObject(rangeOutputKey).catch(() => undefined);
+      if (episodeOutputKey) await deleteObject(episodeOutputKey).catch(() => undefined);
       return;
     }
     await db
@@ -760,19 +751,7 @@ export async function runMovieRecapRender(
           narrationRate,
           videoSpeed,
         }));
-        await db.from("movie_recap_projects").update({ render_script: narration }).eq("id", project.id);
-      }
-      if (range) {
-        const selected = selectMovieRecapBeatRange(narration, master.timings, range.startBeat, range.endBeat);
-        const rangePath = path.join(workDir, "range-narration.wav");
-        await run(FFMPEG, [
-          "-y", "-i", master.path,
-          "-af", `atrim=start=${selected.startS.toFixed(6)}:end=${selected.endS.toFixed(6)},asetpts=PTS-STARTPTS`,
-          "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", rangePath,
-        ], signal);
-        narrationPath = rangePath;
-        narrationTimings = selected.timings;
-        narration = selected.narration;
+        await writeMovieRecapScript(db, project.id, episode?.id ?? null, narration);
       }
       await setProgress(db, project.id, "synthesizing_narration", narration.length, narration.length);
       console.log(
@@ -989,7 +968,7 @@ export async function runMovieRecapRender(
         encodedFrameBudget += slotFrames;
         segmentPaths.push(segPath);
         shotLog.push({
-          beat: range ? range.startBeat + i : i + 1,
+          beat: episode ? episode.startBeat + i : i + 1,
           shot: shotIndex + 1,
           slotS: round2(slotS),
           sourceStartS: round2(shot.sourceStartS),
@@ -1103,19 +1082,27 @@ export async function runMovieRecapRender(
 
     await setProgress(db, project.id, "uploading");
     const outputDurationS = await probeDurationS(outputPath, signal);
-    if (range) {
-      rangeOutputKey = movieRecapObjectKey(project.id, "render", `beats-${range.startBeat}-${range.endBeat}-${range.id}.mp4`);
-      const outputUrl = await putObject(rangeOutputKey, await readFile(outputPath), "video/mp4");
-      const { error: saveRangeError } = await db.from("movie_recap_range_renders").update({
-        status: "done",
-        error: null,
-        warning: timelineWarning,
-        output_object_key: rangeOutputKey,
+    if (episode) {
+      episodeOutputKey = movieRecapObjectKey(project.id, "render", `episode-${episode.id}.mp4`);
+      const outputUrl = await putObject(episodeOutputKey, await readFile(outputPath), "video/mp4");
+      const { data: before } = await db.from("movie_recap_episodes").select("output_object_key").eq("id", episode.id).single();
+      const now = new Date().toISOString();
+      const { error: saveEpisodeError } = await db.from("movie_recap_episodes").update({
+        render_status: "done",
+        render_error: null,
+        render_warning: timelineWarning,
+        output_object_key: episodeOutputKey,
         output_url: outputUrl,
         duration_seconds: outputDurationS ?? plannedVideoDurationS,
-        updated_at: new Date().toISOString(),
-      }).eq("id", range.id);
-      if (saveRangeError) throw new Error(saveRangeError.message);
+        rendered_at: now,
+        updated_at: now,
+      }).eq("id", episode.id);
+      if (saveEpisodeError) throw new Error(saveEpisodeError.message);
+      const savedKey = episodeOutputKey;
+      episodeOutputKey = null;
+      if (before?.output_object_key && before.output_object_key !== savedKey) {
+        await deleteObject(before.output_object_key).catch(() => undefined);
+      }
       const { error: restoreError } = await db.from("movie_recap_projects")
         .update(previousRenderState).eq("id", project.id);
       if (restoreError) throw new Error(restoreError.message);

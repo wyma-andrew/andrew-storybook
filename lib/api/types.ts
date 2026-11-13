@@ -54,17 +54,24 @@ export type MovieRecapRenderLog = {
   narrationRate?: number;
 };
 
-export type MovieRecapRangeRender = {
+export type MovieRecapEpisode = {
   id: string;
   projectId: string;
+  name: string;
+  // 1-based, inclusive, counted over the Transcript story's timestamped blocks.
   startBeat: number;
   endBeat: number;
-  status: "running" | "done" | "failed";
-  error: string | null;
-  warning: string | null;
+  renderScript: MovieRecapNarrationSegment[] | null;
+  scriptStatus: "idle" | "running" | "ready" | "failed";
+  scriptError: string | null;
+  renderStatus: "idle" | "running" | "done" | "failed";
+  renderError: string | null;
+  renderWarning: string | null;
   outputUrl: string | null;
   durationSeconds: number | null;
+  renderedAt: string | null;
   createdAt: string;
+  updatedAt: string;
 };
 
 export type MovieRecapSocialPost = {
@@ -206,6 +213,10 @@ export type MovieRecapLogoTemplate = {
   createdAt: string;
   updatedAt: string;
 };
+
+// Which speech worker reads a source with no usable subtitle track: FunASR for
+// Chinese, self-hosted Whisper (language auto-detected) for anything else.
+export type MovieRecapSpeechLanguage = "chinese" | "other";
 
 // One line of the source's dialogue, timed against the ORIGINAL source video.
 export type MovieRecapTranscriptSegment = { start: number; end: number; text: string };

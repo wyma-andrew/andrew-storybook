@@ -12,12 +12,12 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
 
   const cancelled = cancelMovieRecapRender(data.id);
   if (!cancelled && data.render_status === "running") {
-    const { data: range } = await db.from("movie_recap_range_renders").select("id")
-      .eq("project_id", id).eq("status", "running").maybeSingle();
-    if (range) {
-      await db.from("movie_recap_range_renders").update({
-        status: "failed", error: "Cancelled.", updated_at: new Date().toISOString(),
-      }).eq("id", range.id);
+    const { data: episode } = await db.from("movie_recap_episodes").select("id")
+      .eq("project_id", id).eq("render_status", "running").maybeSingle();
+    if (episode) {
+      await db.from("movie_recap_episodes").update({
+        render_status: "failed", render_error: "Cancelled.", updated_at: new Date().toISOString(),
+      }).eq("id", episode.id);
       await db.from("movie_recap_projects").update({
         render_status: data.render_output_url ? "done" : "idle",
         render_error: null,

@@ -9,23 +9,32 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const db = await supabaseRoute();
 
+  // An episode run borrowed the project's columns, so cancelling it puts them
+  // back to what the main script says rather than leaving "Cancelled." there.
+  const { data: episode } = await db.from("movie_recap_episodes").select("id")
+    .eq("project_id", id).eq("script_status", "running").maybeSingle();
+  const { data: current } = await db.from("movie_recap_projects").select("render_script").eq("id", id).maybeSingle();
+  const mainScriptBuilt = Array.isArray(current?.render_script) && current.render_script.length > 0;
+
   // The row is written FIRST and the controller told second. A cancel that
   // cannot reach this process's controller — an older module instance after a
   // hot reload, or a restart — still has to stop the run, and the run checks the
   // row between beats for exactly that. Same fix as the render's cancel.
   const { data, error } = await db
     .from("movie_recap_projects")
-    .update({
-      script_status: "failed",
-      script_error: "Cancelled.",
-      script_progress_current: null,
-      script_progress_total: null,
-    })
+    .update(episode
+      ? { script_status: mainScriptBuilt ? "ready" : "idle", script_error: null, script_stage: null, script_progress_current: null, script_progress_total: null }
+      : { script_status: "failed", script_error: "Cancelled.", script_progress_current: null, script_progress_total: null })
     .eq("id", id)
     .eq("script_status", "running")
     .select("*")
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (episode) {
+    await db.from("movie_recap_episodes").update({
+      script_status: "failed", script_error: "Cancelled.", updated_at: new Date().toISOString(),
+    }).eq("id", episode.id).eq("script_status", "running");
+  }
   cancelMovieRecapScript(id);
   if (!data) {
     const { data: row, error: readError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();

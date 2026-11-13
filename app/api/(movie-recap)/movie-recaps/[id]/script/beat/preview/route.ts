@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { mapMovieRecapProject } from "@/lib/api/map";
+import { episodeProject } from "@/lib/movie-recap-episode";
+import { loadMovieRecapTarget } from "@/lib/movie-recap-episode-target";
 import { narrationClip, renderNarrationClipAtConfiguredRate } from "@/lib/movie-recap-narration";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { resolveMovieRecapVoice } from "@/lib/tts/voices";
@@ -19,10 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const db = await supabaseRoute();
-  const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-
-  const project = mapMovieRecapProject(row);
+  const target = await loadMovieRecapTarget(db, id, body?.episodeId);
+  if ("error" in target) return NextResponse.json({ error: target.error }, { status: 404 });
+  const { episode } = target;
+  const project = episode ? episodeProject(target.project, episode) : target.project;
   const beat = project.renderScript?.[index];
   if (!beat) return NextResponse.json({ error: "That beat is not in the saved script." }, { status: 404 });
   if (project.scriptStatus === "running" || project.renderStatus === "running") {

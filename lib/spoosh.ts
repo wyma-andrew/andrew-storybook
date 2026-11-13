@@ -5,7 +5,7 @@ import { create } from "@spoosh/react";
 import { invalidationPlugin } from "@spoosh/plugin-invalidation";
 import { cachePlugin } from "@spoosh/plugin-cache";
 import { optimisticPlugin } from "@spoosh/plugin-optimistic";
-import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapRangeRender, MovieRecapSocialPost } from "@/lib/api/types";
+import type { AdminUser, Story, StoryListItem, Chapter, ChapterAsset, ReferenceImage, ChapterImage, Scene, Shot, VoiceOverSegment, Me, MovieRecapLogoTemplate, MovieRecapProgress, MovieRecapProject, MovieRecapProjectPatch, MovieRecapRenderLog, MovieRecapEpisode, MovieRecapSocialPost, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import type { CoverageMode } from "@/lib/constants/coverage-modes";
 import type { CharacterLook } from "@/lib/character-looks";
 import type { UserFeatures } from "@/lib/constants/features";
@@ -240,7 +240,7 @@ export type ApiSchema = {
   // stays open for the whole run, and the browser polls the project row for its
   // stage meanwhile. storyOnly: redo the parked Burmese retelling instead.
   "movie-recaps/:id/transcript": {
-    POST: { data: MovieRecapProject; body: { storyOnly?: boolean; dialogueOnly?: boolean } };
+    POST: { data: MovieRecapProject; body: { storyOnly?: boolean; dialogueOnly?: boolean; language?: MovieRecapSpeechLanguage } };
   };
   "movie-recaps/:id/transcript/cancel": {
     POST: { data: { cancelled: boolean } };
@@ -249,8 +249,10 @@ export type ApiSchema = {
   // divides the story across the film's own scenes, and speaks every beat so an
   // overrun is a number the user can act on. Synchronous like the render, with
   // the browser polling the project row for its stage.
+  // `episodeId` on these script and render routes targets that episode's own
+  // beats and output; the response then carries the episode too.
   "movie-recaps/:id/script": {
-    POST: { data: MovieRecapProject; body?: { revoice?: boolean } };
+    POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode | null }; body?: { revoice?: boolean; episodeId?: string } };
   };
   "movie-recaps/:id/script/cancel": {
     POST: { data: MovieRecapProject };
@@ -259,12 +261,12 @@ export type ApiSchema = {
   // and rebuilds the combined narration master from cached neighbours. The
   // legacy `measure: false` path remains server-compatible but has no UI action.
   "movie-recaps/:id/script/beat": {
-    POST: { data: MovieRecapProject; body: { index: number; text: string; measure?: boolean } };
+    POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode }; body: { index: number; text: string; measure?: boolean; episodeId?: string } };
   };
   "movie-recaps/:id/script/beat/preview": {
     POST: {
       data: { audioBase64: string; contentType: "audio/wav"; durationSeconds: number; cached: boolean };
-      body: { index: number };
+      body: { index: number; episodeId?: string };
     };
   };
   // Writes SEVERAL edited beats back in one go — the paste half of the copyable
@@ -272,12 +274,12 @@ export type ApiSchema = {
   // rebuilt from the Narrative Script panel.
   "movie-recaps/:id/script/beats": {
     POST: {
-      data: MovieRecapProject & { changed: number };
-      body: { edits: { index: number; text: string }[] };
+      data: MovieRecapProject & { changed: number; episode?: MovieRecapEpisode };
+      body: { edits: { index: number; text: string }[]; episodeId?: string };
     };
   };
   "movie-recaps/:id/script/scene-plan": {
-    POST: { data: { plan: MovieRecapSceneTimingPlan; measured: boolean } };
+    POST: { data: { plan: MovieRecapSceneTimingPlan; measured: boolean }; body?: { episodeId?: string } };
   };
   "movie-recaps/:id/render": {
     // mock: skip the paid AI steps and render canned narration instead — for
@@ -287,22 +289,19 @@ export type ApiSchema = {
     // localStorage. Null when the render failed — and when it was queued on
     // GitHub Actions (renderStatus comes back "running"; poll the row).
     POST: {
-      data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null };
-      body: { mock?: boolean };
+      data: MovieRecapProject & { renderLog: MovieRecapRenderLog | null; episode?: MovieRecapEpisode };
+      body: { mock?: boolean; episodeId?: string };
     };
   };
-  "movie-recaps/:id/render/ranges": {
-    GET: { data: MovieRecapRangeRender[] };
-    POST: {
-      // `queued`: handed to GitHub Actions; the range row is still "running".
-      data: { project: MovieRecapProject; range: MovieRecapRangeRender; renderLog: MovieRecapRenderLog | null; queued?: boolean };
-      body: { startBeat: number; endBeat: number };
-    };
+  "movie-recaps/:id/episodes": {
+    GET: { data: MovieRecapEpisode[] };
+    POST: { data: MovieRecapEpisode; body: { name: string; startBeat: number; endBeat: number } };
   };
-  "movie-recaps/:id/render/ranges/:rangeId": {
+  "movie-recaps/:id/episodes/:episodeId": {
+    PATCH: { data: MovieRecapEpisode; body: { name: string } };
     DELETE: { data: null };
   };
-  "movie-recaps/:id/render/ranges/:rangeId/download": {
+  "movie-recaps/:id/episodes/:episodeId/download": {
     GET: { data: { url: string } };
   };
   "movie-recaps/:id/render/download": {

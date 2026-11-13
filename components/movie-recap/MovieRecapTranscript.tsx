@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { AudioLines, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, ScrollText, Sparkles, Upload } from "lucide-react";
-import { ConfirmDialog, Dialog, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
-import type { MovieRecapProject } from "@/lib/api/types";
+import { Dialog, Radio, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import type { MovieRecapProject, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
 import { VOICES } from "@/lib/tts/voices";
 import { VoicePicker } from "@/components/voice/VoicePicker";
@@ -300,7 +300,7 @@ export function MovieRecapTranscript({
     recapShare?: number | null;
     voiceProfileId?: MovieRecapProject["voiceProfileId"];
   }) => void;
-  onReadSource: (dialogueOnly: boolean) => void;
+  onReadSource: (dialogueOnly: boolean, language: MovieRecapSpeechLanguage) => void;
   onCancelRead: () => void;
   cancellingRead: boolean;
 }) {
@@ -313,17 +313,18 @@ export function MovieRecapTranscript({
   const text = project.transcriptText ?? "";
   const script = project.transcriptScript ?? "";
   const story = project.transcriptStory ?? "";
+  // Asked every time: the speech worker depends on the film's language, and a
+  // subtitle track, when the source has one, is used whichever is chosen.
   function confirmReadSource(dialogueOnly: boolean) {
-    if (!text.trim()) {
-      onReadSource(dialogueOnly);
-      return;
-    }
-    ConfirmDialog.show({
-      title: "Replace the source transcript?",
-      content: "The automatic read writes a new source transcript over the one in this step. The Burmese story is not touched.",
-      confirmButtonLabel: "Read and replace",
-      cancelButtonLabel: "Keep current",
-      onConfirm: () => onReadSource(dialogueOnly),
+    Dialog.show({
+      className: "max-w-md",
+      content: ({ dismiss }) => (
+        <SpeechLanguageDialog
+          replacing={Boolean(text.trim())}
+          dismiss={dismiss}
+          onGenerate={(language) => onReadSource(dialogueOnly, language)}
+        />
+      ),
     });
   }
 
@@ -339,7 +340,8 @@ export function MovieRecapTranscript({
   return (
     <div>
       <h2 className="mb-3 text-lg font-semibold">Transcript</h2>
-      <div className="mb-6 flex flex-col rounded-xl border border-line md:flex-row">
+      <div className="mb-6">
+      <div className="flex flex-col rounded-xl border border-line md:flex-row">
         <div className="flex items-center rounded-t-xl border-b border-line bg-sunken p-3 md:w-56 md:rounded-l-xl md:rounded-tr-none md:shrink-0 md:border-r md:border-b-0">
           <Select value={mode} onChange={(value) => setMode(value as TranscriptMode)} wrapperClassName="w-full !self-center" className="!min-h-[38px]" aria-label="Source type">
             <SelectOption value="manual" label="Recap Video" />
@@ -398,14 +400,6 @@ export function MovieRecapTranscript({
                 </LoadingButton>
                 {readingAudio && <LoadingButton variant="danger" loading={cancellingRead} onClick={onCancelRead}>Cancel</LoadingButton>}
               </div>
-              {project.transcriptDialogueOnly && project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && (
-                <div className="mt-3">
-                  <MovieRecapTranscriptProgress project={project} />
-                </div>
-              )}
-              {project.transcriptDialogueOnly && project.transcriptStatus === "failed" && project.transcriptError && (
-                <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
-              )}
             </>
           ) : (
             <>
@@ -420,17 +414,20 @@ export function MovieRecapTranscript({
                   prompt → paste the recap script → copy the clip prompt → paste its result into the Burmese story.
                 </p>
               </div>
-              {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly && !project.transcriptDialogueOnly && (
-                <div className="mt-3">
-                  <MovieRecapTranscriptProgress project={project} />
-                </div>
-              )}
-              {project.transcriptStatus === "failed" && project.transcriptError && !project.transcriptDialogueOnly && (
-                <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
-              )}
             </>
           )}
         </div>
+      </div>
+      {project.transcriptStatus !== "idle" && !project.transcriptStoryOnly
+        && project.transcriptDialogueOnly === (mode === "manual") && (
+        <div className="mt-3">
+          <MovieRecapTranscriptProgress project={project} />
+        </div>
+      )}
+      {project.transcriptStatus === "failed" && project.transcriptError
+        && project.transcriptDialogueOnly === (mode === "manual") && (
+        <p className="mt-3 text-sm text-danger">{project.transcriptError}</p>
+      )}
       </div>
 
       <div className="space-y-5">
@@ -553,6 +550,47 @@ export function MovieRecapTranscript({
           <div className="mb-3 text-sm font-medium">Narration voice</div>
           <VoicePicker voices={VOICES} value={project.voiceProfileId} onChange={(id) => onChange({ voiceProfileId: id })} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SpeechLanguageDialog({
+  replacing,
+  dismiss,
+  onGenerate,
+}: {
+  replacing: boolean;
+  dismiss: () => void;
+  onGenerate: (language: MovieRecapSpeechLanguage) => void;
+}) {
+  const [language, setLanguage] = useState<MovieRecapSpeechLanguage>("chinese");
+  const options: { value: MovieRecapSpeechLanguage; label: string; hint: string }[] = [
+    { value: "chinese", label: "Chinese", hint: "FunASR" },
+    { value: "other", label: "Other language", hint: "Whisper, language detected automatically" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold">What language is spoken?</h3>
+        <p className="mt-1 text-sm text-fg-2">
+          {replacing
+            ? "The automatic read writes a new source transcript over the one in this step. The Burmese story is not touched."
+            : "Picks the speech recognizer for the video's audio."}
+        </p>
+      </div>
+      <div className="space-y-2">
+        {options.map((option) => (
+          <label key={option.value} className="flex cursor-pointer items-center gap-3 rounded-lg border border-line px-3 py-2.5 hover:bg-panel-2">
+            <Radio name="speech-language" value={option.value} checked={language === option.value} onChange={() => setLanguage(option.value)} />
+            <span className="text-sm font-medium">{option.label}</span>
+            <span className="text-xs text-fg-3">{option.hint}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2">
+        <AppButton variant="secondary" onClick={dismiss}>Cancel</AppButton>
+        <AppButton variant="primary" onClick={() => { dismiss(); onGenerate(language); }}>Generate</AppButton>
       </div>
     </div>
   );

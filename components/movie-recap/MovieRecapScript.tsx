@@ -28,6 +28,7 @@ import { MovieRecapRenderProgress } from "./MovieRecapRenderProgress";
  */
 export function MovieRecapScript({
   project,
+  episodeId,
   onBuild,
   onRevoice,
   onSave,
@@ -41,6 +42,8 @@ export function MovieRecapScript({
   cancelling,
 }: {
   project: MovieRecapProject;
+  /** Set when `project.renderScript` is that episode's beats. */
+  episodeId?: string;
   onBuild: () => void;
   onRevoice: () => void;
   /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
@@ -136,7 +139,7 @@ export function MovieRecapScript({
 
   function previewKey(index: number) {
     const beat = script[index];
-    return beat ? `${project.voiceProfileId}:${index}:${beat.text}` : null;
+    return beat ? `${project.voiceProfileId}:${episodeId ?? ""}:${index}:${beat.text}` : null;
   }
 
   async function loadBeatPreview(index: number, reportError: boolean) {
@@ -150,7 +153,7 @@ export function MovieRecapScript({
     const request = (async () => {
       const result = await apiClient("movie-recaps/:id/script/beat/preview").POST({
         params: { id: project.id },
-        body: { index },
+        body: { index, episodeId },
       });
       if (result.error || !result.data) {
         if (reportError) toast.error(result.error?.error ?? "Could not prepare that beat preview.");
@@ -242,11 +245,11 @@ export function MovieRecapScript({
 
   useEffect(() => {
     if (!script.length) return;
-    const key = `${project.id}:${scriptSignature}`;
+    const key = `${project.id}:${episodeId ?? ""}:${scriptSignature}`;
     if (autoPlanKey.current === key) return;
     autoPlanKey.current = key;
     void apiClient("movie-recaps/:id/script/scene-plan")
-      .POST({ params: { id: project.id } })
+      .POST({ params: { id: project.id }, body: { episodeId } })
       .then((result) => {
         if (!result.error && result.data) {
           setScenePlan(result.data.plan);
@@ -254,7 +257,7 @@ export function MovieRecapScript({
           setScenePlanOpen(false);
         }
       });
-  }, [project.id, script.length, scriptSignature]);
+  }, [project.id, episodeId, script.length, scriptSignature]);
 
   return (
     <>

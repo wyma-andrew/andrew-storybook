@@ -13,6 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // no download, no second Whisper bill.
   const storyOnly = body?.storyOnly === true;
   const dialogueOnly = !storyOnly && body?.dialogueOnly === true;
+  const language = body?.language === "other" ? "other" : "chinese";
   const db = await supabaseRoute();
   const { data: row, error } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // Synchronous, like the render: it writes its own status onto the row, which
   // is what the browser polls while the request stays open.
-  await runMovieRecapTranscript(db, project, { storyOnly, dialogueOnly });
+  await runMovieRecapTranscript(db, project, { storyOnly, dialogueOnly, language });
 
   const { data, error: refetchError } = await db.from("movie_recap_projects").select("*").eq("id", id).single();
   if (refetchError) return NextResponse.json({ error: refetchError.message }, { status: 500 });

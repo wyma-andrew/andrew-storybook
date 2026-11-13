@@ -105,7 +105,7 @@ after about 13 minutes of source):
 
 ## Movie Recap jobs on GitHub Actions
 
-The narration build (script) and the final render — full, mock and beat-range —
+The narration build (script) and the final render — default, mock and episode —
 can run on GitHub Actions instead of inside the Next server
 (`lib/recap-job-dispatch.ts`, `.github/workflows/recap-job.yml`,
 `scripts/recap-job.ts`). The route claims the row as usual, dispatches the

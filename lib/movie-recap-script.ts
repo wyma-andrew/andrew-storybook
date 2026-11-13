@@ -12,6 +12,7 @@ import {
   replaceNarrationMasterBeat,
 } from "./movie-recap-narration";
 import { trimFailureMessage } from "./movie-recap";
+import { writeMovieRecapScript, type RecapColumnSnapshot } from "./movie-recap-episode";
 import { deleteObject, movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
@@ -19,6 +20,7 @@ import {
   MOVIE_RECAP_PLAYBACK_SPEED,
 } from "./constants/movie-recap";
 import type {
+  MovieRecapEpisode,
   MovieRecapNarrationSegment,
   MovieRecapProject,
   MovieRecapRenderAnalysis,
@@ -96,7 +98,14 @@ async function cancelledElsewhere(db: Db, projectId: string) {
 // `revoice` keeps the beats as they are — text, edits, footage — and only speaks
 // them again with the project's current voice. For a voice change; Resync is the
 // path that rebuilds beats from the story.
-export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { revoice = false }: { revoice?: boolean } = {}) {
+// With `episode`, only its beat range of the story is built and the result goes
+// to the episode row; `previous` is the project's pre-claim script columns,
+// restored when the run ends.
+export async function runMovieRecapScript(
+  db: Db,
+  project: MovieRecapProject,
+  { revoice = false, episode, previous }: { revoice?: boolean; episode?: MovieRecapEpisode; previous?: RecapColumnSnapshot } = {}
+) {
   const controller = new AbortController();
   activeScriptRuns.set(project.id, controller);
   const signal = controller.signal;
@@ -108,6 +117,23 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
     if (revoice) {
       if (!project.renderScript?.length) throw new Error("There is no script to re-voice yet. Build it first.");
       narration = project.renderScript.map((beat) => ({ ...beat, audioStale: undefined }));
+    } else if (episode) {
+      const blocks = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds)
+        .slice(episode.startBeat - 1, episode.endBeat);
+      if (blocks.length !== episode.endBeat - episode.startBeat + 1) {
+        throw new Error(`The Transcript story no longer has beats ${episode.startBeat}–${episode.endBeat}.`);
+      }
+      // No source download: the letterbox crop is source-wide, and a render
+      // without one measures it itself.
+      await setStage(db, project.id, "writing_script", blocks.length, blocks.length);
+      narration = blocks.map((block, i) => ({
+        shots: [{ sourceStartS: block.startS, sourceEndS: block.endS }],
+        text: block.text,
+        originalText: block.text,
+        blockIndex: episode.startBeat - 1 + i,
+        blockStartS: block.startS,
+        blockEndS: block.endS,
+      }));
     } else {
       const blocks = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds);
       if (!blocks.length) {
@@ -177,10 +203,21 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
     });
 
     console.log(
-      `[MovieRecapScript] project=${project.id} ${revoice ? "re-voiced" : "built"} ` +
+      `[MovieRecapScript] project=${project.id}${episode ? ` episode=${episode.id}` : ""} ${revoice ? "re-voiced" : "built"} ` +
         `${narration.length} beat(s); ${cacheHits} clip(s) from cache.`
     );
 
+    if (episode) {
+      const { error: saveError } = await db.from("movie_recap_episodes").update({
+        script_status: "ready",
+        script_error: null,
+        render_script: narration satisfies MovieRecapNarrationSegment[],
+        updated_at: new Date().toISOString(),
+      }).eq("id", episode.id);
+      if (saveError) throw new Error(saveError.message);
+      await db.from("movie_recap_projects").update(previous ?? {}).eq("id", project.id);
+      return narration;
+    }
     await db
       .from("movie_recap_projects")
       .update({
@@ -196,6 +233,14 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
     return narration;
   } catch (error) {
     const cancelled = signal.aborted || (error instanceof Error && error.name === "AbortError");
+    const message = trimFailureMessage(cancelled ? "Cancelled." : error instanceof Error ? error.message : "The script run failed.");
+    if (episode) {
+      await db.from("movie_recap_episodes").update({
+        script_status: "failed", script_error: message, updated_at: new Date().toISOString(),
+      }).eq("id", episode.id);
+      await db.from("movie_recap_projects").update(previous ?? {}).eq("id", project.id);
+      return null;
+    }
     await db
       .from("movie_recap_projects")
       .update({
@@ -205,7 +250,7 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
         // once the run is over.
         script_progress_current: null,
         script_progress_total: null,
-        script_error: trimFailureMessage(cancelled ? "Cancelled." : error instanceof Error ? error.message : "The script run failed."),
+        script_error: message,
       })
       .eq("id", project.id);
     return null;
@@ -230,7 +275,8 @@ export async function runMovieRecapScript(db: Db, project: MovieRecapProject, { 
 export async function saveMovieRecapBeats(
   db: Db,
   project: MovieRecapProject,
-  edits: { index: number; text: string }[]
+  edits: { index: number; text: string }[],
+  episodeId: string | null = null
 ) {
   const script = project.renderScript ?? [];
   if (!script.length) throw new Error("There is no script to edit.");
@@ -242,10 +288,7 @@ export async function saveMovieRecapBeats(
   const changed = updated.reduce((total, beat, index) => total + (beat === script[index] ? 0 : 1), 0);
   if (!changed) return { script, changed: 0 };
 
-  await db
-    .from("movie_recap_projects")
-    .update({ render_script: updated satisfies MovieRecapNarrationSegment[] })
-    .eq("id", project.id);
+  await writeMovieRecapScript(db, project.id, episodeId, updated);
   return { script: updated, changed };
 }
 
@@ -267,7 +310,7 @@ export async function saveMovieRecapBeat(
   project: MovieRecapProject,
   index: number,
   text: string,
-  { measure }: { measure: boolean }
+  { measure, episodeId = null }: { measure: boolean; episodeId?: string | null }
 ) {
   const script = project.renderScript ?? [];
   const beat = script[index];
@@ -338,13 +381,11 @@ export async function saveMovieRecapBeat(
         ...(i === index ? { audioStale: false } : {}),
       }));
     }
-    const { error } = await db
-      .from("movie_recap_projects")
-      .update({ render_script: updated satisfies MovieRecapNarrationSegment[] })
-      .eq("id", project.id);
-    if (error) throw new Error(error.message);
+    await writeMovieRecapScript(db, project.id, episodeId, updated);
 
-    if (supersededMaster) {
+    // Masters are content-addressed under the project, so an episode's old
+    // master can be the main script's or another episode's current one.
+    if (supersededMaster && !episodeId) {
       const voice = resolveMovieRecapVoice(project.voiceProfileId);
       const currentMaster = narrationMasterObjectKeys(
         project.id,

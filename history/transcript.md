@@ -4,6 +4,22 @@ Covers: `app/(app)/(transcript)/**`, `app/api/(transcript)/**`,
 `components/transcript/**`, `lib/transcript-*.ts`, `workers/whisper-mm/**`,
 and the `transcript_projects` migration.
 
+## 2026-11-13 — whisper-mm takes an optional `language` query
+
+**Decision:** the worker reads `?language=`; absent means `my`, so this feature
+is unchanged, and `auto` lets Whisper detect the language. Movie Recap's
+"Other language" read sends `auto` (see history/movie-recap.md, same date). The
+response's `language` is now the detected or requested one, not always `my`.
+
+**Consequence:** the deployed worker must be redeployed (`modal deploy
+workers/whisper-mm/modal_app.py`) before Movie Recap's Other read works; an old
+deployment ignores the query and transcribes as Burmese.
+
+**Trap:** the image no longer sets `XDG_CACHE_HOME=/cache`. With it, the
+redeploy failed at container start with "cannot mount volume on non-empty path:
+/cache" — something in the image build wrote there. The model already loads
+with `download_root` under the volume, so nothing else needed that variable.
+
 ## 2026-11-05 — The poller reads progress columns, not the whole row
 
 **Decision, approved by the user:** the editor's tick reads

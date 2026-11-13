@@ -47,7 +47,7 @@ app/
     chapter-asset-images/      Edit/delete chapter location images
     shots/                     Store/clear user prompt overrides
     voice-overs/               Edit narration text overrides and shot ranges
-    (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, full and beat-range render
+    (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, episodes, default and episode render
     (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
     (transcript)/transcript-projects/ Burmese video upload and speech-to-text
     labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
@@ -101,7 +101,7 @@ lib/
 supabase/migrations/           Ordered, authoritative database schema history
 workers/voice-lab/             Optional Python VoxCPM2 inference service for lab tests
 workers/funasr/                FunASR Paraformer-zh speech worker (Chinese, character stamps)
-workers/whisper-mm/            Whisper large-v3 speech worker (Burmese)
+workers/whisper-mm/            Whisper large-v3 speech worker (Burmese; auto language for Movie Recap "Other")
 history/                       Feature decisions and rejected alternatives
 demo/                          Static visual references; not part of the app
 proxy.ts                       Session refresh and page-route auth redirects
@@ -301,13 +301,16 @@ Meta pulls the MP4 from a presigned R2 URL. Each scheduled post is a
 `movie_recap_social_posts` row that Review lists with edit/cancel; listing re-reads
 scheduled rows' status from the Graph API.
 
-Review can also render an inclusive start/end beat range as a standalone MP4.
-It reuses the saved narration master, trims audio at the selected beat
-boundaries, and renders only those beats with captions rebased to zero. These
-outputs live in `movie_recap_range_renders` and R2, separate from the full
-render columns. Full and range renders share one project render claim, progress,
-and cancellation. Timeline mismatches continue to export and persist a warning
-with the output for Review. Mock Preview remains independent of the Full/Range selector.
+Narrative Script has a Normal / Episode mode (`?mode=`, `?episode=`). An
+episode (`movie_recap_episodes`, `movie-recaps/:id/episodes`) is a named,
+inclusive range of Transcript-story beats with its own narration script and
+one output video. Building it speaks only that range; its beats are edited,
+re-built and previewed through the same script routes with `episodeId`, and
+never touch the Normal script. Episode script and render runs borrow the
+project's `script_*` / `render_*` columns as claim and progress, then restore
+the pre-claim values and write the outcome to the episode row
+(`lib/movie-recap-episode.ts`). Customize is shared. Review picks Default or an
+episode to render; Mock Preview is Default only.
 
 The Review step also has a **Render Silent Timing Test** diagnostic. It bypasses
 the script and processes the complete original source as one continuous cadence:
@@ -581,7 +584,7 @@ auth.users
 
 auth.users
   -> movie_recap_projects.owner_id
-       -> movie_recap_range_renders.project_id
+       -> movie_recap_episodes.project_id
        -> movie_recap_social_posts.project_id
   -> translate_projects.owner_id
 
@@ -601,7 +604,8 @@ voice_over_segments.start_shot_id / end_shot_id -> shots.id
 | `voice_over_segments` | Anonymous narration snapshots, overrides, and inclusive shot ranges |
 | `prompt_lab_runs` | Prompt Lab sandbox runs (storyboard or asset extraction): prompts as sent, model, context, raw/parsed output, usage, optional source asset run |
 | `movie_recap_projects` | Recap source metadata, resumable upload state, configuration, and readiness |
-| `movie_recap_range_renders` | Saved output and beat bounds for standalone range renders |
+| `movie_recap_episodes` | Named beat ranges with their own narration script, run status, and one rendered MP4 |
+| `movie_recap_range_renders` | Legacy: rows from the removed beat-range render; nothing reads it |
 | `movie_recap_social_posts` | Facebook Reels scheduled from a full render: video id, caption, publish time, status |
 | `translate_projects` | Owned source upload, SRT, blur/subtitle settings, and rendered MP4 |
 
@@ -631,8 +635,8 @@ light theme, chosen by the user in the account menu (dark by default, OS
 preference deliberately ignored).
 
 Movie Recap projects support resumable source upload, playable preview,
-persisted settings/customization, transcript/script/render processing, full
-and saved beat-range video outputs, and output history.
+persisted settings/customization, transcript/script/render processing, default
+and per-episode video outputs, and output history.
 
 Translate projects persist a replaceable source video, original-language SRT, selectable
 original, speech-aligned, or imported translated timing, editable blur and subtitle placement, and a

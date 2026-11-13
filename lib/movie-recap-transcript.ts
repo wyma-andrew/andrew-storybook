@@ -6,11 +6,12 @@ import { describeMovieRecapTranscriptScenes, retellInBurmese, type TranscriptCas
 import { readSourceCaptions } from "./movie-recap-captions";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import { ASR_NOT_CONFIGURED, asrWorkerConfigured, transcribeWithAsrWorker } from "./asr-worker";
+import { transcribeWithWhisperWorker, WHISPER_MM_NOT_CONFIGURED, whisperWorkerConfigured } from "./transcript-worker";
 import { trimFailureMessage } from "./movie-recap";
 import { detectScenes, extractKeyframes } from "./movie-recap-scenes";
 import { buildAutoSourceTranscript, dialogueDuring, dropUnreliableSegments } from "./movie-recap-source-transcript";
 import { MOVIE_RECAP_KEYFRAMES_PER_SCENE } from "./constants/movie-recap";
-import type { MovieRecapProject, MovieRecapTranscriptStage } from "./api/types";
+import type { MovieRecapProject, MovieRecapSpeechLanguage, MovieRecapTranscriptStage } from "./api/types";
 import type { supabaseRoute } from "./supabase/route";
 
 type Db = Awaited<ReturnType<typeof supabaseRoute>>;
@@ -53,11 +54,14 @@ async function transcribeSource(
   localSource: string,
   workDir: string,
   onProgress: TranscriptReadProgress,
-  signal: AbortSignal
+  signal: AbortSignal,
+  language: MovieRecapSpeechLanguage
 ): Promise<TranscriptSegment[]> {
   // No paid fallback: an unconfigured worker is an error, not a reason to call
   // OpenAI's whisper-1 (see history/movie-recap.md).
-  if (!asrWorkerConfigured()) throw new Error(ASR_NOT_CONFIGURED);
+  if (language === "chinese" ? !asrWorkerConfigured() : !whisperWorkerConfigured()) {
+    throw new Error(language === "chinese" ? ASR_NOT_CONFIGURED : WHISPER_MM_NOT_CONFIGURED);
+  }
   await onProgress("extracting_audio");
   const audioPath = path.join(workDir, "audio.ogg");
   await run(
@@ -66,7 +70,9 @@ async function transcribeSource(
     signal
   );
   await onProgress("transcribing");
-  const { segments } = await transcribeWithAsrWorker(audioPath, { signal });
+  const segments = language === "chinese"
+    ? (await transcribeWithAsrWorker(audioPath, { signal })).segments
+    : await transcribeWithWhisperWorker(audioPath, { language: "auto", signal });
   return dropUnreliableSegments(segments).map((segment) => ({ start: segment.start, end: segment.end, text: segment.text }));
 }
 
@@ -82,7 +88,8 @@ export async function readSourceTranscript(
   workDir: string,
   durationSeconds: number,
   onProgress: TranscriptReadProgress,
-  signal: AbortSignal
+  signal: AbortSignal,
+  language: MovieRecapSpeechLanguage
 ): Promise<{ segments: TranscriptSegment[]; source: "captions" | "whisper" }> {
   await onProgress("reading_captions");
   const captions = await readSourceCaptions(FFMPEG, localSource, workDir, durationSeconds, signal);
@@ -93,7 +100,7 @@ export async function readSourceTranscript(
     );
     return { segments: captions.segments, source: "captions" };
   }
-  return { segments: await transcribeSource(localSource, workDir, onProgress, signal), source: "whisper" };
+  return { segments: await transcribeSource(localSource, workDir, onProgress, signal, language), source: "whisper" };
 }
 
 /**
@@ -218,7 +225,11 @@ async function readSourceScenes(
  * Burmese story is still the user's — see history/movie-recap.md. With
  * `storyOnly`, the parked retelling is redone from the stored transcript.
  */
-export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject, { storyOnly = false, dialogueOnly = false } = {}) {
+export async function runMovieRecapTranscript(
+  db: Db,
+  project: MovieRecapProject,
+  { storyOnly = false, dialogueOnly = false, language = "chinese" }: { storyOnly?: boolean; dialogueOnly?: boolean; language?: MovieRecapSpeechLanguage } = {}
+) {
   const controller = new AbortController();
   activeRuns.set(project.id, controller);
   const signal = controller.signal;
@@ -262,7 +273,7 @@ export async function runMovieRecapTranscript(db: Db, project: MovieRecapProject
     const localSource = path.join(workDir, "source.mp4");
     await downloadMovieRecapSource(project, localSource, { signal });
 
-    const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal);
+    const read = await readSourceTranscript(localSource, workDir, project.sourceDurationSeconds, setProgress, signal, language);
     const scenes = dialogueOnly ? [] : await readSourceScenes(localSource, workDir, read.segments, setProgress, signal);
     const text = buildAutoSourceTranscript(read.segments, scenes);
     if (!text) throw new Error(dialogueOnly ? "No speech was found in the source." : "Nothing was read from the source: no speech and no scene descriptions.");

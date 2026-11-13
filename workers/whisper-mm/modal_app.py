@@ -15,7 +15,6 @@ image = (
     # openai-whisper's setup.py imports pkg_resources, which newer setuptools
     # dropped; build against the pinned setuptools above instead of an isolated one.
     .pip_install("openai-whisper==20240930", extra_options="--no-build-isolation")
-    .env({"XDG_CACHE_HOME": CACHE})
 )
 
 with image.imports():
@@ -42,10 +41,12 @@ class WhisperMyanmar:
         # languages, and Burmese is one. See history/transcript.md.
         self.model = whisper.load_model("large-v3", device="cuda", download_root=f"{CACHE}/whisper")
 
-    def _transcribe(self, path: str) -> dict:
+    # language None lets Whisper detect it; Movie Recap's non-Chinese sources
+    # use that, the Burmese Transcript feature keeps "my".
+    def _transcribe(self, path: str, language: str | None) -> dict:
         result = self.model.transcribe(
             path,
-            language="my",
+            language=language,
             task="transcribe",
             fp16=True,
             # Conditioning on its own output is how one invented line gets
@@ -64,7 +65,7 @@ class WhisperMyanmar:
             for segment in result.get("segments", [])
             if segment["text"].strip()
         ]
-        return {"language": "my", "segments": segments}
+        return {"language": result.get("language", language), "segments": segments}
 
     @modal.fastapi_endpoint(method="POST")
     async def transcribe(self, request: Request):
@@ -77,4 +78,6 @@ class WhisperMyanmar:
         with tempfile.NamedTemporaryFile() as file:
             file.write(audio)
             file.flush()
-            return await asyncio.to_thread(self._transcribe, file.name)
+            requested = request.query_params.get("language", "my").strip() or "my"
+            language = None if requested == "auto" else requested
+            return await asyncio.to_thread(self._transcribe, file.name, language)

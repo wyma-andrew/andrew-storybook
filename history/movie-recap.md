@@ -3,10 +3,76 @@
 Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `app/api/(movie-recap)/movie-recaps/**`, `components/movie-recap/**`,
 `lib/constants/movie-recap.ts`, `lib/movie-recap.ts`,
-`lib/movie-recap-render.ts`, `lib/movie-recap-range.ts`, `lib/prompts/movie-recap-narration.ts`,
+`lib/movie-recap-render.ts`, `lib/movie-recap-episode.ts`, `lib/movie-recap-episode-target.ts`, `lib/prompts/movie-recap-narration.ts`,
 `lib/r2.ts`, `lib/facebook.ts`, `lib/constants/facebook.ts`, `app/api/facebook/**`, `app/api/(movie-recap)/movie-recap-social-posts/**`, `components/ui/FacebookLogo.tsx`, `lib/spoosh.ts`, `lib/tts/**`, `lib/recap-job-dispatch.ts`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
-`movie_recap_range_renders` and `movie_recap_social_posts` migrations.
+`movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
+
+## 2026-11-13 — Auto read asks Chinese or Other: FunASR or self-hosted Whisper
+
+**Decision, by the user:** both automatic reads (Recap Video's Auto-generate and
+Raw Video's Read source) open a dialog asking what language is spoken.
+**Chinese** uses FunASR on Modal (`ASR_WORKER_URL`), as before. **Other** uses
+the self-hosted Whisper large-v3 worker (`workers/whisper-mm`,
+`WHISPER_MM_WORKER_URL`) with the language auto-detected. The choice is per
+read and not stored. A usable subtitle track in the source is still read first
+whichever is chosen.
+
+**Why:** FunASR Paraformer-zh only understands Chinese; non-Chinese films had
+no working recognizer.
+
+**Rejected:** OpenAI `whisper-1` for Other — paid, and the 2026-10-01 "no
+OpenAI fallback" rule stands. Each choice fails with its own "not configured"
+error rather than falling back to the other worker.
+
+**Consequence:** `transcript_source` still says `"whisper"` for either worker.
+
+## 2026-11-13 — Episode mode replaces range render
+
+**Decision, requested by the user:** the Review Full/Range selector and the
+beat-range render are removed. Narrative Script instead has a **Normal /
+Episode** mode. An episode is a named, inclusive range of Transcript-story beats
+(chosen by beat number in a modal) that builds its **own** narration script:
+beat edits, Re Build, previews and Resync act on the episode only and never on
+the Normal script. Each episode keeps **one** output video; rendering again
+replaces it and deletes the old object. Customize is unchanged and shared.
+Review picks Default or an episode to render.
+
+**Why:** range render was not used in practice. It sliced the Normal script's
+master, so a range could not have its own wording or narration; an episode is
+what a range was standing in for.
+
+**How it runs:** an episode run borrows the project's `script_*` / `render_*`
+columns as its claim and progress (the pattern range render used), so one run
+per project, the existing poller and the GitHub Actions path all still hold.
+The route snapshots those columns before the claim; the run restores them at the
+end and writes the outcome to the episode row. Queued (Actions) runs send the
+snapshot as the `previous` input with `episode_id`. An episode build does not
+download the source: the letterbox crop is source-wide, and a render without one
+measures it.
+
+**Rejected:** cloning the project per episode (Customize would diverge and the
+shared source object would be at risk on delete); episodes with their own
+progress columns (a second poller and progress source for no gain).
+
+**Consequences a reader may mistake for bugs:**
+- While any episode run is going, the Normal view shows the script/render as
+  running too — it is the project's one claim.
+- Re Build on an episode beat never deletes the superseded narration master.
+  Masters are content-addressed under the project, so an episode's old master
+  can be the Normal script's or another episode's current one. Some R2 objects
+  leak; that was preferred to deleting live audio.
+- Episode beat numbers are fixed at creation. Editing the Transcript story later
+  can shift what those numbers point at; Resync re-reads the range as numbered
+  then, and fails if the story no longer has that many beats.
+- `movie_recap_range_renders` and its R2 videos were left in place on purpose
+  (user's choice); no code reads them.
+- The workflow is dispatched against `main`, so episode runs on Actions need the
+  updated `recap-job.yml` pushed first.
+
+**Supersedes:** 2026-09-25 "Review can render an inclusive beat range
+separately", "Refresh range results on user actions", the localStorage Full/Range
+selection, and the 2026-09-29 Range-selector layout entries.
 
 ## 2026-11-13 — Narration numbers are spelled out in Burmese words
 

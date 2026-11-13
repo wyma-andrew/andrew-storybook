@@ -14,28 +14,16 @@
 //
 // Off unless RECAP_JOB_RUNNER=github, so local dev keeps running in-process.
 
-import type { MovieRecapProject } from "@/lib/api/types";
+import type { RecapColumnSnapshot } from "@/lib/movie-recap-episode";
+
+// An episode run borrows the project's run columns and puts them back when it
+// ends. The worker only ever sees the row AFTER the claim ("running"), so the
+// route sends the pre-claim `previous` snapshot.
+type EpisodeScope = { episodeId?: undefined; previous?: undefined } | { episodeId: string; previous: RecapColumnSnapshot };
 
 export type RecapJob =
-  | { kind: "script"; projectId: string; revoice?: boolean }
-  | { kind: "render"; projectId: string; mock: boolean }
-  | {
-      kind: "range";
-      projectId: string;
-      rangeId: string;
-      startBeat: number;
-      endBeat: number;
-      // A range render puts the project's render columns back the way they were
-      // before its claim, success or failure. The worker only ever sees the row
-      // AFTER the claim ("running"), so the route sends the pre-claim snapshot.
-      previous: RecapRenderSnapshot;
-    };
-
-export type RecapRenderSnapshot = Pick<
-  MovieRecapProject,
-  | "renderStatus" | "renderIsMock" | "renderError" | "renderStage"
-  | "renderProgressCurrent" | "renderProgressTotal" | "renderStartedAt" | "renderCompletedAt"
->;
+  | ({ kind: "script"; projectId: string; revoice?: boolean } & EpisodeScope)
+  | ({ kind: "render"; projectId: string; mock: boolean } & EpisodeScope);
 
 export function remoteRecapJobsEnabled() {
   return process.env.RECAP_JOB_RUNNER === "github";
@@ -54,10 +42,8 @@ export async function dispatchRecapJob(job: RecapJob) {
   // Only when set: GitHub rejects an input the dispatched ref's workflow does
   // not declare, so a plain build must not depend on the revoice input existing.
   if (job.kind === "script" && job.revoice) inputs.revoice = "true";
-  if (job.kind === "range") {
-    inputs.range_id = job.rangeId;
-    inputs.start_beat = String(job.startBeat);
-    inputs.end_beat = String(job.endBeat);
+  if (job.episodeId) {
+    inputs.episode_id = job.episodeId;
     inputs.previous = JSON.stringify(job.previous);
   }
 

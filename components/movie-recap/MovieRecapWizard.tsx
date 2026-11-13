@@ -4,12 +4,12 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 import Link from "next/link";
 import Image from "next/image";
-import { Captions, Check, ChevronLeft, ChevronRight, Clapperboard, Crop, Droplet, MoreHorizontal, Pencil, Plus, RectangleHorizontal, RectangleVertical, Scissors, Square, Stamp, Trash2, Upload, X } from "lucide-react";
+import { Captions, Check, ChevronLeft, ChevronRight, Clapperboard, Crop, Droplet, MoreHorizontal, Pencil, Plus, RectangleHorizontal, RectangleVertical, Square, Stamp, Trash2, Upload, X } from "lucide-react";
 import { Alert, ConfirmDialog, Dialog, Input, Menu, MenuItem, MenuTrigger, Select, SelectOption, Switch, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Body, Crumb, TopBar, Wrap } from "@/components/ui/Layout";
-import type { MovieRecapProject, MovieRecapProjectPatch } from "@/lib/api/types";
+import type { MovieRecapEpisode, MovieRecapProject, MovieRecapProjectPatch, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import {
   MOVIE_RECAP_ASPECT_RATIOS,
   MOVIE_RECAP_ZOOM,
@@ -22,7 +22,9 @@ import {
 } from "@/lib/constants/movie-recap";
 import { clampBlurRect, formatBytes, formatDuration } from "@/lib/movie-recap";
 import { appendRenderHistory } from "@/lib/movie-recap-render-history";
+import { parseTimestampedBlocks } from "@/lib/movie-recap-manual-script";
 import { apiClient, useQueue, useRead, useWrite } from "@/lib/spoosh";
+import { EpisodeDialogContent, EpisodeToolbar, episodeLabel } from "./MovieRecapEpisodes";
 import { MovieRecapPreview } from "./MovieRecapPreview";
 import { MovieRecapRenderActions, MovieRecapRenderPlayer } from "./MovieRecapRenderPlayer";
 import { MovieRecapSocialPosts } from "./MovieRecapSocialPosts";
@@ -78,6 +80,12 @@ function transcriptPatch(project: MovieRecapProject): MovieRecapProjectPatch {
   };
 }
 
+function withoutEpisode(data: MovieRecapProject & { episode?: unknown }): MovieRecapProject {
+  const row = { ...data };
+  delete row.episode;
+  return row;
+}
+
 function pick(project: MovieRecapProject, fields: readonly PatchableField[]) {
   return Object.fromEntries(fields.map((field) => [field, project[field]])) as MovieRecapProjectPatch;
 }
@@ -90,7 +98,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5;
 // Mirrors the server's own limit (the PATCH route), so the Add button stops at
 // the same place the request would have been refused.
 const MAX_BLUR_REGIONS = 8;
-const BEAT_SELECT_BUTTON_CLASS = "[&>div:first-child]:min-w-0 [&>div:first-child]:flex-nowrap [&>div:first-child>span]:block [&>div:first-child>span]:min-w-0 [&>div:first-child>span]:truncate";
+const SCRIPT_MODES = ["normal", "episode"] as const;
 
 type CustomizeTab = "aspect" | "subtitle" | "logo" | "blur";
 
@@ -232,7 +240,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: updateLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").PATCH());
   const { trigger: deleteLogoTemplate, loading: deletingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").DELETE());
   const { trigger: renderPreview, loading: rendering } = useWrite((api) => api("movie-recaps/:id/render").POST());
-  const { trigger: renderRange, loading: renderingRange } = useWrite((api) => api("movie-recaps/:id/render/ranges").POST());
+  const { data: episodes = [], trigger: refreshEpisodes } = useRead(
+    (api) => api("movie-recaps/:id/episodes").GET({ params: { id: initialProject?.id ?? "" } }),
+    { enabled: Boolean(initialProject?.id) }
+  );
+  const { trigger: createEpisode } = useWrite((api) => api("movie-recaps/:id/episodes").POST());
+  const { trigger: renameEpisode } = useWrite((api) => api("movie-recaps/:id/episodes/:episodeId").PATCH());
+  const { trigger: removeEpisode } = useWrite((api) => api("movie-recaps/:id/episodes/:episodeId").DELETE());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
   const { trigger: readTranscript } = useWrite((api) => api("movie-recaps/:id/transcript").POST());
   const { trigger: cancelTranscript, loading: cancellingTranscript } = useWrite((api) => api("movie-recaps/:id/transcript/cancel").POST());
@@ -252,6 +266,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // project was left (`currentStep`) rather than at step one.
   const [stepSlug, setStepSlug] = useQueryState("step", parseAsStringLiteral(STEP_SLUGS).withOptions({ history: "push" }));
   const [tab, setTab] = useQueryState("tab", parseAsStringLiteral(CUSTOMIZE_TABS.map((item) => item.id)).withDefault("aspect"));
+  const [scriptMode, setScriptMode] = useQueryState("mode", parseAsStringLiteral(SCRIPT_MODES).withDefault("normal"));
+  const [episodeParam, setEpisodeParam] = useQueryState("episode");
+  const selectedEpisode = episodes.find((episode) => episode.id === episodeParam) ?? episodes[0] ?? null;
+  const scriptEpisode = scriptMode === "episode" ? selectedEpisode : null;
   // A hand-typed `?step=review` on a project that never got past step one would
   // otherwise render a step its data cannot fill, so the URL is clamped to the
   // furthest step actually reached.
@@ -265,7 +283,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   // Runs the server queued on GitHub Actions (RECAP_JOB_RUNNER=github): their
   // POST returns at once with the row still "running", so the outcome toast
   // comes from the poller seeing the row settle instead of from the response.
-  const queuedRuns = useRef({ script: false, render: false });
+  // An episode id instead of `true`: the project's own columns are put back
+  // when an episode run ends, so its outcome is read off the episode row.
+  const queuedRuns = useRef<{ script: boolean | string; render: boolean | string }>({ script: false, render: false });
   const savingBeats = new Set(pendingBeatIndexes.current);
   const runningBeat = beatRebuilds.find((task) => task.status === "running");
   const checkingBeat = (runningBeat?.input?.body as { index?: number } | undefined)?.index ?? null;
@@ -389,10 +409,10 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     }
   }
 
-  async function readSourceTranscript(dialogueOnly: boolean) {
+  async function readSourceTranscript(dialogueOnly: boolean, language: MovieRecapSpeechLanguage) {
     if (!project) return;
     merge({ transcriptStatus: "running", transcriptStoryOnly: false, transcriptDialogueOnly: dialogueOnly, transcriptError: null, transcriptStage: null, transcriptProgressCurrent: null, transcriptProgressTotal: null });
-    const result = await readTranscript({ params: { id: project.id }, body: { dialogueOnly } });
+    const result = await readTranscript({ params: { id: project.id }, body: { dialogueOnly, language } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not read the source.");
       const refreshed = await pollProject({ params: { id: project.id }, force: true });
@@ -411,13 +431,20 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     else if (!result.data?.cancelled) toast.error("No transcript read is running for this project.");
   }
 
-  async function buildRecapScript(options?: { revoice?: boolean }) {
+  function reloadEpisodes() {
+    if (!project) return Promise.resolve([] as MovieRecapEpisode[]);
+    return refreshEpisodes({ params: { id: project.id }, force: true }).then((result) => result.data ?? []);
+  }
+
+  async function buildRecapScript(options?: { revoice?: boolean; episodeId?: string }) {
     if (!project) return;
     const revoice = options?.revoice === true;
+    const episodeId = options?.episodeId;
     // Optimistic, for the same reason the render is: the POST does not resolve
     // until the whole run finishes, and the polling effect reads local state.
     merge({ scriptStatus: "running", scriptError: null, scriptStage: null, scriptProgressCurrent: null, scriptProgressTotal: null });
-    const result = await buildScript({ params: { id: project.id }, body: { revoice } });
+    const result = await buildScript({ params: { id: project.id }, body: { revoice, episodeId } });
+    if (episodeId) void reloadEpisodes();
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? (revoice ? "Could not re-voice the script." : "Could not build the script."));
       // Re-read the row rather than guessing. A 409 means a run is ALREADY
@@ -427,25 +454,107 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       await syncProject();
       return;
     }
-    setProject(result.data);
+    setProject(withoutEpisode(result.data));
+    const outcome = result.data.episode ?? result.data;
     if (result.data.scriptStatus === "running") {
-      queuedRuns.current.script = true;
+      queuedRuns.current.script = episodeId ?? true;
       toast.info("Narration queued on GitHub Actions. It can take a minute to start.");
     }
-    else if (result.data.scriptStatus === "ready") toast.success("Narration timeline ready.");
-    else if (result.data.scriptStatus === "failed") toast.error(result.data.scriptError ?? "The script run failed.");
+    else if (outcome.scriptStatus === "ready") toast.success("Narration timeline ready.");
+    else if (outcome.scriptStatus === "failed") toast.error(outcome.scriptError ?? "The script run failed.");
+  }
+
+  function openNewEpisode() {
+    if (!project) return;
+    const beats = parseTimestampedBlocks(project.transcriptStory ?? "", project.sourceDurationSeconds).map((block) => block.text);
+    if (!beats.length) {
+      toast.error("Add the Burmese story, with its timestamps, at the Transcript step first.");
+      return;
+    }
+    Dialog.show({
+      // GeckoUI's dialog clips its content; the beat dropdowns open past its edge.
+      className: "max-w-lg !overflow-visible",
+      content: ({ dismiss }) => <EpisodeDialogContent
+        title="New episode"
+        beats={beats}
+        initial={{ name: `Episode ${episodes.length + 1}`, startBeat: 1, endBeat: beats.length }}
+        submitLabel="Create & Build"
+        dismiss={dismiss}
+        onSubmit={async ({ name, startBeat, endBeat }) => {
+          if (!name.trim()) {
+            toast.error("Name the episode.");
+            return false;
+          }
+          const result = await createEpisode({ params: { id: project.id }, body: { name: name.trim(), startBeat, endBeat } });
+          if (result.error || !result.data) {
+            toast.error(result.error?.error ?? "Could not create the episode.");
+            return false;
+          }
+          const episodeId = result.data.id;
+          await reloadEpisodes();
+          void setEpisodeParam(episodeId);
+          void buildRecapScript({ episodeId });
+          return true;
+        }}
+      />,
+    });
+  }
+
+  function openRenameEpisode(episode: MovieRecapEpisode) {
+    if (!project) return;
+    Dialog.show({
+      className: "max-w-lg",
+      content: ({ dismiss }) => <EpisodeDialogContent
+        title="Rename episode"
+        initial={{ name: episode.name, startBeat: episode.startBeat, endBeat: episode.endBeat }}
+        submitLabel="Save"
+        dismiss={dismiss}
+        onSubmit={async ({ name }) => {
+          const result = await renameEpisode({ params: { id: project.id, episodeId: episode.id }, body: { name } });
+          if (result.error) {
+            toast.error(result.error.error ?? "Could not rename the episode.");
+            return false;
+          }
+          await reloadEpisodes();
+          return true;
+        }}
+      />,
+    });
+  }
+
+  function confirmDeleteEpisode(episode: MovieRecapEpisode) {
+    if (!project) return;
+    ConfirmDialog.show({
+      title: "Delete episode?",
+      content: `${episode.name}, its narration script and its rendered video will be permanently deleted.`,
+      confirmButtonLabel: "Delete episode",
+      cancelButtonLabel: "Cancel",
+      onConfirm: async ({ dismiss }) => {
+        const result = await removeEpisode({ params: { id: project.id, episodeId: episode.id } });
+        if (result.error) {
+          toast.error(result.error.error ?? "Could not delete the episode.");
+          return;
+        }
+        dismiss();
+        await reloadEpisodes();
+        void setEpisodeParam(null);
+        toast.success("Episode deleted.");
+      },
+    });
   }
 
   // The paste half of the copyable prompt. Returns how many beats actually
   // changed so the component can say so rather than claiming a silent success.
   async function applyScriptBeats(edits: { index: number; text: string }[]) {
     if (!project || pendingBeatIndexes.current.size > 0) return 0;
-    const result = await applyBeats({ params: { id: project.id }, body: { edits } });
+    const episodeId = scriptEpisode?.id;
+    const result = await applyBeats({ params: { id: project.id }, body: { edits, episodeId } });
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not apply those beats.");
       return 0;
     }
-    setProject(result.data);
+    setProject(withoutEpisode(result.data));
+    if (episodeId) await reloadEpisodes();
     if (result.data.changed > 0) {
       toast.success(`${result.data.changed} beat${result.data.changed === 1 ? "" : "s"} updated. Re Build each changed beat.`);
     } else {
@@ -458,10 +567,14 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     if (!project || pendingBeatIndexes.current.has(index)) return;
     pendingBeatIndexes.current.add(index);
     const projectId = project.id;
+    const episodeId = scriptEpisode?.id;
     try {
-      const result = await rebuildBeat({ params: { id: projectId }, body: { index, text, measure: true } });
+      const result = await rebuildBeat({ params: { id: projectId }, body: { index, text, measure: true, episodeId } });
       if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
-      else setProject(result.data);
+      else {
+        setProject(withoutEpisode(result.data));
+        if (episodeId) await reloadEpisodes();
+      }
     } finally {
       pendingBeatIndexes.current.delete(index);
       removeSettledBeatRebuilds();
@@ -473,61 +586,40 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     const result = await cancelScript({ params: { id: project.id } });
     if (result.error || !result.data) toast.error(result.error?.error ?? "Could not cancel the script run.");
     else setProject(result.data);
+    void reloadEpisodes();
   }
 
-  async function renderRecapPreview(mock = false) {
+  async function renderRecapPreview(mock = false, episodeId?: string) {
     if (!project) return;
     // Optimistic: the POST below doesn't resolve until the whole pipeline
     // finishes, so flip local status to "running" now — that's what starts
     // the progress-polling effect (it reads local state, not the request).
     merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
-    const result = await renderPreview({ params: { id: project.id }, body: { mock } });
+    const result = await renderPreview({ params: { id: project.id }, body: { mock, episodeId } });
+    if (episodeId) void reloadEpisodes();
     if (result.error || !result.data) {
       toast.error(result.error?.error ?? "Could not render the preview.");
+      await syncProject();
       return;
     }
-    setProject(result.data);
+    setProject(withoutEpisode(result.data));
     // The shot log is not stored server-side, so it has to be kept now or lost:
     // this response is the only time the browser ever sees it.
     if (result.data.renderLog) appendRenderHistory(project.id, result.data.renderLog);
+    const outcome = result.data.episode ?? result.data;
     if (result.data.renderStatus === "running") {
-      queuedRuns.current.render = true;
+      queuedRuns.current.render = episodeId ?? true;
       toast.info("Render queued on GitHub Actions. It can take a minute to start.");
     }
-    else if (result.data.renderStatus === "done") {
-      if (result.data.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
+    else if (outcome.renderStatus === "failed") toast.error(outcome.renderError ?? "Render failed.");
+    else if (outcome.renderStatus === "done") {
+      if (outcome.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
       else toast.success(
         mock
           ? "Mock preview rendered — no AI calls were made."
           : "Rendered from the saved narration timeline — the source was not analyzed again."
       );
     }
-    else if (result.data.renderStatus === "failed") toast.error(result.data.renderError ?? "Render failed.");
-  }
-
-  async function renderRecapRange(startBeat: number, endBeat: number) {
-    if (!project) return null;
-    const id = project.id;
-    merge({ renderStatus: "running", renderError: null, renderStage: null, renderProgressCurrent: null, renderProgressTotal: null });
-    const result = await renderRange({
-      params: { id },
-      body: { startBeat, endBeat },
-      invalidate: [`movie-recaps/${id}/render/ranges`, `movie-recaps/${id}`],
-    });
-    if (result.data) {
-      setProject(result.data.project);
-      if (result.data.queued) {
-        toast.info(`Beats ${startBeat}–${endBeat} queued on GitHub Actions.`);
-        return result.data.range.id;
-      }
-      else if (result.data.range.warning) toast.warning(`Beats ${startBeat}–${endBeat} rendered with a timeline warning.`);
-      else toast.success(`Beats ${startBeat}–${endBeat} rendered.`);
-    } else {
-      const refreshed = await pollProject({ params: { id }, force: true });
-      if (refreshed.data) setProject(refreshed.data);
-      toast.error(result.error?.error ?? "Could not render the selected beats.");
-    }
-    return null;
   }
 
   async function cancelRecapRender() {
@@ -817,24 +909,47 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       }
       const result = await pollProject({ params: { id: projectId }, force: true });
       if (result.data) adoptRow(result.data);
+      void refreshEpisodes({ params: { id: projectId }, force: true });
     }, 10_000);
     return () => clearInterval(interval);
-  }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject, pollProgress]);
+  }, [projectId, renderStatus, scriptStatus, transcriptStatus, pollProject, pollProgress, refreshEpisodes]);
 
   useEffect(() => {
-    if (!queuedRuns.current.script || !scriptStatus || scriptStatus === "running") return;
+    const queued = queuedRuns.current.script;
+    if (!queued || !scriptStatus || scriptStatus === "running" || !projectId) return;
     queuedRuns.current.script = false;
-    if (scriptStatus === "ready") toast.success("Narration timeline ready.");
-    else if (scriptStatus === "failed") toast.error(project?.scriptError ?? "The script run failed.");
-  }, [scriptStatus, project?.scriptError]);
+    const report = (status: string, error: string | null | undefined) => {
+      if (status === "ready") toast.success("Narration timeline ready.");
+      else if (status === "failed") toast.error(error ?? "The script run failed.");
+    };
+    if (typeof queued !== "string") {
+      report(scriptStatus, project?.scriptError);
+      return;
+    }
+    void refreshEpisodes({ params: { id: projectId }, force: true }).then((result) => {
+      const episode = result.data?.find((item) => item.id === queued);
+      if (episode) report(episode.scriptStatus, episode.scriptError);
+    });
+  }, [scriptStatus, project?.scriptError, projectId, refreshEpisodes]);
 
   useEffect(() => {
-    if (!queuedRuns.current.render || !renderStatus || renderStatus === "running") return;
+    const queued = queuedRuns.current.render;
+    if (!queued || !renderStatus || renderStatus === "running" || !projectId) return;
     queuedRuns.current.render = false;
-    if (renderStatus === "failed") toast.error(project?.renderError ?? "Render failed.");
-    else if (project?.renderWarning) toast.warning("Video rendered with a timeline warning. Review it before use.");
-    else toast.success("Render finished.");
-  }, [renderStatus, project?.renderError, project?.renderWarning]);
+    const report = (status: string, error: string | null | undefined, warning: string | null | undefined) => {
+      if (status === "failed") toast.error(error ?? "Render failed.");
+      else if (warning) toast.warning("Video rendered with a timeline warning. Review it before use.");
+      else toast.success("Render finished.");
+    };
+    if (typeof queued !== "string") {
+      report(renderStatus, project?.renderError, project?.renderWarning);
+      return;
+    }
+    void refreshEpisodes({ params: { id: projectId }, force: true }).then((result) => {
+      const episode = result.data?.find((item) => item.id === queued);
+      if (episode) report(episode.renderStatus, episode.renderError, episode.renderWarning);
+    });
+  }, [renderStatus, project?.renderError, project?.renderWarning, projectId, refreshEpisodes]);
 
   // Which blur box the preview's drag handles belong to. Per visit, like any
   // other selection — it is not part of the project.
@@ -891,7 +1006,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
               <MovieRecapTranscript
                 project={project}
                 onChange={merge}
-                onReadSource={(dialogueOnly) => void readSourceTranscript(dialogueOnly)}
+                onReadSource={(dialogueOnly, language) => void readSourceTranscript(dialogueOnly, language)}
                 onCancelRead={() => void cancelTranscriptRead()}
                 cancellingRead={cancellingTranscript}
               />
@@ -899,15 +1014,50 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
 
             {step === 3 && project && (
               <div>
-                <h2 className="mb-1 text-lg font-semibold">Narrative Script</h2>
-                <p className="mb-6 text-sm text-fg-2">
-                  Your story stays on the selected scenes while narration defines the timing. Edit and Re Build only the
-                  beat that needs adjustment; the other cached beats are reused.
-                </p>
-                <MovieRecapScript
-                  project={project}
-                  onBuild={() => void buildRecapScript()}
-                  onRevoice={() => void buildRecapScript({ revoice: true })}
+                <h2 className="mb-3 text-lg font-semibold">Narrative Script</h2>
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <div role="tablist" aria-label="Script mode" className="inline-flex gap-1 rounded-full border border-line bg-panel-2 p-1">
+                    {SCRIPT_MODES.map((mode) => (
+                      <Button
+                        key={mode}
+                        role="tab"
+                        aria-selected={scriptMode === mode}
+                        variant={scriptMode === mode ? "primary" : "ghost"}
+                        className="!h-7 !rounded-full !px-3 text-xs"
+                        disabled={scriptMode !== mode && (savingBeats.size > 0 || dirtyBeats > 0)}
+                        onClick={() => void setScriptMode(mode)}
+                      >
+                        {mode === "normal" ? "Normal" : "Episode"}
+                      </Button>
+                    ))}
+                  </div>
+                  {scriptMode === "episode" && (
+                    <EpisodeToolbar
+                      episodes={episodes}
+                      selectedId={selectedEpisode?.id ?? null}
+                      disabled={savingBeats.size > 0 || dirtyBeats > 0 || project.scriptStatus === "running"}
+                      onSelect={(id) => void setEpisodeParam(id)}
+                      onCreate={openNewEpisode}
+                      onRename={openRenameEpisode}
+                      onDelete={confirmDeleteEpisode}
+                    />
+                  )}
+                </div>
+                {scriptMode === "episode" && !scriptEpisode ? (
+                  <p className="rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">
+                    No episodes yet. Choose a beat range with New episode to build its narration.
+                  </p>
+                ) : <MovieRecapScript
+                  key={scriptEpisode?.id ?? "normal"}
+                  project={scriptEpisode ? {
+                    ...project,
+                    renderScript: scriptEpisode.renderScript,
+                    scriptStatus: project.scriptStatus === "running" ? "running" : scriptEpisode.scriptStatus,
+                    scriptError: scriptEpisode.scriptError,
+                  } : project}
+                  episodeId={scriptEpisode?.id}
+                  onBuild={() => void buildRecapScript({ episodeId: scriptEpisode?.id })}
+                  onRevoice={() => void buildRecapScript({ revoice: true, episodeId: scriptEpisode?.id })}
                   onSave={saveScriptBeat}
                   onCancel={cancelScriptRun}
                   onDirtyChange={setDirtyBeats}
@@ -917,7 +1067,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   checking={checkingBeat}
                   savingBeats={savingBeats}
                   cancelling={cancellingScript}
-                />
+                />}
               </div>
             )}
 
@@ -1115,10 +1265,9 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
             {step === 5 && project && (
               <Review
                 project={project}
+                episodes={episodes}
                 onRenderPreview={renderRecapPreview}
                 rendering={rendering}
-                onRenderRange={renderRecapRange}
-                renderingRange={renderingRange}
                 onCancelRender={cancelRecapRender}
                 cancelling={cancelling}
               />
@@ -1170,102 +1319,55 @@ function confirmFullRender(project: MovieRecapProject, run: () => void) {
 
 function Review({
   project,
+  episodes,
   onRenderPreview,
   rendering,
-  onRenderRange,
-  renderingRange,
   onCancelRender,
   cancelling,
 }: {
   project: MovieRecapProject;
-  onRenderPreview: (mock?: boolean) => void;
+  episodes: MovieRecapEpisode[];
+  onRenderPreview: (mock?: boolean, episodeId?: string) => void;
   rendering: boolean;
-  // Resolves to the range id when the render was queued on GitHub Actions.
-  onRenderRange: (startBeat: number, endBeat: number) => Promise<string | null>;
-  renderingRange: boolean;
   onCancelRender: () => void;
   cancelling: boolean;
 }) {
-  const [renderMode, setRenderMode] = useState<"full" | "range">("full");
-  const [startBeat, setStartBeat] = useState("1");
-  const [endBeat, setEndBeat] = useState("1");
+  // "default" or an episode id, remembered per project in this browser.
+  // Lazy rather than an effect: Review only mounts after the project has loaded
+  // in the browser, so there is no server render to mismatch.
+  const [renderTarget, setRenderTarget] = useState(() => {
+    try {
+      return window.localStorage.getItem(`movie-recap:render-target:${project.id}`) ?? "default";
+    } catch {
+      return "default";
+    }
+  });
   const fullVideoSection = useRef<HTMLDivElement>(null);
-  const rangeVideosSection = useRef<HTMLDivElement>(null);
-  const beatCount = project.renderScript?.length ?? 0;
-  const { data: ranges, trigger: refreshRanges } = useRead((api) => api("movie-recaps/:id/render/ranges").GET({ params: { id: project.id } }));
-  const { trigger: deleteRange } = useWrite((api) => api("movie-recaps/:id/render/ranges/:rangeId").DELETE());
-  const sortedRanges = [...(ranges ?? [])].sort((a, b) =>
-    a.startBeat - b.startBeat || a.endBeat - b.endBeat || b.createdAt.localeCompare(a.createdAt)
-  );
-  const activeRange = ranges?.find((range) => range.status === "running");
-  // A queued (GitHub Actions) range render finishes after its POST returned, so
-  // the list is re-read when the project's render settles, and the outcome is
-  // read off the range row — the project's own render columns are restored to
-  // their pre-range values either way, so they cannot say whether it worked.
-  const queuedRange = useRef<string | null>(null);
-  const wasRendering = useRef(project.renderStatus === "running");
-  useEffect(() => {
-    const settled = wasRendering.current && project.renderStatus !== "running";
-    wasRendering.current = project.renderStatus === "running";
-    if (!settled) return;
-    void refreshRanges({ params: { id: project.id }, force: true }).then((result) => {
-      const range = queuedRange.current ? result.data?.find((item) => item.id === queuedRange.current) : null;
-      if (!range || range.status === "running") return;
-      queuedRange.current = null;
-      if (range.status === "failed") toast.error(range.error ?? `Beats ${range.startBeat}–${range.endBeat} failed.`);
-      else if (range.warning) toast.warning(`Beats ${range.startBeat}–${range.endBeat} rendered with a timeline warning.`);
-      else toast.success(`Beats ${range.startBeat}–${range.endBeat} rendered.`);
-    });
-  }, [project.renderStatus, project.id, refreshRanges]);
+  const episodeSection = useRef<HTMLDivElement>(null);
+  const episode = renderTarget === "default" ? null : episodes.find((item) => item.id === renderTarget) ?? null;
+  const beatCount = (episode ? episode.renderScript : project.renderScript)?.length ?? 0;
+  const activeEpisode = episodes.find((item) => item.renderStatus === "running");
 
   useEffect(() => {
-    try {
-      const savedMode = window.localStorage.getItem(`movie-recap:render-mode:${project.id}`);
-      if (savedMode === "full" || savedMode === "range") setRenderMode(savedMode);
-    } catch {
-      // The selector still works when browser storage is unavailable.
-    }
-  }, [project.id]);
-
-  useEffect(() => {
-    const hiddenSection = renderMode === "full" ? rangeVideosSection.current : fullVideoSection.current;
+    const hiddenSection = episode ? fullVideoSection.current : episodeSection.current;
     hiddenSection?.querySelectorAll("video").forEach((video) => video.pause());
-  }, [renderMode]);
+  }, [episode]);
 
-  function chooseRenderMode(value: string) {
-    if (value !== "full" && value !== "range") return;
-    setRenderMode(value);
+  function chooseRenderTarget(value: string) {
+    setRenderTarget(value);
     try {
-      window.localStorage.setItem(`movie-recap:render-mode:${project.id}`, value);
+      window.localStorage.setItem(`movie-recap:render-target:${project.id}`, value);
     } catch {
       // The selector still works when browser storage is unavailable.
     }
   }
 
-  function confirmDeleteRange(rangeId: string, start: number, end: number) {
-    ConfirmDialog.show({
-      title: "Delete range render?",
-      content: `The video for beats ${start}–${end} will be permanently deleted.`,
-      confirmButtonLabel: "Delete video",
-      cancelButtonLabel: "Cancel",
-      onConfirm: async ({ dismiss }) => {
-        const result = await deleteRange({ params: { id: project.id, rangeId }, invalidate: [`movie-recaps/${project.id}/render/ranges`] });
-        if (result.error) toast.error(result.error.error);
-        else {
-          dismiss();
-          await refreshRanges({ params: { id: project.id }, force: true });
-          toast.success("Range render deleted.");
-        }
-      },
-    });
-  }
-
-  async function downloadRange(rangeId: string) {
-    const result = await apiClient("movie-recaps/:id/render/ranges/:rangeId/download").GET({
-      params: { id: project.id, rangeId },
+  async function downloadEpisode(episodeId: string) {
+    const result = await apiClient("movie-recaps/:id/episodes/:episodeId/download").GET({
+      params: { id: project.id, episodeId },
     });
     if (result.data) window.location.assign(result.data.url);
-    else toast.error(result.error?.error ?? "Could not download the range video.");
+    else toast.error(result.error?.error ?? "Could not download the episode video.");
   }
 
   const stageLabel = project.renderStage
@@ -1289,60 +1391,66 @@ function Review({
     {project.renderStatus !== "idle" && (
       <div>
         <MovieRecapRenderProgress project={project} />
-        {project.renderStatus === "running" && <p className="mt-3 text-xs text-fg-2">{activeRange ? "Range: " : ""}{stageLabel ?? "Starting…"}</p>}
+        {project.renderStatus === "running" && <p className="mt-3 text-xs text-fg-2">{activeEpisode ? `${activeEpisode.name}: ` : ""}{stageLabel ?? "Starting…"}</p>}
         {project.renderStatus === "failed" && project.renderError && <p className="mt-3 text-sm text-danger">{project.renderError}</p>}
       </div>
     )}
     <div className={`${project.renderStatus !== "idle" ? "mt-5 " : ""}rounded-xl border border-line bg-panel-2 p-3`}>
       <div className="flex flex-wrap items-center gap-2">
-        <div title="Render selection" className="w-28">
-          <Select value={renderMode} onChange={chooseRenderMode}>
-            <SelectOption value="full" label="Full" />
-            <SelectOption value="range" label="Range" />
+        <div title="Build" className="w-72 min-w-0 max-w-full">
+          <Select value={episode ? episode.id : "default"} onChange={chooseRenderTarget}>
+            <SelectOption value="default" label="Default" />
+            {episodes.map((item) => <SelectOption key={item.id} value={item.id} label={episodeLabel(item)} />)}
           </Select>
         </div>
-        {renderMode === "range" && <>
-          <div title="Start beat" className="w-56 min-w-0"><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={startBeat} onChange={(value) => { setStartBeat(value); if (Number(value) > Number(endBeat)) setEndBeat(value); }} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
-          <div title="End beat" className="w-56 min-w-0"><Select className={BEAT_SELECT_BUTTON_CLASS} menuClassName="max-w-[min(24rem,calc(100vw-2rem))]" value={endBeat} onChange={setEndBeat} disabled={!beatCount}>{project.renderScript?.map((beat, index) => <SelectOption key={index} value={String(index + 1)} disabled={index + 1 < Number(startBeat)} label={`Beat ${index + 1} · ${beat.text}`} />)}</Select></div>
-        </>}
-        {renderMode === "full" && <LoadingButton variant="primary" loading={rendering} disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount} onClick={() => confirmFullRender(project, () => onRenderPreview(false))}>Render Video</LoadingButton>}
-        {renderMode === "range" && <LoadingButton variant="primary" loading={renderingRange} disabled={!beatCount || project.renderStatus === "running" || project.scriptStatus === "running"} onClick={async () => { queuedRange.current = await onRenderRange(Number(startBeat), Number(endBeat)); await refreshRanges({ params: { id: project.id }, force: true }); }}>Render Beats</LoadingButton>}
-        <Menu className="ml-auto" menuClassName="min-w-[190px] p-0" placement="bottom-end">
+        <LoadingButton
+          variant="primary"
+          loading={rendering}
+          disabled={project.renderStatus === "running" || project.scriptStatus === "running" || !beatCount}
+          onClick={() => episode
+            ? onRenderPreview(false, episode.id)
+            : confirmFullRender(project, () => onRenderPreview(false))}
+        >
+          Render Video
+        </LoadingButton>
+        {!episode && <Menu className="ml-auto" menuClassName="min-w-[190px] p-0" placement="bottom-end">
           <MenuTrigger>
             {({ toggleMenu }) => <Button variant="ghost" className="!h-8 !w-8 !p-0" aria-label="More render actions" disabled={rendering || project.renderStatus === "running"} onClick={toggleMenu}><MoreHorizontal size={16} /></Button>}
           </MenuTrigger>
           <MenuItem disabled={rendering || project.renderStatus === "running"} onClick={() => onRenderPreview(true)}>Render Mock Preview</MenuItem>
-        </Menu>
+        </Menu>}
       </div>
-      {((renderMode === "full" && !beatCount) || project.renderStatus === "running") && (
+      {(!beatCount || project.renderStatus === "running") && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          {renderMode === "full" && !beatCount && <span className="text-xs text-fg-3">Build the script at the Narrative Script step first.</span>}
+          {!beatCount && <span className="text-xs text-fg-3">Build {episode ? "this episode's" : "the"} script at the Narrative Script step first.</span>}
           {project.renderStatus === "running" && <LoadingButton variant="danger" loading={cancelling} onClick={onCancelRender}>Cancel</LoadingButton>}
         </div>
       )}
     </div>
 
-    <div ref={fullVideoSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "full" ? "" : "hidden"}`}>
+    <div ref={fullVideoSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${episode ? "hidden" : ""}`}>
       <div className="flex items-center gap-2"><Clapperboard size={16} className="text-accent" /><span className="text-sm font-medium">{project.renderIsMock ? "Mock preview" : "Full video"}</span>{project.renderOutputUrl && <MovieRecapRenderActions project={project} />}</div>
       {project.renderOutputUrl && project.renderWarning && <Alert variant="warning" condensed title="Timeline warning" description={project.renderWarning} className="mt-4" />}
       {project.renderOutputUrl ? <MovieRecapRenderPlayer project={project} /> : <p className="mt-4 rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No full video yet.</p>}
       <MovieRecapSocialPosts project={project} />
     </div>
 
-    <div ref={rangeVideosSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${renderMode === "range" ? "" : "hidden"}`}>
-      <div className="mb-1 flex items-center gap-2"><Scissors size={16} className="text-accent" /><span className="text-sm font-medium">Range videos</span><span className="ml-auto text-xs text-fg-3">{ranges?.length ?? 0}</span></div>
-      <p className="mb-4 text-xs text-fg-2">Selected beat renders stay here for review and download.</p>
-      {!ranges?.length ? <p className="rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No range videos yet.</p> : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {sortedRanges.map((range) => <div key={range.id} className="rounded-lg border border-line bg-panel p-3">
-            <div className="mb-2 flex items-start gap-2"><div className="min-w-0 flex-1"><div className="text-sm font-medium">Beats {range.startBeat}–{range.endBeat}</div><div className="text-xs text-fg-3">{new Date(range.createdAt).toLocaleString()} {range.durationSeconds ? `· ${formatDuration(range.durationSeconds)}` : ""}</div></div><span className={`text-xs ${range.status === "failed" ? "text-danger" : range.status === "done" ? "text-ok" : "text-fg-3"}`}>{range.status === "running" ? "Rendering…" : range.status === "done" ? "Ready" : "Failed"}</span></div>
-            {range.error && <p className="mb-2 text-xs text-danger">{range.error}</p>}
-            {range.warning && <Alert variant="warning" condensed title="Timeline warning" description={range.warning} className="mb-3" />}
-            {range.outputUrl && <video controls preload="metadata" src={range.outputUrl} className="mb-3 w-full rounded-md bg-panel-2" />}
-            <div className="flex gap-2">{range.outputUrl && <Button className="!h-8 !px-2 text-xs" onClick={() => void downloadRange(range.id)}>Download</Button>}<Button variant="ghost" className="!h-8 !px-2 text-xs" disabled={range.status === "running"} onClick={() => confirmDeleteRange(range.id, range.startBeat, range.endBeat)}><Trash2 size={14} /> Delete</Button></div>
-          </div>)}
+    <div ref={episodeSection} className={`mt-5 rounded-xl border border-line bg-panel-2 p-4 ${episode ? "" : "hidden"}`}>
+      {episode && <>
+        <div className="flex items-start gap-2">
+          <Clapperboard size={16} className="mt-0.5 text-accent" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">{episode.name}</div>
+            <div className="text-xs text-fg-3">Beats {episode.startBeat}–{episode.endBeat}{episode.renderedAt ? ` · ${new Date(episode.renderedAt).toLocaleString()}` : ""}{episode.durationSeconds ? ` · ${formatDuration(episode.durationSeconds)}` : ""}</div>
+          </div>
+          {episode.outputUrl && <Button className="!h-8 !px-2 text-xs" onClick={() => void downloadEpisode(episode.id)}>Download</Button>}
         </div>
-      )}
+        {episode.renderStatus === "failed" && episode.renderError && <p className="mt-3 text-sm text-danger">{episode.renderError}</p>}
+        {episode.outputUrl && episode.renderWarning && <Alert variant="warning" condensed title="Timeline warning" description={episode.renderWarning} className="mt-4" />}
+        {episode.outputUrl
+          ? <video key={episode.outputUrl} controls preload="metadata" src={episode.outputUrl} className="mt-4 max-h-[70vh] w-full rounded-md bg-panel" />
+          : <p className="mt-4 rounded-lg border border-dashed border-line px-3 py-5 text-center text-sm text-fg-3">No video for this episode yet.</p>}
+      </>}
     </div>
 
     <MovieRecapRenderHistory projectId={project.id} />
