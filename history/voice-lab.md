@@ -26,6 +26,18 @@ now costs a cold start (about 80 s) for each failed attempt before the run
 reports the failure. The message and the movie-recap log line (which beat, and
 its text) now say what failed.
 
+**Same day: the real cause was text normalization, not CUDA.** The new
+traceback showed `AssertionError` raised from `wetext` `token_parser.load`
+(`assert len(input) > 0`). The call came from VoxCPM's `normalize=True`
+English pass on a Burmese line. Retries cannot fix this, because the same text
+fails every time. Changes:
+
+- On `AssertionError` the worker generates again with `normalize=False`. Burmese
+  needs no normalizing, so the line is spoken as written.
+- `AssertionError` and `ValueError` no longer restart the container. Only
+  unexpected errors still exit, since those are the ones that might leave the
+  GPU in a bad state.
+
 ## 2026-11-13 — GPU fallback L40S → L4 → A10G; no warm-up
 
 **Decision, chosen by the user:** the worker's `gpu` is the list `L40S, L4, A10G`.

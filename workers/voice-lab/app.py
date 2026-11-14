@@ -71,15 +71,25 @@ def render_wav(request: GenerateRequest):
         if reference_path is not None and not reference_path.is_file():
             raise FileNotFoundError(f"Reference audio is missing: {reference_path.name}")
         reference_text = request.referenceText if reference_path else None
-        audio = model.generate(
-            text=request.text.strip(),
-            prompt_wav_path=str(reference_path) if reference_path and reference_text else None,
-            prompt_text=reference_text,
-            reference_wav_path=str(reference_path) if reference_path else None,
-            normalize=True,
-            cfg_value=2.0,
-            inference_timesteps=10,
-        )
+        def generate(normalize: bool):
+            return model.generate(
+                text=request.text.strip(),
+                prompt_wav_path=str(reference_path) if reference_path and reference_text else None,
+                prompt_text=reference_text,
+                reference_wav_path=str(reference_path) if reference_path else None,
+                normalize=normalize,
+                cfg_value=2.0,
+                inference_timesteps=10,
+            )
+
+        # wetext's normalizer asserts on some Burmese lines (an empty token after
+        # its English pass) and fails the same way on every retry. Burmese needs
+        # no normalizing, so speak the raw text instead. history/voice-lab.md.
+        try:
+            audio = generate(True)
+        except AssertionError:
+            traceback.print_exc()
+            audio = generate(False)
         sample_rate = int(model.tts_model.sample_rate)
 
     output = io.BytesIO()
@@ -184,7 +194,7 @@ async def generate(request: GenerateRequest):
         raise
     except Exception as error:
         traceback.print_exc()
-        if not isinstance(error, FileNotFoundError):
+        if not isinstance(error, (FileNotFoundError, AssertionError, ValueError)):
             # A failed generate can leave CUDA in a state where every later call
             # fails in milliseconds, and with max_containers=1 the caller's
             # retries all land here. Exiting makes Modal start a fresh container.
