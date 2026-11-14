@@ -37,6 +37,28 @@ export async function transcribeWithWhisperWorker(
   return ((await response.json()) as { segments?: AsrSegment[] }).segments ?? [];
 }
 
+// Recap V2 needs word stamps and the detected language as well.
+export async function transcribeWithWhisperWords(audioPath: string, { language, signal }: { language: string; signal?: AbortSignal }) {
+  const url = process.env.WHISPER_MM_WORKER_URL?.trim();
+  if (!url) throw new Error(WHISPER_MM_NOT_CONFIGURED);
+  const token = process.env.WHISPER_MM_WORKER_TOKEN?.trim();
+  const endpoint = new URL(url);
+  endpoint.searchParams.set("language", language);
+  endpoint.searchParams.set("words", "true");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: await readFile(audioPath),
+    signal,
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Speech worker failed (${response.status}): ${detail.slice(0, 300)}`);
+  }
+  const data = (await response.json()) as { language?: string; segments?: AsrSegment[]; words?: { word: string; start: number; end: number }[] };
+  return { language: data.language ?? language, segments: data.segments ?? [], words: data.words ?? [] };
+}
+
 export async function transcribeSourceVideo(sourceObjectKey: string, onStage: (stage: string) => void, signal?: AbortSignal) {
   if (!process.env.WHISPER_MM_WORKER_URL?.trim()) throw new Error(WHISPER_MM_NOT_CONFIGURED);
   const workDir = await mkdtemp(path.join(tmpdir(), "transcript-"));

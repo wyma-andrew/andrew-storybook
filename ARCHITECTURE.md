@@ -49,6 +49,8 @@ app/
     voice-overs/               Edit narration text overrides and shot ranges
     (movie-recap)/movie-recaps/ Recap CRUD, source/logo upload, episodes, default and episode render
     (translate)/translate-projects/ Translate CRUD, multipart source upload, MP4 render
+    (recap-v2)/recap-v2-projects/ Recap V2 CRUD, upload, transcribe, translate, Smart Sync render, logo, SRT
+    (splitter)/splitter-projects/ Splitter CRUD, upload, check cuts, split into parts, part download
     (transcript)/transcript-projects/ Burmese video upload and speech-to-text
     labs/voice/                Authenticated proxy to the VoxCPM2 lab worker
     labs/prompt/               Admin-only: storyboard / asset-extraction preview, sandbox runs
@@ -60,10 +62,14 @@ app/
       movie-recap/             Recap project list + five-step editor (URL: /movie-recap)
     (translate)/
       translate/               Translate project list, upload and editor (URL: /translate)
+    (recap-v2)/
+      recap-v2/                Recap V2 project list, upload and editor (URL: /recap-v2)
+    (splitter)/
+      splitter/                Splitter project list, upload and editor (URL: /splitter)
     (transcript)/
       transcript/              Burmese transcript list, upload and viewer (URL: /transcript)
     account/                   Email display and password change
-    other/                     Grid of secondary tools (Transcript, Translate, Video Cutter)
+    other/                     Grid of secondary tools (Transcript, Translate, Splitter, Video Cutter)
     admin/                     User manager: accounts and per-user feature access
     no-access/                 Shown when a feature is not enabled for the account
     labs/voice/                Burmese narration test bench: project list + per-project line editor
@@ -73,7 +79,7 @@ app/
 
 components/
   Frame.tsx                    Standalone page shell for sign-in/sign-up only (no Sidebar)
-  Sidebar.tsx                  Persistent left nav: Stories, Stories Lab (admin), Movie Recap, Voice Lab, Other (Transcript, Translate, Video Cutter via `components/other-tools.ts`), Admin.
+  Sidebar.tsx                  Persistent left nav: Stories, Stories Lab (admin), Movie Recap, Recap V2, Voice Lab, Other (Transcript, Translate, Splitter, Video Cutter via `components/other-tools.ts`), Admin.
                                Collapsible rail from md up; off-canvas Drawer below md
   MobileNav.tsx                Mobile drawer open state + the md:hidden hamburger button
                                (rendered by TopBar and ChapterHeader)
@@ -386,6 +392,39 @@ their original timing. Users can switch between original and synced timing witho
 discarding either; an explicit delete removes synced timing. The server downloads the original video, burns the blur
 and selected subtitle timing with ffmpeg/libass, and saves an MP4 back to R2.
 The editor follows a render through `GET translate-projects/:id/progress`.
+
+### Recap V2
+
+- UI: `app/(app)/(recap-v2)/recap-v2/` and `components/recap-v2/RecapV2Editor.tsx`
+- API: `app/api/(recap-v2)/recap-v2-projects/`
+- Storage: `recap_v2_projects` (gated by `movie_recap`) and `recap-v2/<id>/` in R2
+
+A port of the recap-en-to-mm tool: a recap narrated in any language becomes a
+Burmese-narrated one. **Transcribe** (`lib/recap-v2-transcribe.ts`) listens
+with FunASR (Chinese) or whisper-mm with word stamps (other languages, or
+auto), and `buildRecapV2Units()` cuts whole-sentence lines whose picture
+windows tile the source; the raw transcript is kept in R2 for `…/resplit`.
+**Translate** (`lib/recap-v2-translate.ts`) builds a story memory, then
+translates ID-locked batches with Gemini on a pool of free-tier keys
+(`lib/gemini.ts`), checks them (`lib/recap-v2-checks.ts`)
+and audits them. **Render** (`lib/recap-v2-render.ts`) speaks each line
+through `lib/tts/` (raw clip cached by content), optionally trims edge silence,
+retimes each window's picture to its line (max 1.25×, then the tail is cut),
+frames it (`lib/video-framing.ts`), and burns captions, title, extra text and
+logo; it also writes an SRT. All steps share one job slot (`job_*` columns,
+`lib/recap-v2-job.ts`), polled through `…/progress`.
+
+### Splitter
+
+- UI: `app/(app)/(splitter)/splitter/` and `components/splitter/SplitterEditor.tsx`
+- API: `app/api/(splitter)/splitter-projects/`
+- Storage: `splitter_projects` (gated by `movie_recap`) and `splitter/<id>/` in R2
+
+Cuts an uploaded video into parts of N minutes (`lib/splitter-render.ts`); a
+smart cut moves each cut to the next pause in the sound (`lib/splitter.ts`).
+Each part is re-encoded with the chosen frame, text box and part number, and
+uploaded to R2. Check cuts plans without rendering. Same job slot pattern as
+Recap V2.
 
 ### Transcript
 

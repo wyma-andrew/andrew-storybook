@@ -15,6 +15,8 @@ import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
 import type { VoiceLabItem, VoiceLabProject } from "@/lib/voice-lab";
 import type { PromptLabPreview, PromptLabRun, PromptLabRunBody, PromptLabRunSummary, PromptLabSceneRunBody, PromptLabVersion, PromptLabVersionBody } from "@/lib/prompt-lab";
 import type { TranslateProgress, TranslateProject, TranslateProjectListItem, TranslateProjectPatch } from "@/lib/translate";
+import type { RecapV2Progress, RecapV2Project, RecapV2ProjectListItem, RecapV2ProjectPatch } from "@/lib/recap-v2";
+import type { SplitterListItem, SplitterPatch, SplitterProgress, SplitterProject } from "@/lib/splitter";
 import type { TranscriptProgress, TranscriptProject, TranscriptProjectListItem } from "@/lib/transcript-project";
 
 export type ApiSchema = {
@@ -46,6 +48,69 @@ export type ApiSchema = {
     POST: { data: TranscriptProject; body: { parts: { partNumber: number; etag: string }[] } };
   };
   "transcript-projects/:id/transcribe": { POST: { data: TranscriptProject } };
+  "recap-v2-projects": {
+    GET: { data: RecapV2ProjectListItem[] };
+    POST: { data: RecapV2Project; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "recap-v2-projects/:id": {
+    GET: { data: RecapV2Project };
+    PATCH: { data: RecapV2Project; body: RecapV2ProjectPatch };
+    DELETE: { data: null };
+  };
+  "recap-v2-projects/:id/progress": {
+    GET: { data: RecapV2Progress };
+  };
+  "recap-v2-projects/:id/cover": {
+    POST: { data: RecapV2Project; body: { sourceObjectKey: string; imageBase64: string } };
+  };
+  "recap-v2-projects/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: RecapV2Project };
+  };
+  "recap-v2-projects/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "recap-v2-projects/:id/source/multipart/complete": {
+    POST: { data: RecapV2Project; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "recap-v2-projects/:id/transcribe": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/resplit": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/translate": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/render": { POST: { data: RecapV2Project } };
+  "recap-v2-projects/:id/render/download": { GET: { data: { url: string }; query?: { file?: "srt" } } };
+  "splitter-projects": {
+    GET: { data: SplitterListItem[] };
+    POST: { data: SplitterProject; body: {
+      fileName: string; contentType: string; sizeBytes: number; durationSeconds: number;
+      width: number; height: number; lastModified: number;
+    } };
+  };
+  "splitter-projects/:id": {
+    GET: { data: SplitterProject };
+    PATCH: { data: SplitterProject; body: SplitterPatch };
+    DELETE: { data: null };
+  };
+  "splitter-projects/:id/progress": { GET: { data: SplitterProgress } };
+  "splitter-projects/:id/source/multipart": {
+    GET: { data: { parts: { partNumber: number; etag: string; size: number }[] } };
+    POST: { data: SplitterProject };
+  };
+  "splitter-projects/:id/source/multipart/part": {
+    POST: { data: { uploadUrl: string }; body: { partNumber: number } };
+  };
+  "splitter-projects/:id/source/multipart/complete": {
+    POST: { data: SplitterProject; body: { parts: { partNumber: number; etag: string }[] } };
+  };
+  "splitter-projects/:id/plan": { POST: { data: SplitterProject } };
+  "splitter-projects/:id/split": { POST: { data: SplitterProject } };
+  "splitter-projects/:id/parts/:n/download": { GET: { data: { url: string } } };
+  "recap-v2-projects/:id/logo": {
+    POST: { data: RecapV2Project; body: { fileName: string; contentType: string; imageBase64: string } };
+    DELETE: { data: RecapV2Project };
+  };
   "translate-projects": {
     GET: { data: TranslateProjectListItem[] };
     POST: { data: TranslateProject; body: {

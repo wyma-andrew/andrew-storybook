@@ -2,9 +2,98 @@
 
 Covers: `app/(app)/(recap-v2)/**`, `app/api/(recap-v2)/**`,
 `components/recap-v2/**`, `lib/recap-v2*.ts`,
-`lib/prompts/recap-v2-translation.ts`, and the `recap_v2_projects` migration.
+`lib/prompts/recap-v2-translation.ts`, `lib/video-framing.ts`, and the
+`recap_v2_projects` migrations (`20261114120000_recap_v2_restore.sql`).
 
-## 2026-11-10 — Recap V2 removed entirely
+## 2026-11-14 — Translation runs on free Gemini keys, not OpenAI
+
+**Decision, by the user:** OpenAI cost about $0.30 per 10 minutes of source
+(gpt-6-sol translate + audit). The tool pays nothing because it uses free-tier
+Gemini keys, so Recap V2 does the same: `lib/gemini.ts` reads
+`GEMINI_API_KEYS` (comma-separated; also `GEMINI_API_KEY` and
+`GEMINI_API_KEY_<n>`), and walks the tool's model chain
+(3.5-flash → 3.5-flash-lite → 3.6-flash → 3.7-flash → 3.1-flash-lite).
+A 401/403/429 or quota error moves to the next key on the same model; when
+every key is rejected, the next model starts at key 1; a 5xx, overload or
+timeout skips to the next model. Called through REST, no SDK.
+
+**Differences from the tool:** when every model is busy it waits 10s then 20s
+(the tool waits up to 5 minutes, more than a 300s request allows) and then
+fails; a rejected key/model pair is skipped for an hour by later requests in the
+same server process. When everything is used up the step fails with a message
+to add a key or try later — there is no checkpoint to resume from, so Translate
+starts over.
+
+**Consequences:** free-tier prompts may be used by Google for training. A key
+from the same Google project as another adds no quota.
+
+## 2026-11-14 — Recap V2 is back, following recap-en-to-mm's current flow
+
+**Decision, by the user:** add the "Recap V2" menu again and take the whole
+flow of the tool (now at its 2026-10-24 version), using this app's own
+services where the tool's differ. Asked first because it reverses the
+2026-11-10 removal; the user chose to restore the old code and update it.
+The table is recreated by `20261114120000_recap_v2_restore.sql` (the old rows
+and R2 files are gone for good).
+
+**Services:** speech is FunASR for Chinese and whisper-mm (large-v3, now with
+`?words=true`) for every other language; "Auto-detect" asks Whisper and, if it
+hears Chinese, listens again with FunASR. Story memory, translation and audit
+run on Gemini free-tier keys (see the next entry). The voice is the shared TTS
+catalog (VoicePicker, Azure and VoxCPM). The tool's Edge and Gemini TTS are not
+used.
+
+**What changed from the 2026-10-09 port, to match the tool:**
+
+- **Lines are whole sentences** (tool profile `v33_sentence_locked_6p5_10_24`,
+  2026-10-12): a line ends at a sentence mark or a ≥1.5s pause, at a clause
+  mark only after 6.5s, at a 0.35s breath or (non-English) an ASR segment end
+  only after 10s, and never runs past 24s. With few marks, a segment end over
+  2s is a sentence end. *Supersedes* the 4.2s/5.6s units below: the tool
+  measured that short lines cut 20–35% of sentences in two, and the second half
+  was then told twice or every next line slid one early.
+- **Any source language** (`source_language`, `detected_language`). Burmese
+  stops with a message; a transcript where a quarter of the lines repeat one of
+  the five before it stops before translation (the tool's
+  `_check_heard_speech`).
+- **Translation checks** (`lib/recap-v2-checks.ts`): placeholders, letters of
+  another script, English words, translator notes, a line repeating the end of
+  the one before, two nearby lines saying the same thing, and runs of lines slid
+  one early each re-ask the batch with the problem named. The last ID-complete
+  answer is kept, with stray letters dropped. Prompt rules 11–12 and the story
+  memory's `nameConsistency`/`unresolved` are the tool's. One unreadable story
+  memory chunk is left out instead of failing the step.
+- **Output**: Ratio adds Original; Fill is Blur background / Black bars / Crop to
+  fill; Quality 1080/720/480 sets the short side; Flip works on every ratio.
+- **Production tools**: Title, Extra text and a Logo, placed by dragging on the
+  preview; Voice volume 50–300%; an SRT is written with every render
+  (download from the editor; English glosses in ( ) are left off captions).
+- **Edit Text**: lines with English or another script are outlined, and "Next
+  problem" jumps to them. A re-render re-voices only changed lines (the clip
+  cache is content-addressed).
+
+**Rejected / not ported:**
+
+- The house colour grade (`MOVIE_RECAP_LOOK`) is no longer applied: the tool
+  has none, and the user asked for its flow.
+- Gemini TTS and Edge TTS: this app's TTS catalog is used instead.
+- The tool's subtitle styling panel (font, colours, box): captions keep this
+  app's yellow preset with size and position.
+- Batch folder processing and "Save final to": a web project is one video.
+- Translation batches still run three at a time with source-only context,
+  unlike the tool's sequential batches, so a long video fits the route's
+  300s limit; the repeat and near-duplicate checks therefore do not look
+  across a batch boundary.
+- Hindi/Urdu: an auto-detected Urdu is not rewritten as Hindi.
+
+**Consequences:**
+
+- whisper-mm must be redeployed (`modal deploy workers/whisper-mm/modal_app.py`)
+  before non-Chinese sources work; an old deployment returns no word stamps,
+  so every segment is spread evenly.
+- Projects re-split from a saved FunASR transcript get the sentence rules too.
+
+## 2026-11-10 — Recap V2 removed entirely *(superseded 2026-11-14 — restored)*
 
 **Decision, requested by the user:** Recap V2 is gone — page, nav item, API,
 `components/recap-v2/`, `lib/recap-v2*.ts`, its prompt, the Spoosh schema and

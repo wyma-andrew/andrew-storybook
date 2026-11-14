@@ -118,6 +118,40 @@ export function transcriptObjectKey(projectId: string, fileName: string) {
   return `${transcriptProjectPrefix(projectId)}source/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
 }
 
+export function recapV2ProjectPrefix(projectId: string) {
+  return `recap-v2/${projectId}/`;
+}
+
+export function recapV2ObjectKey(projectId: string, kind: "source" | "render" | "logo", fileName: string) {
+  return `${recapV2ProjectPrefix(projectId)}${kind}/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+}
+
+// The speech worker's raw segments and stamps, so lines can be re-split after
+// a segmentation change without listening again.
+export function recapV2AsrKey(projectId: string) {
+  return `${recapV2ProjectPrefix(projectId)}asr/transcript.json`;
+}
+
+export function recapV2NarrationKey(projectId: string, hash: string) {
+  return `${recapV2ProjectPrefix(projectId)}narration/${hash}.wav`;
+}
+
+export function splitterProjectPrefix(projectId: string) {
+  return `splitter/${projectId}/`;
+}
+
+export function splitterSourceKey(projectId: string, fileName: string) {
+  return `${splitterProjectPrefix(projectId)}source/${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+}
+
+export function splitterPartsPrefix(projectId: string) {
+  return `${splitterProjectPrefix(projectId)}parts/`;
+}
+
+export function splitterObjectKey(projectId: string, fileName: string) {
+  return `${splitterPartsPrefix(projectId)}${crypto.randomUUID()}-${sanitizeForKey(baseNameOf(fileName))}`;
+}
+
 export function movieRecapAssetPrefix(projectId: string, kind: "source" | "narration" | "render" | "subtitle" | "analysis") {
   return `${movieRecapProjectPrefix(projectId)}${kind}/`;
 }

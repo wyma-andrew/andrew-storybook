@@ -43,12 +43,13 @@ class WhisperMyanmar:
 
     # language None lets Whisper detect it; Movie Recap's non-Chinese sources
     # use that, the Burmese Transcript feature keeps "my".
-    def _transcribe(self, path: str, language: str | None) -> dict:
+    def _transcribe(self, path: str, language: str | None, words: bool = False) -> dict:
         result = self.model.transcribe(
             path,
             language=language,
             task="transcribe",
             fp16=True,
+            word_timestamps=words,
             # Conditioning on its own output is how one invented line gets
             # repeated across a quiet stretch.
             condition_on_previous_text=False,
@@ -65,7 +66,15 @@ class WhisperMyanmar:
             for segment in result.get("segments", [])
             if segment["text"].strip()
         ]
-        return {"language": result.get("language", language), "segments": segments}
+        response = {"language": result.get("language", language), "segments": segments}
+        if words:
+            # Recap V2 cuts lines on these; the text keeps Whisper's leading space.
+            response["words"] = [
+                {"word": word["word"], "start": word["start"], "end": word["end"]}
+                for segment in result.get("segments", [])
+                for word in segment.get("words", [])
+            ]
+        return response
 
     @modal.fastapi_endpoint(method="POST")
     async def transcribe(self, request: Request):
@@ -80,4 +89,5 @@ class WhisperMyanmar:
             file.flush()
             requested = request.query_params.get("language", "my").strip() or "my"
             language = None if requested == "auto" else requested
-            return await asyncio.to_thread(self._transcribe, file.name, language)
+            words = request.query_params.get("words") == "true"
+            return await asyncio.to_thread(self._transcribe, file.name, language, words)
