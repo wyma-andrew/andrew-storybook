@@ -8,12 +8,13 @@ import { mapConcurrent } from "./map-concurrent";
 import {
   ensureNarrationMaster,
   narrationClip,
+  narrationHash,
   narrationMasterObjectKeys,
   replaceNarrationMasterBeat,
 } from "./movie-recap-narration";
 import { trimFailureMessage } from "./movie-recap";
 import { writeMovieRecapScript, type RecapColumnSnapshot } from "./movie-recap-episode";
-import { deleteObject, movieRecapObjectKey, putObject } from "./r2";
+import { deleteObject, deletePrefix, movieRecapAssetPrefix, movieRecapNarrationKey, movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
 import {
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
@@ -101,6 +102,33 @@ async function cancelledElsewhere(db: Db, projectId: string) {
 // With `episode`, only its beat range of the story is built and the result goes
 // to the episode row; `previous` is the project's pre-claim script columns,
 // restored when the run ends.
+// Resync speaks every line fresh instead of reusing cached clips. A Normal
+// resync clears the whole narration prefix, episodes' audio included; those
+// rebuild themselves at their next render. An episode resync clears only its own
+// beats, so Normal keeps its cache. See history/movie-recap.md.
+async function clearNarrationAudio(project: MovieRecapProject, episode?: MovieRecapEpisode) {
+  try {
+    if (!episode) {
+      const deleted = await deletePrefix(movieRecapAssetPrefix(project.id, "narration"));
+      console.log(`[MovieRecapScript] project=${project.id} cleared ${deleted} narration object(s)`);
+      return;
+    }
+    const beats = episode.renderScript ?? [];
+    if (!beats.length) return;
+    const voice = resolveMovieRecapVoice(beats[0].voiceId ?? project.voiceProfileId);
+    const rate = voice.providerId === "azure" ? voice.params.rate : undefined;
+    const keys = beats.map((beat) => movieRecapNarrationKey(project.id, narrationHash(voice, beat.text, rate)));
+    const master = narrationMasterObjectKeys(
+      project.id, voice, beats.map((beat) => beat.text), beats[0].narrationRate ?? MOVIE_RECAP_NARRATION_PLAYBACK_RATE
+    );
+    keys.push(master.audioKey, master.timingKey);
+    await Promise.all(keys.map((key) => deleteObject(key).catch(() => undefined)));
+    console.log(`[MovieRecapScript] project=${project.id} episode=${episode.id} cleared ${keys.length} narration object(s)`);
+  } catch (error) {
+    console.warn(`[MovieRecapScript] project=${project.id} narration cleanup failed`, error);
+  }
+}
+
 export async function runMovieRecapScript(
   db: Db,
   project: MovieRecapProject,
@@ -171,6 +199,14 @@ export async function runMovieRecapScript(
       await putObject(analysisKey, Buffer.from(JSON.stringify(analysis)), "application/json");
     }
 
+    if (!revoice) {
+      console.log(
+        `[MovieRecapScript] project=${project.id}${episode ? ` episode=${episode.id}` : ""} read ${narration.length} beat(s) ` +
+          `from the Transcript story; first: ${JSON.stringify(narration[0]?.text.slice(0, 80) ?? "")}`
+      );
+      await clearNarrationAudio(project, episode);
+    }
+
     // Narration is the master timeline. Speak each beat once, keep the
     // content-addressed clips, then save a combined narration.wav and its beat
     // boundaries. Picture selection is not moved to make the words fit.
@@ -180,7 +216,14 @@ export async function runMovieRecapScript(
     const narrationClips = [];
     for (const [i, beat] of narration.entries()) {
       if (signal.aborted || await cancelledElsewhere(db, project.id)) throw new Error("Cancelled.");
-      const clip = await narrationClip({ projectId: project.id, voice, text: beat.text, slot: i, workDir, signal });
+      const clip = await narrationClip({ projectId: project.id, voice, text: beat.text, slot: i, workDir, signal })
+        .catch((error) => {
+          console.error(
+            `[MovieRecapScript] project=${project.id} beat ${i + 1}/${narration.length} voice=${voice.id} failed: ` +
+              `${error instanceof Error ? error.message : error} text=${JSON.stringify(beat.text)}`
+          );
+          throw error;
+        });
       narrationClips.push(clip);
       if (clip.cached) cacheHits++;
       beat.rawAudioS = clip.durationSeconds;

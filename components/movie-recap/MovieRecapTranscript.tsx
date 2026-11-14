@@ -48,9 +48,15 @@ const NARRATION_STYLE_REFERENCE = `STYLE REFERENCE (match its tone and rhythm on
 function buildMovieRecapTranslationPrompt(sourceText: string) {
   return `You are a Burmese movie-recap narrator. Convert the raw auto-generated transcript below into natural spoken Burmese narration, synchronized with timestamps.
 
+STEP 0 — UNDERSTAND THE WHOLE STORY FIRST (do this internally; do not output it)
+Read the entire transcript before writing anything. Work out the plot, who each character is, their relationships, and the tone. Then translate every line with that understanding — narrate what the line means in the story, not what its words literally say. Use this understanding only to choose wording; never add events that are not in the source.
+
 STEP 1 — CLEAN THE SOURCE (do this internally; do not output it)
 1. Remove sound tags such as [music], [applause], [laughter], and speaker markers ">>". Drop any line with no spoken text left.
 2. Join the caption fragments and re-split them so that each line holds exactly ONE complete sentence (ending in ".", "?" or "!", including when followed by a closing quote).
+   - If a sentence is long (more than about 15 English words, or about 25 Chinese characters), split it further at a comma ("," or "，") so every line is ONE short, complete thought that makes sense alone. Each split part takes the timestamp of the caption line where its first word appears.
+   - If a fragment is meaningless or incomplete on its own (e.g. "嗯，", a lone interjection, garbled ASR noise, or a clause that grammatically depends on the next), merge it into the nearest neighbouring line and keep the earlier timestamp.
+   - Never merge across a speaker change (">>") or a [Scene] line.
 3. Give each sentence the timestamp of the caption line where its first word appears. Exception: if the sentence starts in the last 1–2 words of a caption line, use the NEXT caption line's timestamp.
 4. If a quote contains several sentences, split them into separate lines.
 5. If two cleaned lines would get the same timestamp, join them into one line. Every timestamp must be used only once.
@@ -79,6 +85,7 @@ ${NARRATION_STYLE}
 ACCURACY
 - Keep the original meaning and order of events. Do not add information that is not in the source.
 - Simplify complicated phrasing, not content. Do not drop details just to make it shorter.
+- If part of the source is garbled or unclear ASR noise, do NOT guess or invent a storyline for it. Translate only what is clearly understandable; if nothing on a line is clear, keep its narration short and neutral.
 - Keep names and story-specific terms (people, places, organizations, objects, technical terms) accurate and consistent throughout.
 
 ${NARRATION_WORDING}

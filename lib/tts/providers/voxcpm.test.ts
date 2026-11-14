@@ -41,13 +41,13 @@ describe("voxcpm provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("gives up after three 5xx attempts", async () => {
+  it("gives up after four 5xx attempts", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response("", { status: 500 }));
     vi.stubGlobal("fetch", fetchMock);
     const pending = voxcpmProvider.synthesize({ text: "မင်္ဂလာပါ", voice });
     const assertion = expect(pending).rejects.toThrow("Voice worker returned 500.");
     await vi.runAllTimersAsync();
     await assertion;
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

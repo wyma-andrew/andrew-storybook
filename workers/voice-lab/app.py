@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+import traceback
 import urllib.request
 from pathlib import Path
 from threading import Lock
@@ -182,4 +183,11 @@ async def generate(request: GenerateRequest):
     except HTTPException:
         raise
     except Exception as error:
-        raise HTTPException(status_code=500, detail=f"Voice generation failed: {error}") from error
+        traceback.print_exc()
+        if not isinstance(error, FileNotFoundError):
+            # A failed generate can leave CUDA in a state where every later call
+            # fails in milliseconds, and with max_containers=1 the caller's
+            # retries all land here. Exiting makes Modal start a fresh container.
+            # See history/voice-lab.md 2026-11-14.
+            threading.Timer(1.0, os._exit, [1]).start()
+        raise HTTPException(status_code=500, detail=f"Voice generation failed: {type(error).__name__}: {error}") from error

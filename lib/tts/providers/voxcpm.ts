@@ -3,7 +3,10 @@ import { TtsError, type SynthesisRequest, type SynthesisResult, type TtsProvider
 
 // The self-hosted VoxCPM2 worker behind VOICE_LAB_WORKER_URL, shared by the
 // Voice Lab and Movie Recap profiles that select this provider.
-const VOXCPM_ATTEMPTS = 3;
+const VOXCPM_ATTEMPTS = 4;
+// After a failed generate the worker restarts its container; the later waits
+// cover that cold start. See history/voice-lab.md 2026-11-14.
+const VOXCPM_RETRY_DELAYS_MS = [2000, 5000, 15000];
 
 export const voxcpmProvider: TtsProvider = {
   id: "voxcpm",
@@ -59,7 +62,7 @@ export const voxcpmProvider: TtsProvider = {
       }
 
       if (attempt >= VOXCPM_ATTEMPTS || requestSignal.aborted) throw failure!;
-      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, VOXCPM_RETRY_DELAYS_MS[attempt - 1] ?? 15000));
     }
 
     if (

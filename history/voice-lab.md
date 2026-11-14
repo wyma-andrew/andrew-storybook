@@ -5,6 +5,27 @@ Covers: `app/(app)/labs/voice/**`, `app/api/labs/voice/**`,
 `workers/voice-lab/**`, `lib/voice-lab.ts`, `lib/voice-worker.ts`, and
 `lib/tts/**`.
 
+## 2026-11-14 — A failed generate restarts the container
+
+**Decision (approved by the user):** when `/generate` fails, the worker prints
+the traceback, puts the exception type in `detail`, and exits its process one
+second after it responds (unless the failure was a missing reference file).
+Modal then starts a fresh container. The VoxCPM provider now makes 4 attempts,
+waiting 2 s, 5 s, then 15 s, so the last attempts can land on the new
+container.
+
+**Why:** a movie-recap Resync failed around beat 40 of 58. Every attempt
+returned `500` in about 50 ms, with the message `Voice generation failed:` and
+nothing after it. The same voice worked minutes later on a new container. The
+likely cause is that the container got stuck after a failure, possibly in a
+CUDA error state. That has not been confirmed. With `max_containers=1`, all
+three retries reached that same container, so retrying alone could not help.
+
+**Consequence:** a real content failure, such as text the model cannot speak,
+now costs a cold start (about 80 s) for each failed attempt before the run
+reports the failure. The message and the movie-recap log line (which beat, and
+its text) now say what failed.
+
 ## 2026-11-13 — GPU fallback L40S → L4 → A10G; no warm-up
 
 **Decision, chosen by the user:** the worker's `gpu` is the list `L40S, L4, A10G`.
