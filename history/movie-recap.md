@@ -8,6 +8,23 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-14 — Delete script
+
+**Decision (approved by the user; an exception to the 2026-09-20 rule "only
+Resync may replace the script"):** the Narrative Script menu has `Delete
+script`. It asks for confirmation, then calls `POST script/clear`.
+
+- **Normal:** clears `render_script`, the analysis key and its object, and the
+  script status fields. It deletes the whole `narration/` prefix, the same way
+  a Normal resync does.
+- **Episode:** clears only that episode's `render_script` and status, and only
+  its own narration audio.
+- It is refused while a script or render run is in progress. The Transcript,
+  source video, Customize settings and rendered videos are left alone.
+
+**Why:** the user wanted a way to throw away a built script without building a
+new one at the same time. Resync could only replace it.
+
 ## 2026-11-14 — Resync deletes old narration audio first
 
 **Decision (by the user):** a Build or Resync of the script, which is not a
@@ -27,34 +44,25 @@ then synthesized fresh, with no cache hits and no old clips left behind.
 **Why:** the cache made Resync reuse the old recording for any line whose words
 had not changed, and superseded clips piled up under the project prefix.
 
-## 2026-11-14 — Translation prompt splits long sentences at commas
+## 2026-11-14 — Translation prompt: comma split and STEP 0 tried, then removed
 
-**Decision (approved by the user):** STEP 1 rule 2 of the copied translation
-prompt still splits on sentence ends first. A sentence longer than about 15
-English words or 25 Chinese characters is then split again at a comma, so that
-each line holds one complete thought. Meaningless fragments such as `嗯，`,
-interjections, ASR noise and dependent clauses are merged into a neighbouring
-line, keeping the earlier stamp, but never across `>>` or a `[Scene]` line.
-ACCURACY gains a rule: never invent story for garbled ASR text.
+**Kept:** one ACCURACY rule. If part of the source is garbled ASR, do not
+guess or invent story for it. Translate only what is clear.
 
-**Why:** FunASR Chinese output is mostly `，` with few sentence ends, so
-"one sentence per line" produced very long beats crowded with several events,
-and stray fillers were translated as words.
+**Removed the same day by the user, who found the output got worse:**
 
-**Rejected:** a comma split for every sentence. English captions already give
-short sentences, and splitting all of them would multiply beats for no gain.
-Rejected too: a Chinese-only prompt variant. The length threshold covers both
-languages with one prompt.
+- **The STEP 1 rule 2 comma split and fragment merge.** Long sentences of more
+  than about 15 English words or 25 Chinese characters were split again at
+  commas. Fragments such as `嗯，` were merged into the neighbouring line. This
+  forced the model to make up timestamps for the split parts. It also
+  contradicted TIMESTAMP RULES "Never merge".
+- **STEP 0, "read the whole story first and narrate what each line means".** It
+  gave the model permission to retell freely, away from the line in front of
+  it.
 
-**Consequence:** Chinese sources produce roughly 1.5–2× more, shorter beats, so
-Build Script takes longer. Total video length should stay about the same.
-
-**Same day, approved by the user: STEP 0 reads the whole story first.** Before
-cleaning, the model reads the entire transcript for plot, characters,
-relationships and tone, then narrates what each line means in the story. "Never
-translate word-for-word" worked only inside one sentence, so pronouns, who-is-who
-and tone were still guessed line by line. STEP 0 ends with "never add events not
-in the source" so it does not undo the no-invention rule above.
+**Why record this:** both look like obvious improvements for FunASR Chinese
+output, which is mostly `，` with few sentence ends. Both were tried. Do not
+re-add either one without a fresh look at real output.
 
 ## 2026-11-13 — Facebook upload runs in the background (`after()`)
 
@@ -6022,6 +6030,8 @@ substitutions that each keep the polite ending. The pass then landed 597 -> 504
 against a 540 budget with the register intact.
 
 ## 2026-09-20 — the Narrative Script is authoritative; only Resync may replace it
+
+**Partly superseded 2026-11-14:** `Delete script` may also remove the beats; see that entry.
 
 **Decision, the user's, stated as a rule:** once the beats exist, nothing may
 change them except `Resync with Main Script`. Editing the transcript does not

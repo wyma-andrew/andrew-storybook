@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Undo2, X } from "lucide-react";
+import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -32,6 +32,7 @@ export function MovieRecapScript({
   busyMessage,
   onBuild,
   onRevoice,
+  onDelete,
   onSave,
   onCancel,
   onDirtyChange,
@@ -49,6 +50,7 @@ export function MovieRecapScript({
   busyMessage?: string | null;
   onBuild: () => void;
   onRevoice: () => void;
+  onDelete: () => Promise<void>;
   /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
   /** Rebuilds this beat's audio and the combined narration master. */
   onSave: (index: number, text: string) => void;
@@ -305,6 +307,9 @@ export function MovieRecapScript({
                 >
                   <span className="text-danger">Resync with Main Script</span>
                 </MenuItem>
+                <MenuItem disabled={busy || savingBeats.size > 0} onClick={() => confirmDeleteScript(onDelete, Boolean(episodeId))}>
+                  <span className="flex items-center gap-2 text-danger"><Trash2 size={14} /> Delete script</span>
+                </MenuItem>
               </Menu>
             )}
           </div>
@@ -540,6 +545,18 @@ function confirmRevoice(run: () => void, voiceName: string) {
       dismiss();
       run();
     },
+  });
+}
+
+function confirmDeleteScript(run: () => Promise<void>, episode: boolean) {
+  ConfirmDialog.show({
+    title: "Delete script",
+    content:
+      `This deletes every beat${episode ? " of this episode" : ""}, its edits and its narration audio. ` +
+      "The Transcript, the source video and rendered videos stay. Build again to make a new script.",
+    confirmButtonLabel: "Delete",
+    cancelButtonLabel: "Cancel",
+    onConfirm: run,
   });
 }
 

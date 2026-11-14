@@ -263,7 +263,8 @@ manual whole-master rebuild: a beat Re Build splices or fully rebuilds the
 master, and render materializes it if missing. Multiple beat Re Build clicks
 queue in the browser and run one at a time so each write uses the latest saved
 script and narration master. **Resync with Main Script** alone
-replaces beats from the Transcript story. Starting one beat preview continues through
+replaces beats from the Transcript story; **Delete script** (`script/clear`)
+removes them and their narration audio. Starting one beat preview continues through
 the following saved beats; while one plays, the next three configured-speed WAVs
 are prepared concurrently and kept as browser object URLs for smooth handoff.
 

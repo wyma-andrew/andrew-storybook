@@ -255,6 +255,9 @@ export type ApiSchema = {
   "movie-recaps/:id/script": {
     POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode | null }; body?: { revoice?: boolean; episodeId?: string } };
   };
+  "movie-recaps/:id/script/clear": {
+    POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode | null }; body?: { episodeId?: string } };
+  };
   "movie-recaps/:id/script/cancel": {
     POST: { data: MovieRecapProject };
   };

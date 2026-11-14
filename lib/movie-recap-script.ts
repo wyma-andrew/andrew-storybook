@@ -106,7 +106,7 @@ async function cancelledElsewhere(db: Db, projectId: string) {
 // resync clears the whole narration prefix, episodes' audio included; those
 // rebuild themselves at their next render. An episode resync clears only its own
 // beats, so Normal keeps its cache. See history/movie-recap.md.
-async function clearNarrationAudio(project: MovieRecapProject, episode?: MovieRecapEpisode) {
+export async function clearNarrationAudio(project: MovieRecapProject, episode?: MovieRecapEpisode) {
   try {
     if (!episode) {
       const deleted = await deletePrefix(movieRecapAssetPrefix(project.id, "narration"));

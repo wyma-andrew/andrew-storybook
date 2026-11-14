@@ -271,6 +271,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: renameEpisode } = useWrite((api) => api("movie-recaps/:id/episodes/:episodeId").PATCH());
   const { trigger: removeEpisode } = useWrite((api) => api("movie-recaps/:id/episodes/:episodeId").DELETE());
   const { trigger: buildScript, loading: buildingScript } = useWrite((api) => api("movie-recaps/:id/script").POST());
+  const { trigger: clearScript } = useWrite((api) => api("movie-recaps/:id/script/clear").POST());
   const { trigger: readTranscript } = useWrite((api) => api("movie-recaps/:id/transcript").POST());
   const { trigger: cancelTranscript, loading: cancellingTranscript } = useWrite((api) => api("movie-recaps/:id/transcript/cancel").POST());
   const { trigger: rebuildBeat, tasks: beatRebuilds, removeSettled: removeSettledBeatRebuilds } = useQueue(
@@ -487,6 +488,18 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   function reloadEpisodes() {
     if (!project) return Promise.resolve([] as MovieRecapEpisode[]);
     return refreshEpisodes({ params: { id: project.id }, force: true }).then((result) => result.data ?? []);
+  }
+
+  async function deleteRecapScript(episodeId?: string) {
+    if (!project) return;
+    const result = await clearScript({ params: { id: project.id }, body: { episodeId } });
+    if (result.error || !result.data) {
+      toast.error(result.error?.error ?? "Could not delete the script.");
+      return;
+    }
+    setProject(withoutEpisode(result.data));
+    if (episodeId) void reloadEpisodes();
+    toast.success("Script deleted.");
   }
 
   async function buildRecapScript(options?: { revoice?: boolean; episodeId?: string }) {
@@ -1135,6 +1148,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   episodeId={scriptEpisode?.id}
                   onBuild={() => void buildRecapScript({ episodeId: scriptEpisode?.id })}
                   onRevoice={() => void buildRecapScript({ revoice: true, episodeId: scriptEpisode?.id })}
+                  onDelete={() => deleteRecapScript(scriptEpisode?.id)}
                   onSave={saveScriptBeat}
                   onCancel={cancelScriptRun}
                   onDirtyChange={setDirtyBeats}
