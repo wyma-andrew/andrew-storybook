@@ -38,6 +38,17 @@ fails every time. Changes:
   unexpected errors still exit, since those are the ones that might leave the
   GPU in a bad state.
 
+## 2026-11-22 — Scaledown 30 s → 120 s
+
+**Decision, chosen by the user:** `scaledown_window` is 120 s.
+
+**Why:** Re Build on Narrative Script is used one beat at a time with editing
+in between. Editing a line usually takes longer than 30 s, so the container had
+closed and each Re Build paid a cold start (model load, about 1–2 min).
+
+**Cost accepted:** up to 90 s more idle GPU after the last request, about $0.03
+on A10G each time.
+
 ## 2026-11-22 — A10G first, then L4; L40S dropped
 
 **Decision, chosen by the user:** the worker's `gpu` list is `A10G, L4`. L40S

@@ -122,6 +122,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5;
 // Mirrors the server's own limit (the PATCH route), so the Add button stops at
 // the same place the request would have been refused.
 const MAX_BLUR_REGIONS = 8;
+const BEAT_REBUILD_BATCH = 8;
 const SCRIPT_MODES = ["normal", "episode"] as const;
 
 type CustomizeTab = "aspect" | "subtitle" | "logo" | "blur";
@@ -214,6 +215,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   );
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
+  const { trigger: rebuildBeats } = useWrite((api) => api("movie-recaps/:id/script/beats/rebuild").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
   const { trigger: pollProgress } = useRead((api) => api("movie-recaps/:id/progress").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
@@ -262,7 +264,12 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const queuedRuns = useRef<{ script: boolean | string; render: boolean | string }>({ script: false, render: false });
   const savingBeats = new Set(pendingBeatIndexes.current);
   const runningBeat = beatRebuilds.find((task) => task.status === "running");
-  const checkingBeat = (runningBeat?.input?.body as { index?: number } | undefined)?.index ?? null;
+  const queuedBeat = (runningBeat?.input?.body as { index?: number } | undefined)?.index;
+  const [batchRebuilding, setBatchRebuilding] = useState<number[]>([]);
+  const [rebuildingAll, setRebuildingAll] = useState(false);
+  const [stoppingRebuild, setStoppingRebuild] = useState(false);
+  const stopRebuild = useRef(false);
+  const checkingBeats = new Set([...batchRebuilding, ...(queuedBeat === undefined ? [] : [queuedBeat])]);
   const setStep = (target: StepNumber) => {
     if (pendingBeatIndexes.current.size > 0 && target !== step) {
       toast.error("Wait for the queued beat rebuilds to finish.");
@@ -573,11 +580,47 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
       else {
         setProject(withoutEpisode(result.data));
+        if (result.data.failed.length) toast.error(`Beat ${index + 1} could not be voiced.`);
         if (episodeId) await reloadEpisodes();
       }
     } finally {
       pendingBeatIndexes.current.delete(index);
       removeSettledBeatRebuilds();
+    }
+  }
+
+  async function rebuildScriptBeats(edits: { index: number; text: string }[]) {
+    if (!project || pendingBeatIndexes.current.size > 0 || !edits.length) return;
+    const projectId = project.id;
+    const episodeId = scriptEpisode?.id;
+    for (const edit of edits) pendingBeatIndexes.current.add(edit.index);
+    const failed: number[] = [];
+    stopRebuild.current = false;
+    setRebuildingAll(true);
+    try {
+      // Batches keep each request inside the route's time limit; every batch is
+      // still one master round trip instead of one per beat.
+      // Stop takes effect between batches: the batch in flight is already
+      // writing the master on the server, so aborting it would only hide that.
+      for (let start = 0; start < edits.length && !stopRebuild.current; start += BEAT_REBUILD_BATCH) {
+        const batch = edits.slice(start, start + BEAT_REBUILD_BATCH);
+        setBatchRebuilding(batch.map((edit) => edit.index));
+        const result = await rebuildBeats({ params: { id: projectId }, body: { edits: batch, episodeId } });
+        if (result.error || !result.data) {
+          toast.error(result.error?.error ?? "Could not rebuild those beats.");
+          break;
+        }
+        failed.push(...result.data.failed);
+        setProject(withoutEpisode(result.data));
+        for (const edit of batch) pendingBeatIndexes.current.delete(edit.index);
+      }
+      if (failed.length) toast.error(`Beat ${failed.map((index) => index + 1).join(", ")} could not be voiced.`);
+      if (episodeId) await reloadEpisodes();
+    } finally {
+      pendingBeatIndexes.current.clear();
+      setBatchRebuilding([]);
+      setRebuildingAll(false);
+      setStoppingRebuild(false);
     }
   }
 
@@ -1084,12 +1127,19 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   onRevoice={() => void buildRecapScript({ revoice: true, episodeId: scriptEpisode?.id })}
                   onDelete={() => deleteRecapScript(scriptEpisode?.id)}
                   onSave={saveScriptBeat}
+                  onRebuildAll={(edits) => void rebuildScriptBeats(edits)}
+                  rebuildingAll={rebuildingAll}
+                  stoppingRebuild={stoppingRebuild}
+                  onStopRebuild={() => {
+                    stopRebuild.current = true;
+                    setStoppingRebuild(true);
+                  }}
                   onCancel={cancelScriptRun}
                   onDirtyChange={setDirtyBeats}
                   onApplyBeats={applyScriptBeats}
                   applyingBeats={applyingBeats}
                   building={buildingScript}
-                  checking={checkingBeat}
+                  checking={checkingBeats}
                   savingBeats={savingBeats}
                   cancelling={cancellingScript}
                 />}

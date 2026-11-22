@@ -32,8 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Wait for the run in progress to finish." }, { status: 409 });
   }
 
+  let failed: number[];
   try {
-    await saveMovieRecapBeat(db, project, index, text, { measure, episodeId: episode?.id ?? null });
+    ({ failed } = await saveMovieRecapBeat(db, project, index, text, { measure, episodeId: episode?.id ?? null }));
   } catch (checkError) {
     return NextResponse.json(
       { error: checkError instanceof Error ? checkError.message : "Could not save that beat." },
@@ -43,5 +44,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const result = await movieRecapTargetResponse(db, id, episode?.id ?? null);
   if ("error" in result) return NextResponse.json({ error: result.error }, { status: 500 });
-  return NextResponse.json(result.body);
+  return NextResponse.json({ ...result.body, failed });
 }

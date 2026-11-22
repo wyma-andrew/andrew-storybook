@@ -29,7 +29,9 @@ GPU_FUNCTION = dict(
     secrets=[modal.Secret.from_name("voice-lab")],
     min_containers=0,
     max_containers=1,
-    scaledown_window=30,
+    # Long enough to stay warm while the user edits the next beat; see
+    # history/voice-lab.md 2026-11-22.
+    scaledown_window=120,
 )
 
 

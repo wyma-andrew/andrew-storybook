@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, Copy, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, Copy, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Square, Trash2, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
@@ -34,6 +34,10 @@ export function MovieRecapScript({
   onRevoice,
   onDelete,
   onSave,
+  onRebuildAll,
+  rebuildingAll,
+  stoppingRebuild,
+  onStopRebuild,
   onCancel,
   onDirtyChange,
   onApplyBeats,
@@ -54,6 +58,12 @@ export function MovieRecapScript({
   /** Rebuilds audio and timing from the current saved beats without reading the Transcript story. */
   /** Rebuilds this beat's audio and the combined narration master. */
   onSave: (index: number, text: string) => void;
+  /** Rebuilds every listed beat with one narration master update per batch. */
+  onRebuildAll: (edits: { index: number; text: string }[]) => void;
+  rebuildingAll: boolean;
+  stoppingRebuild: boolean;
+  /** Skips the batches not yet sent; the one in flight still finishes. */
+  onStopRebuild: () => void;
   onCancel: () => void;
   /** How many beats have unsaved edits, so the wizard can guard leaving the step. */
   onDirtyChange: (count: number) => void;
@@ -61,8 +71,8 @@ export function MovieRecapScript({
   onApplyBeats: (edits: { index: number; text: string }[]) => Promise<number>;
   applyingBeats: boolean;
   building: boolean;
-  /** Index of the beat being re-spoken, or null. */
-  checking: number | null;
+  /** Beats being re-spoken right now. */
+  checking: ReadonlySet<number>;
   savingBeats: ReadonlySet<number>;
   cancelling: boolean;
 }) {
@@ -104,6 +114,10 @@ export function MovieRecapScript({
   // The SAVED lines that no longer match what the script run first wrote. Offered
   // as one button because a paste changes many beats at once, and undoing it beat
   // by beat is not undoing it.
+  const rebuildable = script.flatMap((beat, index) => {
+    const text = texts[index]?.trim() ?? "";
+    return text && (text !== beat.text || beat.audioStale) ? [{ index, text }] : [];
+  });
   const restorableAll = script
     .map((beat, index) => ({ index, text: beat.originalText ?? "" }))
     .filter((entry) => entry.text && entry.text !== script[entry.index].text);
@@ -281,6 +295,15 @@ export function MovieRecapScript({
             {script.length > 0 && <span className="text-xs text-fg-3">{script.length} beats{builtVoiceName ? ` · ${builtVoiceName}` : ""}</span>}
           </div>
           <div className="flex items-center gap-2">
+            {rebuildingAll ? (
+              <LoadingButton variant="danger" loading={stoppingRebuild} loadingText="Stopping…" onClick={onStopRebuild}>
+                <Square size={14} /> Stop
+              </LoadingButton>
+            ) : rebuildable.length > 1 && (
+              <Button variant="primary" disabled={busy || savingBeats.size > 0} onClick={() => onRebuildAll(rebuildable)}>
+                <RefreshCw size={14} /> Re Build {rebuildable.length} beats
+              </Button>
+            )}
             {restorableAll.length > 0 && (
               <LoadingButton loading={applyingBeats} disabled={busy || savingBeats.size > 0} onClick={() => void onApplyBeats(restorableAll)}>
                 <Undo2 size={14} /> Restore {restorableAll.length} original
@@ -522,7 +545,7 @@ export function MovieRecapScript({
                         <LoadingButton
                           variant="primary"
                           loading={savingBeats.has(index)}
-                          loadingText={checking === index ? "Rebuilding…" : "Queued…"}
+                          loadingText={checking.has(index) ? "Rebuilding…" : "Queued…"}
                           disabled={busy || !texts[index]?.trim() || savingBeats.has(index)}
                           onClick={() => onSave(index, texts[index])}
                         >

@@ -300,13 +300,15 @@ export function replaceNarrationBeatTiming(
   });
 }
 
-export async function replaceNarrationMasterBeat({
+// One download and one upload of the master for any number of replaced beats:
+// the master is the whole film's narration, so a round trip per beat was most of
+// a multi-beat Re Build (history/movie-recap.md).
+export async function replaceNarrationMasterBeats({
   projectId,
   voice,
   previousTexts,
   nextTexts,
-  beatIndex,
-  replacementClip,
+  replacements,
   workDir,
   previousPlaybackRate,
   playbackRate = MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
@@ -315,16 +317,16 @@ export async function replaceNarrationMasterBeat({
   voice: Voice;
   previousTexts: string[];
   nextTexts: string[];
-  beatIndex: number;
-  replacementClip: { path: string; durationSeconds: number };
+  replacements: { beatIndex: number; clip: { path: string; durationSeconds: number } }[];
   workDir: string;
   previousPlaybackRate?: number;
   playbackRate?: number;
 }) {
+  const sorted = [...replacements].sort((a, b) => a.beatIndex - b.beatIndex);
   if (
+    !sorted.length ||
     previousTexts.length !== nextTexts.length ||
-    !previousTexts[beatIndex] ||
-    !nextTexts[beatIndex] ||
+    sorted.some(({ beatIndex }) => !previousTexts[beatIndex] || !nextTexts[beatIndex]) ||
     previousPlaybackRate !== playbackRate
   ) return null;
 
@@ -349,45 +351,43 @@ export async function replaceNarrationMasterBeat({
   if (!previousAudio || !previousTimings) return null;
 
   const previousPath = path.join(workDir, "previous-narration.wav");
-  const replacementPath = path.join(workDir, `replacement-${beatIndex}.wav`);
   await writeFile(previousPath, previousAudio);
-  const replacementDurationS = await renderNarrationClipAtConfiguredRate({
-    inputPath: replacementClip.path,
-    inputDurationS: replacementClip.durationSeconds,
-    outputPath: replacementPath,
-    playbackRate,
-  });
-
-  const replaced = previousTimings[beatIndex];
   const previousEndS = previousTimings.at(-1)?.endS ?? 0;
   const parts: string[] = [];
-  if (replaced.startS > 0) {
-    const prefixPath = path.join(workDir, "narration-prefix.wav");
+  let timings = previousTimings;
+  let cursorS = 0;
+  const keep = async (fromS: number, toS: number) => {
+    if (toS <= fromS) return;
+    const partPath = path.join(workDir, `narration-keep-${parts.length}.wav`);
     await run(FFMPEG, [
-      "-y", "-i", previousPath, "-t", replaced.startS.toFixed(6),
-      "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", prefixPath,
+      "-y", "-ss", fromS.toFixed(6), "-i", previousPath, "-t", (toS - fromS).toFixed(6),
+      "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", partPath,
     ]);
-    parts.push(prefixPath);
+    parts.push(partPath);
+  };
+  for (const { beatIndex, clip } of sorted) {
+    const replaced = previousTimings[beatIndex];
+    await keep(cursorS, replaced.startS);
+    const replacementPath = path.join(workDir, `replacement-${beatIndex}.wav`);
+    const replacementDurationS = await renderNarrationClipAtConfiguredRate({
+      inputPath: clip.path,
+      inputDurationS: clip.durationSeconds,
+      outputPath: replacementPath,
+      playbackRate,
+    });
+    parts.push(replacementPath);
+    timings = replaceNarrationBeatTiming(timings, beatIndex, replacementDurationS);
+    cursorS = replaced.endS;
   }
-  parts.push(replacementPath);
-  if (replaced.endS < previousEndS) {
-    const suffixPath = path.join(workDir, "narration-suffix.wav");
-    await run(FFMPEG, [
-      "-y", "-ss", replaced.endS.toFixed(6), "-i", previousPath,
-      "-t", (previousEndS - replaced.endS).toFixed(6),
-      "-ar", String(MOVIE_RECAP_NARRATION_SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", suffixPath,
-    ]);
-    parts.push(suffixPath);
-  }
+  await keep(cursorS, previousEndS);
 
   const listPath = path.join(workDir, "narration-replacement.txt");
   await writeFile(listPath, parts.map((part) => `file '${part}'`).join("\n"));
   await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", narrationPath]);
 
-  const timings = replaceNarrationBeatTiming(previousTimings, beatIndex, replacementDurationS);
   const expectedDurationS = timings.at(-1)?.endS ?? 0;
   const actualDurationS = await probeDurationS(narrationPath);
-  if (!actualDurationS || Math.abs(actualDurationS - expectedDurationS) > 1 / MOVIE_RECAP_TARGET_FPS) {
+  if (!actualDurationS || Math.abs(actualDurationS - expectedDurationS) > sorted.length / MOVIE_RECAP_TARGET_FPS) {
     return null;
   }
 

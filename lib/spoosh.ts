@@ -330,7 +330,7 @@ export type ApiSchema = {
   // and rebuilds the combined narration master from cached neighbours. The
   // legacy `measure: false` path remains server-compatible but has no UI action.
   "movie-recaps/:id/script/beat": {
-    POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode }; body: { index: number; text: string; measure?: boolean; episodeId?: string } };
+    POST: { data: MovieRecapProject & { episode?: MovieRecapEpisode; failed: number[] }; body: { index: number; text: string; measure?: boolean; episodeId?: string } };
   };
   "movie-recaps/:id/script/beat/preview": {
     POST: {
@@ -344,6 +344,14 @@ export type ApiSchema = {
   "movie-recaps/:id/script/beats": {
     POST: {
       data: MovieRecapProject & { changed: number; episode?: MovieRecapEpisode };
+      body: { edits: { index: number; text: string }[]; episodeId?: string };
+    };
+  };
+  // Rebuilds several beats in one request: each is spoken, then the narration
+  // master is patched once. `failed` lists beats the voice refused.
+  "movie-recaps/:id/script/beats/rebuild": {
+    POST: {
+      data: MovieRecapProject & { episode?: MovieRecapEpisode; failed: number[] };
       body: { edits: { index: number; text: string }[]; episodeId?: string };
     };
   };

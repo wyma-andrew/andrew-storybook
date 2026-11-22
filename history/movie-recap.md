@@ -8,6 +8,38 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-22 — Re Build several beats in one request
+
+**Decision, chosen by the user:** Narrative Script shows `Re Build N beats`
+when more than one beat is edited or stale. It sends them to
+`script/beats/rebuild`, which speaks each one, then patches the narration
+master once (`replaceNarrationMasterBeats`). The per-beat `Re Build this beat`
+stays and uses the same path with one beat. This adds to the 2026-09-21 "one
+action per beat" decision and does not replace it.
+
+**Why:** the master is the whole film's narration, about 140 MB of WAV for a
+49-minute recap. Every single-beat Re Build downloaded it from R2, cut it, and
+uploaded it again, so ten edits moved it ten times. Now each batch moves it
+once.
+
+**Constraints a later change must keep:**
+- The client sends batches of 8 (`BEAT_REBUILD_BATCH`) so each request stays
+  inside the route's 300 s limit.
+- Beats are spoken one after another; the voice worker runs a single
+  container.
+- While it runs the button becomes `Stop`. Stop skips the batches not yet sent;
+  the batch in flight finishes, because the server is already writing its
+  master and aborting the request would only hide that result.
+- A beat the voice refuses is saved with `voiceError` and silence, as in a
+  script run, and the rest of the batch goes on. This now applies to the
+  single-beat Re Build too: before, a refusal returned an error and did not
+  save the text. The client shows a toast naming the failed beats.
+- The patched master's length check allows one frame of drift per replaced
+  beat, since each cut can round.
+
+**Rejected for now:** storing the master as FLAC to shrink the transfer. It
+would need the render and the cache keys to change with it.
+
 ## 2026-11-22 — One beat's voice failure no longer fails the script run
 
 **Decision, requested by the user:** when the voice provider refuses a beat

@@ -259,7 +259,9 @@ it uses a 0.75x baseline, slows shortage beats to the configured minimum and
 speeds surplus beats up to 1.1x, then trims or freezes whatever is left. Editing and choosing **Re Build
 this beat** re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`),
 replaces its section in the existing master, and shifts later timing boundaries
-by the duration delta. A missing, incompatible, or invalid master falls back to
+by the duration delta. **Re Build N beats** (`POST
+movie-recaps/:id/script/beats/rebuild`, batches of 8) does the same for many
+beats with one master download and upload per batch. A missing, incompatible, or invalid master falls back to
 a bounded-parallel rebuild from raw caches. Raw provider-output duration is
 stored per beat so unchanged audio does not need measuring again; video speed is
 absent from both audio cache keys. Each saved beat has an inline playable preview from
