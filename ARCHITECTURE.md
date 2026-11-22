@@ -410,8 +410,8 @@ translates ID-locked batches with Gemini on a pool of free-tier keys
 and audits them. **Render** (`lib/recap-v2-render.ts`) speaks each line
 through `lib/tts/` (raw clip cached by content), optionally trims edge silence,
 retimes each window's picture to its line (max 1.25×, then the tail is cut),
-frames it (`lib/video-framing.ts`), and burns captions, title, extra text and
-logo; it also writes an SRT. All steps share one job slot (`job_*` columns,
+frames it (`lib/video-framing.ts`), and burns captions plus Movie Recap's
+corner logo and watermark (shared logo templates); it also writes an SRT. All steps share one job slot (`job_*` columns,
 `lib/recap-v2-job.ts`), polled through `…/progress`.
 
 ### Splitter

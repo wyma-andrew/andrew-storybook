@@ -1,13 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { MOVIE_RECAP_SUBTITLE_PRESETS } from "./constants/movie-recap";
+import { MOVIE_RECAP_SUBTITLE_PRESETS, MOVIE_RECAP_WATERMARK } from "./constants/movie-recap";
 import { mapConcurrent } from "./map-concurrent";
 import { FFMPEG, run } from "./movie-recap-ffmpeg";
 import { narrationHash } from "./movie-recap-narration";
 import { ASS_FONT_SIZE_RATIO, subtitleFace, toAssColor } from "./movie-recap-render";
 import { downloadObjectToFile, getObjectBytes, putObject, recapV2NarrationKey, recapV2ObjectKey, uploadFileToR2 } from "./r2";
-import { recapV2CaptionChunks, recapV2OutputSize, type RecapV2Project, type RecapV2Unit } from "./recap-v2";
+import { recapV2CaptionChunks, recapV2LogoLayout, recapV2OutputSize, recapV2WatermarkText, type RecapV2Project, type RecapV2Unit } from "./recap-v2";
 import { captionTimes, pcmToWav, shortPauseBounds } from "./recap-v2-audio";
 import { translateBlurRadius } from "./translate";
 import { framingFilter } from "./video-framing";
@@ -112,22 +112,6 @@ function assTime(seconds: number) {
   return `${Math.floor(cs / 360000)}:${String(Math.floor(cs / 6000) % 60).padStart(2, "0")}:${String(Math.floor(cs / 100) % 60).padStart(2, "0")}.${String(cs % 100).padStart(2, "0")}`;
 }
 
-// Title and Extra text: white with a dark outline, centred on their point,
-// through libass because it shapes Burmese where drawtext does not.
-function overlayStyle(name: string, sizePercent: number, height: number) {
-  const face = subtitleFace(700);
-  const cssPx = height * sizePercent / 100;
-  const fontSize = Math.max(12, Math.round(cssPx * ASS_FONT_SIZE_RATIO));
-  const outline = Math.max(1, Math.round(cssPx * 0.08));
-  return `Style: ${name},${face.name},${fontSize},&H00FFFFFF,&H00FFFFFF,&H00000000,&HFF000000,${face.bold},0,0,0,100,100,0,0,1,${outline},0,5,0,0,0,1`;
-}
-
-function overlayEvent(name: string, text: string, xPercent: number, yPercent: number, width: number, height: number, totalS: number) {
-  const value = text.trim().replace(/[\\{}]/g, "").replace(/\n/g, "\\N");
-  if (!value) return [];
-  return [`Dialogue: 1,${assTime(0)},${assTime(totalS + 1)},${name},,0,0,0,,{\\an5\\pos(${Math.round(width * xPercent / 100)},${Math.round(height * yPercent / 100)})}${value}`];
-}
-
 export function recapV2Captions(timeline: RecapV2TimedUnit[], clips: Int16Array[]) {
   return timeline.flatMap(({ unit, audioStart }, index) => {
     if (unit.muted) return [];
@@ -156,6 +140,15 @@ export function buildRecapV2Srt(timeline: RecapV2TimedUnit[], clips: Int16Array[
     .join("\n");
 }
 
+// Movie Recap's watermark: centred, white at 30%, spaced capitals.
+function watermarkStyle(project: RecapV2Project, width: number, height: number) {
+  const px = height * recapV2LogoLayout(project).watermarkSizePct / 100;
+  const face = subtitleFace(MOVIE_RECAP_WATERMARK.weight);
+  const color = toAssColor(MOVIE_RECAP_WATERMARK.color, MOVIE_RECAP_WATERMARK.opacityPct);
+  const marginH = Math.round(width * 6 / 100);
+  return `Style: Watermark,${face.name},${Math.round(px * ASS_FONT_SIZE_RATIO)},${color},${color},&HFF000000,&HFF000000,${face.bold},0,0,0,100,100,${Math.round(px * MOVIE_RECAP_WATERMARK.letterSpacingEm)},0,1,0,0,5,${marginH},${marginH},0,1`;
+}
+
 function buildAss(project: RecapV2Project, timeline: RecapV2TimedUnit[], clips: Int16Array[]) {
   const totalS = timeline.reduce((sum, item) => sum + item.audioS, 0);
   const [width, height] = recapV2OutputSize(project);
@@ -173,11 +166,9 @@ function buildAss(project: RecapV2Project, timeline: RecapV2TimedUnit[], clips: 
     `PlayResX: ${width}`, `PlayResY: ${height}`, "", "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
     `Style: Text,${face.name},${fontSize},${color},${color},${toAssColor(style.outlineColor)},&HFF000000,${face.bold},0,0,0,100,100,0,0,1,${outline},0,2,${marginH},${marginH},0,1`,
-    overlayStyle("Title", project.titleSize, height),
-    overlayStyle("Extra", project.extraSize, height),
+    watermarkStyle(project, width, height),
     "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-    ...overlayEvent("Title", project.titleText, project.titleX, project.titleY, width, height, totalS),
-    ...overlayEvent("Extra", project.extraText, project.extraX, project.extraY, width, height, totalS),
+    ...(recapV2WatermarkText(project) ? [`Dialogue: 0,${assTime(0)},${assTime(totalS + 1)},Watermark,,0,0,0,,${recapV2WatermarkText(project).toUpperCase().replace(/[\\{}]/g, "").replace(/\r?\n/g, "\\N")}`] : []),
     ...timeline.flatMap(({ unit, audioStart }, index) => {
       if (unit.muted || !project.subtitlesEnabled) return [];
       const chunks = recapV2CaptionChunks(unit.text);
@@ -246,7 +237,7 @@ export async function renderRecapV2(project: RecapV2Project, onProgress: RecapV2
     const inputs = ["-i", footagePath, "-i", narrationPath];
     const graph: string[] = [];
     let video = "0:v";
-    const needsAss = project.subtitlesEnabled || project.titleText.trim() || project.extraText.trim();
+    const needsAss = project.subtitlesEnabled || recapV2WatermarkText(project);
     if (needsAss) {
       const assPath = path.join(workDir, "captions.ass");
       await writeFile(assPath, buildAss(project, timeline, parts), "utf8");
@@ -254,14 +245,20 @@ export async function renderRecapV2(project: RecapV2Project, onProgress: RecapV2
       graph.push(`[${video}]ass='${escaped}'[sub]`);
       video = "sub";
     }
-    if (project.logoObjectKey) {
+    if (project.logoEnabled && project.logoObjectKey) {
       const logoPath = path.join(workDir, "logo");
       await downloadObjectToFile(project.logoObjectKey, logoPath, { signal });
       inputs.push("-loop", "1", "-i", logoPath);
       const [width, height] = recapV2OutputSize(project);
-      const logoW = Math.max(2, Math.round(width * project.logoSize / 100 / 2) * 2);
-      graph.push(`[2:v]scale=${logoW}:-2,format=rgba,colorchannelmixer=aa=${project.logoOpacity.toFixed(2)}[logo]`);
-      graph.push(`[${video}][logo]overlay=x=${Math.round(width * project.logoX / 100)}-w/2:y=${Math.round(height * project.logoY / 100)}-h/2:shortest=1[lg]`);
+      const layout = recapV2LogoLayout(project);
+      const logoW = Math.round(width * layout.widthPct / 100);
+      const logoH = Math.round(height * layout.heightPct / 100);
+      const marginX = Math.round(width * layout.marginPct / 100);
+      const marginY = Math.round(height * layout.marginPct / 100);
+      const x = project.logoPlacement.endsWith("right") ? `W-w-${marginX}` : `${marginX}`;
+      const y = project.logoPlacement.startsWith("bottom") ? `H-h-${marginY}` : `${marginY}`;
+      graph.push(`[2:v]scale=${logoW}:${logoH}:force_original_aspect_ratio=decrease,format=rgba,colorchannelmixer=aa=${(project.logoOpacity / 100).toFixed(2)}[logo]`);
+      graph.push(`[${video}][logo]overlay=${x}:${y}:shortest=1[lg]`);
       video = "lg";
     }
     graph.push(`[1:a]volume=${(project.voiceVolume / 100).toFixed(2)}[a]`);

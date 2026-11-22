@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AudioLines, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, ScrollText, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, Languages, ScrollText, Sparkles, Upload } from "lucide-react";
 import { Dialog, Radio, Menu, MenuItem, MenuTrigger, Select, SelectOption, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import type { MovieRecapProject, MovieRecapSpeechLanguage } from "@/lib/api/types";
 import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
 import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
+import { parseTimestampedBlocks } from "@/lib/movie-recap-manual-script";
 import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
 import { RecapLengthMenu } from "./RecapLengthMenu";
 import { recommendedRecapShare } from "@/lib/movie-recap-recap-length";
@@ -14,6 +15,14 @@ type TranscriptMode = "manual" | "auto";
 
 function cleanImportedTranscript(raw: string) {
   return formatMovieRecapSourceTranscript(raw.replace(/&#x20;|&#32;|&nbsp;/gi, " "));
+}
+
+// The VoxCPM worker rejects longer text with a 422 that is not retried, failing
+// the whole render at that beat. workers/voice-lab/app.py, history/movie-recap.md.
+const MAX_NARRATION_LINE_CHARS = 600;
+
+function formatStamp(seconds: number) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
 function formatTimestampedStoryPaste(raw: string) {
@@ -88,6 +97,8 @@ TIMESTAMP RULES
 1. Output exactly one line per cleaned source line, with the same timestamp, in the same order. Never merge, skip, or add lines.
 2. Every timestamp must be followed by its narration on the same line. No timestamp may stand alone.
 3. Each line must read as a complete, natural spoken chunk. Do not end a line with a word that grammatically belongs to the next line.
+4. Keep each narration line to at most 6 clauses separated by "၊". If a source line is longer, narrate it more tightly in one line (keep every event, drop repetition) — never split it into new timestamps.
+5. Seconds in a timestamp are 00–59 (never 31:60).
 
 OUTPUT FORMAT
 - One line per timestamp: MM:SS  Burmese narration
@@ -311,6 +322,7 @@ export function MovieRecapTranscript({
   const text = project.transcriptText ?? "";
   const script = project.transcriptScript ?? "";
   const story = project.transcriptStory ?? "";
+  const longLines = parseTimestampedBlocks(story, Infinity).filter((block) => block.text.length > MAX_NARRATION_LINE_CHARS);
   // Asked every time: the speech worker depends on the film's language, and a
   // subtitle track, when the source has one, is used whichever is chosen.
   function confirmReadSource(dialogueOnly: boolean) {
@@ -540,6 +552,22 @@ export function MovieRecapTranscript({
               rows={14}
               placeholder="Paste the Burmese story here."
             />
+            {longLines.length > 0 && (
+              <div className="mt-3 flex items-start gap-3 rounded-lg border border-line bg-panel p-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn" />
+                <div className="min-w-0 flex-1 text-sm text-fg-2">
+                  {longLines.length === 1 ? "This line is" : "These lines are"} over {MAX_NARRATION_LINE_CHARS} characters and will fail voice generation. Split{" "}
+                  {longLines.length === 1 ? "it" : "each one"} into shorter lines with their own timestamps.
+                  <ul className="mt-1.5 space-y-0.5">
+                    {longLines.map((block) => (
+                      <li key={block.startS} className="truncate text-xs text-fg-3">
+                        {formatStamp(block.startS)} · {block.text.length} characters · {block.text.slice(0, 40)}…
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

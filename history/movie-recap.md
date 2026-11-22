@@ -8,6 +8,69 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
+## 2026-11-22 — One beat's voice failure no longer fails the script run
+
+**Decision, requested by the user:** when the voice provider refuses a beat
+(for example a 422 for a line over 600 characters), the script run logs it and
+carries on. That beat gets `voiceError` and `audioStale`, and its slot in the
+narration master is silence of the estimated spoken length. The other beats
+are voiced as normal. Narrative Script shows a red banner with one button per
+failed beat that scrolls to it. Each failed beat has a red border and the
+error under its header. Re Build clears the error once the line speaks.
+
+**Why:** beat 300 of 476 failed and the whole run ended with nothing to show.
+Before, the user lost 299 voiced beats and could not see which line to fix.
+
+**Constraints a later change must keep:**
+- A failed beat's master hash uses a marked text (`narrationMasterTexts`).
+  Without it, a master holding silence would be served from cache for the same
+  words after a retry succeeds.
+- A render refuses while any beat has `voiceError`. Silence in a finished video
+  is a defect, not a result. The render's own master key uses unmarked text, so
+  it could not reuse the silent master in any case.
+- Rebuilding one beat while others still fail keeps those others silent. It
+  does not try to voice them again.
+- Cancel and abort still end the run. Only provider errors are caught per beat.
+
+## 2026-11-22 — Translation prompt caps line length without splitting
+
+**Decision, chosen by the user:** TIMESTAMP RULES gained rule 4: at most 6
+`၊`-separated clauses per narration line. A longer source line is narrated
+more tightly in one line (every event kept, repetition dropped). It is never
+split into new timestamps. Rule 5: seconds are 00–59.
+
+**Why:** a script line of 826 characters (beat 300 of 476) failed the whole
+render. The VoxCPM worker rejects text over 600 characters with a 422, which is
+not retried. The same script had a 1006-character line and a `31:60` stamp. The
+cap counts clauses, not characters, because a model cannot count Burmese code
+points reliably. A line with about 6 clauses is roughly 450–500 characters.
+
+**Rejected:** letting the model split a long line at `၊` with a new timestamp.
+That is the comma split removed on 2026-11-14, which made the model invent
+stamps.
+
+**Same day, chosen by the user: warn, don't split.** The Burmese story box on
+the Transcript step lists every timestamped line over 600 characters, showing
+its stamp, length and first words. Splitting long text into several TTS calls
+and joining the audio was offered and declined. The user splits the line by
+hand.
+
+**Consequences:**
+- The warning does not block Continue. A line over the limit still fails at
+  render if it is left in.
+- It counts every voice against VoxCPM's limit, Azure voices included.
+- The stamp shown is the parsed one, so `31:60` is listed as `32:00`.
+
+## 2026-11-15 — Logo templates are shared with Recap V2
+
+Recap V2 now uses the same logo templates. `POST`/`PATCH
+movie-recap-logo-templates` also accept the image inline
+(`fileName`, `contentType`, `imageBase64`; `lib/logo-upload.ts`), because a
+Recap V2 project has no Movie Recap project to copy the logo from. The
+`projectId` path Movie Recap uses is unchanged. The template dialog moved to
+`components/movie-recap/LogoTemplateDialog.tsx` so both editors share it.
+See history/recap-v2.md.
+
 ## 2026-11-14 — Delete script
 
 **Decision (approved by the user; an exception to the 2026-09-20 rule "only

@@ -310,6 +310,10 @@ export type MovieRecapNarrationSegment = {
   // fix plainly cannot move the timing, and a TTS call for it is spend for
   // nothing. Cleared by a re-check or a fresh script run.
   audioStale?: boolean;
+  // The voice provider refused this line, so its slot in the narration master
+  // is silence of the estimated length (with `audioStale`). The run carries on
+  // past it; a render refuses until a Re Build clears it.
+  voiceError?: string;
 };
 
 // Source framing data prepared before rendering and stored in R2.

@@ -685,6 +685,10 @@ export async function runMovieRecapRender(
       // ffmpeg — plus cache reads for audio that run has already paid for.
       narration = project.renderScript ?? [];
       if (!narration.length) throw new Error("Build the script first — there is nothing to render.");
+      const failed = narration.flatMap((segment, index) => (segment.voiceError ? [index + 1] : []));
+      if (failed.length) {
+        throw new Error(`Beat ${failed.join(", ")} has no voice. Fix ${failed.length === 1 ? "it" : "them"} on Narrative Script and Re Build first.`);
+      }
       const analysis = await loadRenderAnalysis(project);
 
       await setProgress(db, project.id, "downloading_source");

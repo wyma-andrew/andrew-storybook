@@ -5,15 +5,13 @@ import { Noto_Sans_Myanmar } from "next/font/google";
 import { Grip, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatDuration } from "@/lib/movie-recap";
-import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS } from "@/lib/constants/movie-recap";
-import { recapV2CaptionChunks, recapV2OutputSize, type RecapV2Project, type RecapV2Unit } from "@/lib/recap-v2";
+import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS, MOVIE_RECAP_WATERMARK } from "@/lib/constants/movie-recap";
+import { recapV2CaptionChunks, recapV2LogoLayout, recapV2OutputSize, recapV2WatermarkText, type RecapV2Project, type RecapV2Unit } from "@/lib/recap-v2";
 import { CAPTION_HOLD_S } from "@/lib/recap-v2-audio";
 import { clampTranslateRect, translateBlurCssPx, type TranslateRect } from "@/lib/translate";
 
 const subtitleFont = Noto_Sans_Myanmar({ subsets: ["myanmar"], weight: ["700"] });
 const subtitleStyle = MOVIE_RECAP_SUBTITLE_PRESETS[0];
-
-export type RecapV2OverlayKey = "title" | "extra" | "logo";
 
 // The preview plays the source, so a line's caption follows the Chinese speech
 // it translates: it appears when that speech starts, is split across the
@@ -31,33 +29,17 @@ function previewCaption(units: RecapV2Unit[], currentS: number) {
 
 type BlurDrag = { kind: "move" | "resize"; index: number; startX: number; startY: number; rect: TranslateRect };
 
-// Title, Extra text and Logo sit on the finished frame, centred on their point.
-export function OverlayHandle({ x, y, onMove, children }: { x: number; y: number; onMove: (x: number, y: number) => void; children: React.ReactNode }) {
-  const dragging = useRef(false);
-  return <div className="absolute z-20 cursor-move touch-none select-none" style={{ left: `${x}%`, top: `${y}%`, transform: "translate(-50%, -50%)" }}
-    onPointerDown={(event) => { dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation(); }}
-    onPointerMove={(event) => {
-      const frame = event.currentTarget.parentElement;
-      if (!dragging.current || !frame) return;
-      const bounds = frame.getBoundingClientRect();
-      const clamp = (value: number) => Math.round(Math.min(100, Math.max(0, value)) * 2) / 2;
-      onMove(clamp((event.clientX - bounds.left) / bounds.width * 100), clamp((event.clientY - bounds.top) / bounds.height * 100));
-    }}
-    onPointerUp={() => { dragging.current = false; }}>{children}</div>;
-}
-
 // Mirrors recapV2PartFilter's order: blur on the source picture, fit into the
 // frame, zoom the fitted picture, flip, then captions and overlays on the
 // finished frame.
 // Blur boxes live inside the mirrored picture box, so they are edited in source
 // coordinates while being seen where the render will put them.
-export function RecapV2OutputPreview({ project, selectedBlur, onSelectBlur, onBlurChange, onSubtitleY, onOverlayMove, seekRequest }: {
+export function RecapV2OutputPreview({ project, selectedBlur, onSelectBlur, onBlurChange, onSubtitleY, seekRequest }: {
   project: RecapV2Project;
   selectedBlur: number | null;
   onSelectBlur: (index: number | null) => void;
   onBlurChange: (index: number, rect: TranslateRect) => void;
   onSubtitleY: (y: number) => void;
-  onOverlayMove: (key: RecapV2OverlayKey, x: number, y: number) => void;
   seekRequest: { seconds: number; nonce: number } | null;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
@@ -94,10 +76,12 @@ export function RecapV2OutputPreview({ project, selectedBlur, onSelectBlur, onBl
   const pictureHeight = project.sourceHeight * fit * project.zoom;
   const mirrored = project.mirror;
   const subtitlePx = Math.max(12 / MOVIE_RECAP_SUBTITLE_LINE_EM, frame.height * project.subtitleSize / 100);
-  const overlayText = (sizePercent: number) => ({ fontSize: `${(frame.height * sizePercent / 100).toFixed(2)}px`, lineHeight: MOVIE_RECAP_SUBTITLE_LINE_EM, color: "var(--color-video-subtitle)",
-    WebkitTextStrokeWidth: `${Math.max(1, frame.height * sizePercent / 100 * 0.08).toFixed(2)}px`, WebkitTextStrokeColor: MOVIE_RECAP_SUBTITLE_PRESETS[0].outlineColor, paintOrder: "stroke fill" });
   const outlinePx = Math.max(1, subtitlePx * subtitleStyle.outlineEm);
   const caption = previewCaption(project.units, currentS);
+  const logoLayout = recapV2LogoLayout(project);
+  const margin = `${logoLayout.marginPct}%`;
+  const logoCorner = { [project.logoPlacement.startsWith("bottom") ? "bottom" : "top"]: margin, [project.logoPlacement.endsWith("right") ? "right" : "left"]: margin };
+  const watermark = recapV2WatermarkText(project);
   // With nothing to say at this moment, a faint sample stays so the caption can still be positioned.
   const sample = caption ?? "မြန်မာ စာတန်း နမူနာ";
 
@@ -185,16 +169,15 @@ export function RecapV2OutputPreview({ project, selectedBlur, onSelectBlur, onBl
         onPointerDown={(event) => { draggingRef.current = true; event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); }}
         onPointerMove={dragSubtitle}
         onPointerUp={() => { draggingRef.current = false; }}>{sample}</div>}
-      {project.titleText.trim() && <OverlayHandle x={project.titleX} y={project.titleY} onMove={(x, y) => onOverlayMove("title", x, y)}>
-        <div className={`whitespace-pre text-center font-bold ${subtitleFont.className}`} style={overlayText(project.titleSize)}>{project.titleText}</div>
-      </OverlayHandle>}
-      {project.extraText.trim() && <OverlayHandle x={project.extraX} y={project.extraY} onMove={(x, y) => onOverlayMove("extra", x, y)}>
-        <div className={`whitespace-pre text-center font-bold ${subtitleFont.className}`} style={overlayText(project.extraSize)}>{project.extraText}</div>
-      </OverlayHandle>}
-      {project.logoUrl && <OverlayHandle x={project.logoX} y={project.logoY} onMove={(x, y) => onOverlayMove("logo", x, y)}>
+      {project.logoEnabled && project.logoUrl && <div className={`pointer-events-none absolute z-20 flex ${project.logoPlacement.endsWith("right") ? "justify-end" : ""} ${project.logoPlacement.startsWith("bottom") ? "items-end" : ""}`}
+        style={{ ...logoCorner, width: `${logoLayout.widthPct}%`, height: `${logoLayout.heightPct}%`, opacity: project.logoOpacity / 100 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={project.logoUrl} alt="Logo" draggable={false} style={{ width: frame.width * project.logoSize / 100, opacity: project.logoOpacity }} />
-      </OverlayHandle>}
+        <img src={project.logoUrl} alt="Logo" draggable={false} className="max-h-full max-w-full object-contain" />
+      </div>}
+      {watermark && <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center px-[6%] text-center select-none">
+        <span className={`whitespace-pre-wrap uppercase ${subtitleFont.className}`} style={{ fontSize: `${(frame.height * logoLayout.watermarkSizePct / 100).toFixed(2)}px`,
+          color: MOVIE_RECAP_WATERMARK.color, opacity: MOVIE_RECAP_WATERMARK.opacityPct / 100, fontWeight: MOVIE_RECAP_WATERMARK.weight, letterSpacing: `${MOVIE_RECAP_WATERMARK.letterSpacingEm}em` }}>{watermark}</span>
+      </div>}
     </div>
     <div className={`flex items-center gap-3 ${outputHeight > outputWidth ? "w-[min(100%,420px)]" : "w-full max-w-[720px]"}`}>
       <Button className="!h-8 !w-8 shrink-0 !rounded-full !p-0" aria-label={playing ? "Pause preview" : "Play preview"} onClick={togglePlay}>
@@ -219,6 +202,6 @@ export function RecapV2OutputPreview({ project, selectedBlur, onSelectBlur, onBl
       </div>
       <span className="shrink-0 font-mono text-xs text-fg-3 tabular-nums">{formatDuration(currentS)} / {formatDuration(project.sourceDurationSeconds)}</span>
     </div>
-    <p className="text-xs text-fg-3">Ticks mark where each line starts. Drag blur boxes over the source subtitles, the subtitle up or down ({project.subtitleY}% height), and the title, text and logo where they belong. Timing here follows the source; the render retimes it to the narration.</p>
+    <p className="text-xs text-fg-3">Ticks mark where each line starts. Drag blur boxes over the source subtitles, and the subtitle up or down ({project.subtitleY}% height). Timing here follows the source; the render retimes it to the narration.</p>
   </div>;
 }

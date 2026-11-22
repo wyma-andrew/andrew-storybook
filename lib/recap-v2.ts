@@ -1,4 +1,5 @@
 import type { TranslateRect } from "@/lib/translate";
+import { MOVIE_RECAP_LOGO_BOX, MOVIE_RECAP_WATERMARK } from "./constants/movie-recap";
 import { outputFrameSize, type FrameFill, type FrameQuality, type FrameRatio } from "./video-framing";
 
 export type RecapV2AspectRatio = FrameRatio;
@@ -64,20 +65,13 @@ export type RecapV2Project = {
   subtitleY: number;
   subtitleSize: number;
   blurRegions: TranslateRect[];
-  titleText: string;
-  titleSize: number;
-  titleX: number;
-  titleY: number;
-  extraText: string;
-  extraSize: number;
-  extraX: number;
-  extraY: number;
   logoUrl: string | null;
   logoObjectKey: string | null;
-  logoSize: number;
+  logoEnabled: boolean;
+  logoPlacement: RecapV2LogoPlacement;
   logoOpacity: number;
-  logoX: number;
-  logoY: number;
+  logoWatermarkText: string | null;
+  logoTemplateId: string | null;
   jobKind: RecapV2JobKind | null;
   jobStatus: "idle" | "running" | "done" | "failed";
   jobStage: string | null;
@@ -89,10 +83,12 @@ export type RecapV2Project = {
   updatedAt: string;
 };
 
+export type RecapV2LogoPlacement = "top_left" | "top_right" | "bottom_left" | "bottom_right";
+
 export const RECAP_V2_SETTING_KEYS = [
   "sourceLanguage", "voiceId", "voiceVolume", "aspectRatio", "fitMode", "quality", "zoom", "mirror", "subtitlesEnabled",
-  "shortPauses", "subtitleY", "subtitleSize", "blurRegions", "titleText", "titleSize", "titleX", "titleY",
-  "extraText", "extraSize", "extraX", "extraY", "logoSize", "logoOpacity", "logoX", "logoY",
+  "shortPauses", "subtitleY", "subtitleSize", "blurRegions",
+  "logoEnabled", "logoPlacement", "logoOpacity", "logoWatermarkText",
 ] as const;
 
 export type RecapV2ProjectPatch = Partial<Pick<RecapV2Project, "name" | (typeof RECAP_V2_SETTING_KEYS)[number]>>
@@ -172,20 +168,13 @@ export function mapRecapV2Project(row: Record<string, unknown>): RecapV2Project 
     subtitleY: Number(row.subtitle_y),
     subtitleSize: Number(row.subtitle_size),
     blurRegions: (row.blur_regions as TranslateRect[]) ?? [],
-    titleText: (row.title_text as string) ?? "",
-    titleSize: Number(row.title_size),
-    titleX: Number(row.title_x),
-    titleY: Number(row.title_y),
-    extraText: (row.extra_text as string) ?? "",
-    extraSize: Number(row.extra_size),
-    extraX: Number(row.extra_x),
-    extraY: Number(row.extra_y),
     logoUrl: (row.logo_url as string) ?? null,
     logoObjectKey: (row.logo_object_key as string) ?? null,
-    logoSize: Number(row.logo_size),
-    logoOpacity: Number(row.logo_opacity),
-    logoX: Number(row.logo_x),
-    logoY: Number(row.logo_y),
+    logoEnabled: row.logo_enabled === true,
+    logoPlacement: (row.logo_placement as RecapV2LogoPlacement) ?? "top_right",
+    logoOpacity: row.logo_opacity == null ? 100 : Number(row.logo_opacity),
+    logoWatermarkText: (row.logo_watermark_text as string) ?? null,
+    logoTemplateId: (row.logo_template_id as string) ?? null,
     jobKind: (row.job_kind as RecapV2JobKind) ?? null,
     jobStatus: row.job_status as RecapV2Project["jobStatus"],
     jobStage: (row.job_stage as string) ?? null,
@@ -433,4 +422,21 @@ export function recapV2CaptionChunks(text: string) {
     if (current) chunks.push(current);
   }
   return chunks.length ? chunks : [text.trim()];
+}
+
+// Movie Recap's logo box and centred watermark, as % of the output frame. An
+// "original" frame uses the 16:9 or 9:16 sizes by its shape.
+export function recapV2LogoLayout(project: Pick<RecapV2Project, "aspectRatio" | "quality" | "sourceWidth" | "sourceHeight">) {
+  const [width, height] = recapV2OutputSize(project);
+  const ratio = project.aspectRatio === "original" ? (height > width ? "9:16" : "16:9") : project.aspectRatio;
+  return {
+    widthPct: ratio === "9:16" ? MOVIE_RECAP_LOGO_BOX.portraitWidthPct : MOVIE_RECAP_LOGO_BOX.widthPct,
+    heightPct: MOVIE_RECAP_LOGO_BOX.heightPct,
+    marginPct: MOVIE_RECAP_LOGO_BOX.marginPct,
+    watermarkSizePct: MOVIE_RECAP_WATERMARK.sizePct[ratio],
+  };
+}
+
+export function recapV2WatermarkText(project: Pick<RecapV2Project, "logoEnabled" | "logoWatermarkText">) {
+  return project.logoEnabled ? project.logoWatermarkText?.trim() || "" : "";
 }

@@ -108,7 +108,7 @@ export type ApiSchema = {
   "splitter-projects/:id/split": { POST: { data: SplitterProject } };
   "splitter-projects/:id/parts/:n/download": { GET: { data: { url: string } } };
   "recap-v2-projects/:id/logo": {
-    POST: { data: RecapV2Project; body: { fileName: string; contentType: string; imageBase64: string } };
+    POST: { data: RecapV2Project; body: { fileName: string; contentType: string; imageBase64: string } | { templateId: string } };
     DELETE: { data: RecapV2Project };
   };
   "translate-projects": {
@@ -294,11 +294,11 @@ export type ApiSchema = {
   };
   "movie-recap-logo-templates": {
     GET: { data: MovieRecapLogoTemplate[] };
-    POST: { data: MovieRecapLogoTemplate; body: { projectId: string; name: string; logoWatermarkText?: string | null } };
+    POST: { data: MovieRecapLogoTemplate; body: { projectId?: string; name: string; logoWatermarkText?: string | null; fileName?: string; contentType?: string; imageBase64?: string } };
   };
   "movie-recap-logo-templates/:id": {
     POST: { data: MovieRecapProject; body: { projectId: string } };
-    PATCH: { data: MovieRecapLogoTemplate; body: { projectId?: string; name?: string; logoWatermarkText?: string | null; replaceLogo?: boolean } };
+    PATCH: { data: MovieRecapLogoTemplate; body: { projectId?: string; name?: string; logoWatermarkText?: string | null; replaceLogo?: boolean; fileName?: string; contentType?: string; imageBase64?: string } };
     DELETE: { data: null };
   };
   // The Transcript step's Auto mode: reads the source's dialogue and describes

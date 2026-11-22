@@ -4,6 +4,8 @@ import { TtsError, type SynthesisRequest, type SynthesisResult, type TtsProvider
 // The self-hosted VoxCPM2 worker behind VOICE_LAB_WORKER_URL, shared by the
 // Voice Lab and Movie Recap profiles that select this provider.
 const VOXCPM_ATTEMPTS = 4;
+// Mirrors GenerateRequest.text in workers/voice-lab/app.py.
+const VOXCPM_MAX_TEXT_CHARS = 600;
 // After a failed generate the worker restarts its container; the later waits
 // cover that cold start. See history/voice-lab.md 2026-11-14.
 const VOXCPM_RETRY_DELAYS_MS = [2000, 5000, 15000];
@@ -56,7 +58,11 @@ export const voxcpmProvider: TtsProvider = {
       if (response) {
         result = await response.json().catch(() => null);
         if (response.ok) break;
-        const message = typeof result?.detail === "string" ? result.detail : `Voice worker returned ${response.status}.`;
+        const message = typeof result?.detail === "string"
+          ? result.detail
+          : response.status === 422 && text.trim().length > VOXCPM_MAX_TEXT_CHARS
+            ? `Line is ${text.trim().length} characters; the voice worker takes at most ${VOXCPM_MAX_TEXT_CHARS}. Split it.`
+            : `Voice worker returned ${response.status}.`;
         if (response.status < 500 && response.status !== 408) throw new TtsError(message, response.status);
         failure = new TtsError(message, 502);
       }

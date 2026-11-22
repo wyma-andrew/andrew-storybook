@@ -6,7 +6,7 @@ import { ChevronLeft, Download, Loader2, Play, Save, ScanSearch, Scissors } from
 import { Input, Select, SelectOption, Switch, toast } from "@geckoui/geckoui";
 import { Button, LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
-import { OverlayHandle } from "@/components/recap-v2/RecapV2OutputPreview";
+import { OverlayHandle } from "@/components/splitter/OverlayHandle";
 import { MOVIE_RECAP_SUBTITLE_LINE_EM, MOVIE_RECAP_SUBTITLE_PRESETS } from "@/lib/constants/movie-recap";
 import { formatDuration } from "@/lib/movie-recap";
 import { apiClient, useRead, useWrite } from "@/lib/spoosh";

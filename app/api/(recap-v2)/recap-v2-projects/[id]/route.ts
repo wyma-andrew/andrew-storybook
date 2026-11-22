@@ -37,17 +37,19 @@ export async function PATCH(req: NextRequest, { params }: Context) {
     ["fitMode", "fit_mode", ["blur", "bars", "cover"]],
     ["quality", "quality", ["1080", "720", "480"]],
     ["sourceLanguage", "source_language", Object.keys(RECAP_V2_SOURCE_LANGUAGES)],
+    ["logoPlacement", "logo_placement", ["top_left", "top_right", "bottom_left", "bottom_right"]],
   ] as const) {
     if (body[client] === undefined) continue;
     if (!(allowed as readonly string[]).includes(body[client])) return NextResponse.json({ error: `${client} is invalid.` }, { status: 400 });
     patch[column] = body[client];
   }
-  for (const [client, column] of [["titleText", "title_text"], ["extraText", "extra_text"]] as const) {
-    if (body[client] === undefined) continue;
-    if (typeof body[client] !== "string" || body[client].length > 300) return NextResponse.json({ error: `${client} must be text of at most 300 characters.` }, { status: 400 });
-    patch[column] = body[client];
+  if (body.logoWatermarkText !== undefined) {
+    if (body.logoWatermarkText !== null && (typeof body.logoWatermarkText !== "string" || body.logoWatermarkText.length > 120)) {
+      return NextResponse.json({ error: "Watermark text must be at most 120 characters." }, { status: 400 });
+    }
+    patch.logo_watermark_text = body.logoWatermarkText?.trim() || null;
   }
-  for (const [client, column] of [["mirror", "mirror"], ["subtitlesEnabled", "subtitles_enabled"], ["shortPauses", "short_pauses"]] as const) {
+  for (const [client, column] of [["mirror", "mirror"], ["subtitlesEnabled", "subtitles_enabled"], ["shortPauses", "short_pauses"], ["logoEnabled", "logo_enabled"]] as const) {
     if (body[client] === undefined) continue;
     if (typeof body[client] !== "boolean") return NextResponse.json({ error: `${client} must be true or false.` }, { status: 400 });
     patch[column] = body[client];
@@ -55,14 +57,12 @@ export async function PATCH(req: NextRequest, { params }: Context) {
   for (const [client, column, min, max] of [
     ["zoom", "zoom", 1, 1.5], ["subtitleY", "subtitle_y", 5, 98], ["subtitleSize", "subtitle_size", 1, 10],
     ["voiceVolume", "voice_volume", 50, 300],
-    ["titleSize", "title_size", 1, 20], ["titleX", "title_x", 0, 100], ["titleY", "title_y", 0, 100],
-    ["extraSize", "extra_size", 1, 20], ["extraX", "extra_x", 0, 100], ["extraY", "extra_y", 0, 100],
-    ["logoSize", "logo_size", 2, 50], ["logoOpacity", "logo_opacity", 0.1, 1], ["logoX", "logo_x", 0, 100], ["logoY", "logo_y", 0, 100],
+    ["logoOpacity", "logo_opacity", 0, 100],
   ] as const) {
     if (body[client] === undefined) continue;
     const value = body[client];
     if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return NextResponse.json({ error: `${client} must be ${min}–${max}.` }, { status: 400 });
-    patch[column] = column === "voice_volume" ? Math.round(value) : value;
+    patch[column] = column === "voice_volume" || column === "logo_opacity" ? Math.round(value) : value;
   }
   if (body.blurRegions !== undefined) {
     if (!Array.isArray(body.blurRegions) || body.blurRegions.length > 8 || !body.blurRegions.every(isTranslateRect)) {

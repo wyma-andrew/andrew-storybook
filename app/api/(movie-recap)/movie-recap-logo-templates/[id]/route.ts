@@ -3,6 +3,7 @@ import { mapMovieRecapLogoTemplate } from "@/lib/api/map";
 import { mapMovieRecapProject } from "@/lib/api/map";
 import { requireFeature } from "@/lib/api/auth-guard";
 import { deleteObject, getObjectBytes, movieRecapLogoTemplateObjectKey, movieRecapObjectKey, putObject } from "@/lib/r2";
+import { parseLogoUpload } from "@/lib/logo-upload";
 import { supabaseRoute } from "@/lib/supabase/route";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,9 +17,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     ? undefined
     : typeof body.logoWatermarkText === "string" ? body.logoWatermarkText.trim().slice(0, 120) : null;
   if (watermarkText === null) return NextResponse.json({ error: "Watermark text must be text or empty." }, { status: 400 });
-  const replaceLogo = body?.replaceLogo === true;
+  const upload = body?.imageBase64 === undefined ? null : parseLogoUpload(body);
+  if (typeof upload === "string") return NextResponse.json({ error: upload }, { status: 400 });
+  const replaceLogo = body?.replaceLogo === true || upload !== null;
   const projectId = typeof body?.projectId === "string" ? body.projectId : "";
-  if (replaceLogo && !projectId) return NextResponse.json({ error: "Project is required to replace the logo." }, { status: 400 });
+  if (replaceLogo && !upload && !projectId) return NextResponse.json({ error: "Project is required to replace the logo." }, { status: 400 });
 
   const db = await supabaseRoute();
   const { data: template, error: templateError } = await db.from("movie_recap_logo_templates").select("*").eq("id", id).single();
@@ -35,29 +38,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json(mapMovieRecapLogoTemplate(data));
   }
 
-  const { data: project, error: projectError } = await db
-    .from("movie_recap_projects")
-    .select("logo_file_name, logo_object_key, logo_content_type, logo_size_bytes")
-    .eq("id", projectId)
-    .single();
-  if (projectError) return NextResponse.json({ error: projectError.message }, { status: 404 });
-  if (!project.logo_object_key || !project.logo_file_name || !project.logo_content_type || !project.logo_size_bytes) {
-    return NextResponse.json({ error: "Upload a logo before updating a template." }, { status: 400 });
+  let logo = upload;
+  if (!logo) {
+    const { data: project, error: projectError } = await db
+      .from("movie_recap_projects")
+      .select("logo_file_name, logo_object_key, logo_content_type, logo_size_bytes")
+      .eq("id", projectId)
+      .single();
+    if (projectError) return NextResponse.json({ error: projectError.message }, { status: 404 });
+    if (!project.logo_object_key || !project.logo_file_name || !project.logo_content_type || !project.logo_size_bytes) {
+      return NextResponse.json({ error: "Upload a logo before updating a template." }, { status: 400 });
+    }
+    const bytes = await getObjectBytes(project.logo_object_key);
+    if (!bytes) return NextResponse.json({ error: "The project logo could not be read from storage." }, { status: 502 });
+    logo = { fileName: project.logo_file_name, contentType: project.logo_content_type, image: bytes };
   }
-  const bytes = await getObjectBytes(project.logo_object_key);
-  if (!bytes) return NextResponse.json({ error: "The project logo could not be read from storage." }, { status: 502 });
-  const objectKey = movieRecapLogoTemplateObjectKey(id, project.logo_file_name);
+  const objectKey = movieRecapLogoTemplateObjectKey(id, logo.fileName);
   try {
-    const url = await putObject(objectKey, bytes, project.logo_content_type);
+    const url = await putObject(objectKey, logo.image, logo.contentType);
     const { data, error } = await db
       .from("movie_recap_logo_templates")
       .update({
         ...changes,
-        logo_file_name: project.logo_file_name,
+        logo_file_name: logo.fileName,
         logo_object_key: objectKey,
         logo_url: url,
-        logo_content_type: project.logo_content_type,
-        logo_size_bytes: project.logo_size_bytes,
+        logo_content_type: logo.contentType,
+        logo_size_bytes: logo.image.length,
       })
       .eq("id", id)
       .select("*")

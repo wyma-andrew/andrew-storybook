@@ -87,6 +87,7 @@ export function MovieRecapScript({
   const running = project.scriptStatus === "running";
   const busy = running || project.renderStatus === "running" || Boolean(busyMessage);
   const stale = script.filter((beat) => beat.audioStale).length;
+  const failedBeats = script.flatMap((beat, index) => (beat.voiceError ? [index] : []));
   const builtVoiceIds = [...new Set(script.map((beat) => beat.voiceId).filter((id): id is string => Boolean(id)))];
   const builtVoiceName = builtVoiceIds.length === 1 ? resolveMovieRecapVoice(builtVoiceIds[0]).name : null;
   const voiceName = resolveMovieRecapVoice(project.voiceProfileId).name;
@@ -337,6 +338,28 @@ export function MovieRecapScript({
             <MovieRecapRenderProgress project={project} phase="script" />
           </div>
         )}
+        {failedBeats.length > 0 && !running && (
+          <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg p-3">
+            <div className="flex items-start gap-2 text-sm text-danger">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>
+                {failedBeats.length} beat{failedBeats.length === 1 ? "" : "s"} could not be voiced and {failedBeats.length === 1 ? "is" : "are"} silent.
+                Fix the line and Re Build {failedBeats.length === 1 ? "it" : "each one"} before rendering.
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 pl-6">
+              {failedBeats.map((index) => (
+                <Button
+                  key={index}
+                  className="!h-7 !px-2 text-xs"
+                  onClick={() => beatRefs.current.get(index)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                >
+                  Beat {index + 1}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         {project.scriptStatus === "failed" && project.scriptError && (
           <p className="mb-4 text-sm text-danger">{project.scriptError}</p>
         )}
@@ -401,7 +424,8 @@ export function MovieRecapScript({
                 {unmeasured === 1 ? "" : "s"} never spoken — rebuild {unmeasured === 1 ? "it" : "them"}
               </span>
             )}
-            {unmeasured === 0 && <span className="font-medium text-ok">Narration timeline ready</span>}
+            {unmeasured === 0 && failedBeats.length === 0 && <span className="font-medium text-ok">Narration timeline ready</span>}
+            {failedBeats.length > 0 && <span className="font-medium text-danger">{failedBeats.length} silent</span>}
             {stale > 0 && <span className="text-fg-3">{stale} need rebuilding</span>}
             {dirty && (
               <span className="ml-auto text-fg-3">
@@ -426,7 +450,7 @@ export function MovieRecapScript({
                     if (element) beatRefs.current.set(index, element);
                     else beatRefs.current.delete(index);
                   }}
-                  className={`rounded-lg border bg-panel p-3 ${activeBeat === index ? "border-ok" : "border-line"}`}
+                  className={`rounded-lg border bg-panel p-3 ${beat.voiceError ? "border-danger-border" : activeBeat === index ? "border-ok" : "border-line"}`}
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-3">
                     <span className="font-medium text-fg-2">Beat {index + 1}</span>
@@ -453,9 +477,15 @@ export function MovieRecapScript({
                         <Play size={13} />
                       )}
                     </Button>
-                    {beat.audioStale && !changed && <span className="text-fg-2">· audio needs rebuilding</span>}
+                    {beat.audioStale && !changed && !beat.voiceError && <span className="text-fg-2">· audio needs rebuilding</span>}
                     {changed && <span className="text-fg-2">· edited, unsaved</span>}
                   </div>
+                  {beat.voiceError && (
+                    <p className="mb-2 flex items-start gap-1.5 text-xs text-danger">
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>No audio: {beat.voiceError} ({beat.text.length} characters)</span>
+                    </p>
+                  )}
                   <Textarea
                     rows={2}
                     value={texts[index] ?? ""}

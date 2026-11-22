@@ -1,25 +1,35 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Captions, Check, ChevronLeft, Download, ImagePlus, Languages, Loader2, Mic, Play, Plus, RotateCcw, Save, Scissors, Sparkles, Trash2, Volume2, VolumeX } from "lucide-react";
-import { ConfirmDialog, Input, Select, SelectOption, Switch, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
+import Image from "next/image";
+import { AlertTriangle, Captions, Check, ChevronLeft, Crop, Download, Droplet, Languages, Loader2, Mic, Pencil, Play, Plus, RotateCcw, Save, Scissors, Sparkles, Stamp, Trash2, Upload, Volume2, VolumeX, X } from "lucide-react";
+import { ConfirmDialog, Dialog, Input, Select, SelectOption, Switch, Textarea, toast, useFilePicker } from "@geckoui/geckoui";
 import { Button, LinkButton, LoadingButton } from "@/components/ui/Button";
 import { Body, TopBar, Wrap } from "@/components/ui/Layout";
 import { apiClient, useRead, useWrite } from "@/lib/spoosh";
 import { formatDuration } from "@/lib/movie-recap";
+import { MOVIE_RECAP_LOGO_PLACEMENTS } from "@/lib/constants/movie-recap";
+import type { MovieRecapLogoTemplate } from "@/lib/api/types";
 import { formatUnitTime, RECAP_V2_SETTING_KEYS, RECAP_V2_SOURCE_LANGUAGES, RECAP_V2_STALE_JOB_MS, recapV2LanguageName, type RecapV2JobKind, type RecapV2Project, type RecapV2ProjectPatch } from "@/lib/recap-v2";
 import { foreignLetters, latinWords } from "@/lib/recap-v2-checks";
 import { clampTranslateRect, type TranslateRect } from "@/lib/translate";
 import { VOICES } from "@/lib/tts/voices";
 import { VoicePicker } from "@/components/voice/VoicePicker";
-import { RecapV2OutputPreview, type RecapV2OverlayKey } from "@/components/recap-v2/RecapV2OutputPreview";
+import { RecapV2OutputPreview } from "@/components/recap-v2/RecapV2OutputPreview";
+import { LogoTemplateDialogContent } from "@/components/movie-recap/LogoTemplateDialog";
 
 const ZOOMS = [1, 1.05, 1.1, 1.15, 1.2, 1.25];
-const SUBTITLE_SIZES = [2.6, 3, 3.4, 4, 4.6, 5.4];
-const OVERLAY_SIZES = [2, 3, 4, 5, 6, 8, 10, 12];
+const SUBTITLE_SIZES = [1, 1.5, 2, 2.6, 3, 3.4, 4, 4.6, 5.4];
 const VOLUMES = [50, 75, 100, 125, 150, 200, 250, 300];
-const LOGO_SIZES = [6, 8, 10, 12, 15, 20, 25, 30];
-const OPACITIES = [0.3, 0.5, 0.7, 0.85, 1];
+const LOGO_OPACITIES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+// Icon-only tabs, as in Movie Recap's Customize step: the label is the title.
+const SETTINGS_TABS = [
+  { id: "voice", label: "Voice", Icon: Mic },
+  { id: "frame", label: "Frame", Icon: Crop },
+  { id: "subtitle", label: "Subtitle", Icon: Captions },
+  { id: "logo", label: "Logo", Icon: Stamp },
+  { id: "blur", label: "Blur", Icon: Droplet },
+] as const;
 const STEPS = [
   { kind: "transcribe", label: "Transcribe", icon: Mic },
   { kind: "translate", label: "Translate to Burmese", icon: Languages },
@@ -80,12 +90,17 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
   const { trigger: render } = useWrite((api) => api("recap-v2-projects/:id/render").POST());
   const { trigger: uploadLogo, loading: uploadingLogo } = useWrite((api) => api("recap-v2-projects/:id/logo").POST());
   const { trigger: removeLogo } = useWrite((api) => api("recap-v2-projects/:id/logo").DELETE());
+  const { data: logoTemplates = [], trigger: refreshLogoTemplates } = useRead((api) => api("movie-recap-logo-templates").GET(), { staleTime: 30000 });
+  const { trigger: createLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates").POST());
+  const { trigger: updateLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").PATCH());
+  const { trigger: deleteLogoTemplate, loading: deletingLogoTemplate } = useWrite((api) => api("movie-recap-logo-templates/:id").DELETE());
   const [server, setServer] = useState<RecapV2Project | null>(null);
   const [settings, setSettings] = useState<Partial<RecapV2Project>>({});
   const [lineEdits, setLineEdits] = useState<Record<number, string>>({});
   const [lineMutes, setLineMutes] = useState<Record<number, boolean>>({});
   const [selectedBlur, setSelectedBlur] = useState<number | null>(null);
   const [view, setView] = useState<"output" | "result">("output");
+  const [tab, setTab] = useState<(typeof SETTINGS_TABS)[number]["id"]>("voice");
   const [seekRequest, setSeekRequest] = useState<{ seconds: number; nonce: number } | null>(null);
   const [lastProblem, setLastProblem] = useState<number | null>(null);
 
@@ -119,6 +134,7 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
     onChange: (_files, files) => { if (files[0]) void saveLogo(files[0]); },
   });
 
+  const activeTemplate = project?.logoTemplateId ? logoTemplates.find((template) => template.id === project.logoTemplateId) ?? null : null;
   const translatedCount = useMemo(() => project?.units.filter((unit) => unit.muted || (lineEdits[unit.id] ?? unit.text).trim()).length ?? 0, [project?.units, lineEdits]);
 
   if (error) return <Body><Wrap><p className="text-danger">{error.error}</p></Wrap></Body>;
@@ -186,24 +202,83 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
     });
   }
 
+  function takeLogo(next: RecapV2Project) {
+    setSettings((current) => {
+      const rest = { ...current };
+      delete rest.logoEnabled;
+      delete rest.logoWatermarkText;
+      return rest;
+    });
+    setServer((current) => ({
+      ...(current ?? next), logoUrl: next.logoUrl, logoObjectKey: next.logoObjectKey, logoEnabled: next.logoEnabled,
+      logoTemplateId: next.logoTemplateId, logoWatermarkText: next.logoWatermarkText, updatedAt: next.updatedAt,
+    }));
+  }
+
   async function saveLogo(file: File) {
     try {
       const result = await uploadLogo({ params: { id: projectId }, body: { fileName: file.name, contentType: file.type, imageBase64: await readBase64(file) } });
       if (!result.data) { toast.error(result.error?.error ?? "Could not save the logo."); return; }
-      setServer((current) => ({ ...(current ?? result.data!), logoUrl: result.data!.logoUrl, logoObjectKey: result.data!.logoObjectKey, updatedAt: result.data!.updatedAt }));
+      takeLogo(result.data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not read the logo.");
     }
   }
 
+  async function applyTemplateLogo(templateId: string | null) {
+    if (!templateId) { await dropLogo(); return; }
+    const result = await uploadLogo({ params: { id: projectId }, body: { templateId } });
+    if (!result.data) { toast.error(result.error?.error ?? "Could not use that logo template."); return; }
+    takeLogo(result.data);
+  }
+
   async function dropLogo() {
     const result = await removeLogo({ params: { id: projectId } });
     if (!result.data) { toast.error(result.error?.error ?? "Could not remove the logo."); return; }
-    setServer((current) => ({ ...(current ?? result.data!), logoUrl: null, logoObjectKey: null, updatedAt: result.data!.updatedAt }));
+    takeLogo(result.data);
   }
 
-  function moveOverlay(key: RecapV2OverlayKey, x: number, y: number) {
-    change(key === "title" ? { titleX: x, titleY: y } : key === "extra" ? { extraX: x, extraY: y } : { logoX: x, logoY: y });
+  async function deleteTemplate(templateId: string) {
+    const result = await deleteLogoTemplate({ params: { id: templateId } });
+    if (result.error) { toast.error(result.error.error ?? "Could not delete the template."); return; }
+    await dropLogo();
+    await refreshLogoTemplates({ force: true });
+    toast.success("Logo template deleted.");
+  }
+
+  function openTemplateDialog(template: MovieRecapLogoTemplate | null) {
+    Dialog.show({
+      className: "max-w-lg",
+      content: ({ dismiss }) => <LogoTemplateDialogContent
+        title={template ? "Edit logo template" : "Create logo template"}
+        description={template ? "Update the saved logo details used by this project." : "Save a logo and optional watermark for reuse across recap videos."}
+        initialName={template?.name ?? ""}
+        currentFileName={template?.logoFileName ?? ""}
+        initialWatermarkText={template?.logoWatermarkText ?? project?.logoWatermarkText ?? ""}
+        submitLabel={template ? "Update template" : "Create template"}
+        submittingLabel={template ? "Updating..." : "Creating..."}
+        dismiss={dismiss}
+        onSubmit={async ({ name, file, watermarkText }) => {
+          if (!name.trim()) { toast.error("Template name is required."); return false; }
+          if (!template && !file) { toast.error("Choose a logo image first."); return false; }
+          try {
+            const image = file ? { fileName: file.name, contentType: file.type, imageBase64: await readBase64(file) } : {};
+            const body = { ...image, name: name.trim(), logoWatermarkText: watermarkText.trim() || null };
+            const result = template
+              ? await updateLogoTemplate({ params: { id: template.id }, body })
+              : await createLogoTemplate({ body });
+            if (result.error || !result.data) { toast.error(result.error?.error ?? "Could not save the template."); return false; }
+            await refreshLogoTemplates({ force: true });
+            await applyTemplateLogo(result.data.id);
+            toast.success(template ? "Logo template updated." : "Logo template created.");
+            return true;
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not read the logo.");
+            return false;
+          }
+        }}
+      />,
+    });
   }
 
   function nextProblem() {
@@ -279,6 +354,7 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
       </ol>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
+          <section className="rounded-xl border border-line bg-panel p-4">
           <div className="mb-3 flex gap-2">
             <Button variant={shownView === "output" ? "primary" : "secondary"} className="!h-8 text-xs" onClick={() => setView("output")}>Output preview</Button>
             {project.renderOutputUrl && <Button variant={shownView === "result" ? "primary" : "secondary"} className="!h-8 text-xs" onClick={() => setView("result")}>Recap</Button>}
@@ -286,7 +362,8 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
           {shownView === "result"
             ? <video key={project.renderOutputUrl} src={project.renderOutputUrl!} controls playsInline className="mx-auto block max-h-[70vh] w-full rounded-lg bg-black" />
             : <RecapV2OutputPreview project={project} selectedBlur={selectedBlur} onSelectBlur={setSelectedBlur} onBlurChange={changeBlur}
-              onSubtitleY={(subtitleY) => change({ subtitleY })} onOverlayMove={moveOverlay} seekRequest={seekRequest} />}
+              onSubtitleY={(subtitleY) => change({ subtitleY })} seekRequest={seekRequest} />}
+          </section>
 
           <div className="mt-6">
             <div className="mb-3 flex flex-wrap items-baseline gap-2"><h2 className="text-base font-semibold">Lines</h2><span className="text-xs text-fg-3">{project.units.length ? `${translatedCount}/${project.units.length} translated · ${formatDuration(project.sourceDurationSeconds)} source` : "Transcribe the video to split it into lines."}</span>
@@ -321,14 +398,20 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-
+        <aside className="lg:sticky lg:-top-7 lg:h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           <section className="space-y-4 rounded-xl border border-line bg-panel p-4">
-            <h2 className="text-sm font-semibold">Output</h2>
+            <div className="grid grid-cols-5 gap-2">
+              {SETTINGS_TABS.map(({ id, label, Icon }) => <Button key={id} onClick={() => setTab(id)} aria-label={label} title={label} className={tab === id ? "!border-accent !bg-accent-dim !text-fg" : ""}><Icon size={16} /></Button>)}
+            </div>
+            <h2 className="text-sm font-semibold">{SETTINGS_TABS.find((item) => item.id === tab)?.label}</h2>
+            {tab === "voice" && <>
             <Field label="Voice"><VoicePicker voices={VOICES} value={project.voiceId} onChange={(voiceId) => change({ voiceId })} /></Field>
             <Field label="Voice volume"><Select value={String(project.voiceVolume)} onChange={(value) => change({ voiceVolume: Number(value) })}>
               {VOLUMES.map((volume) => <SelectOption key={volume} value={String(volume)} label={`${volume}%`} />)}
             </Select></Field>
+            <label className="flex items-center justify-between gap-3 text-sm"><span>Short pauses<span className="block text-xs text-fg-3">Trim the voice&apos;s own silence to ~0.25s between lines.</span></span><Switch checked={project.shortPauses} onChange={(checked) => change({ shortPauses: checked })} /></label>
+            </>}
+            {tab === "frame" && <>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Ratio"><Select value={project.aspectRatio} onChange={(value) => change({ aspectRatio: value as RecapV2Project["aspectRatio"] })}>
                 {["16:9", "9:16", "1:1"].map((ratio) => <SelectOption key={ratio} value={ratio} label={ratio} />)}
@@ -351,50 +434,52 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
               </Select></Field>
             </div>
             <label className="flex items-center justify-between gap-3 text-sm">Flip<Switch checked={project.mirror} onChange={(checked) => change({ mirror: checked })} /></label>
-            <label className="flex items-center justify-between gap-3 text-sm"><span>Short pauses<span className="block text-xs text-fg-3">Trim the voice&apos;s own silence to ~0.25s between lines.</span></span><Switch checked={project.shortPauses} onChange={(checked) => change({ shortPauses: checked })} /></label>
+            </>}
+            {tab === "subtitle" && <>
             <label className="flex items-center justify-between gap-3 text-sm">Burmese subtitles<Switch checked={project.subtitlesEnabled} onChange={(checked) => change({ subtitlesEnabled: checked })} /></label>
             {project.subtitlesEnabled && <Field label="Text size"><Select value={String(project.subtitleSize)} onChange={(value) => change({ subtitleSize: Number(value) })}>
               {SUBTITLE_SIZES.map((size) => <SelectOption key={size} value={String(size)} label={`${size}%`} />)}
             </Select></Field>}
             {project.subtitlesEnabled && <p className="text-xs text-fg-3">Drag the subtitle in Output preview to move it · now {project.subtitleY}% height.</p>}
-          </section>
-
-          <section className="space-y-3 rounded-xl border border-line bg-panel p-4">
-            <h2 className="text-sm font-semibold">Title, text and logo</h2>
-            <p className="text-xs text-fg-3">Drag each one in Output preview to place it.</p>
-            <Field label="Title"><div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-              <Input value={project.titleText} maxLength={300} placeholder="Title" onChange={(event) => change({ titleText: event.target.value })} />
-              <Select value={String(project.titleSize)} onChange={(value) => change({ titleSize: Number(value) })}>
-                {OVERLAY_SIZES.map((size) => <SelectOption key={size} value={String(size)} label={`${size}%`} />)}
-              </Select>
+            </>}
+            {tab === "logo" && <>
+            <Field label="Logo template"><div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1"><Select value={activeTemplate?.id ?? ""} clearable placeholder="No template selected" disabled={uploadingLogo}
+                onChange={(value) => void applyTemplateLogo(value ? String(value) : null)}>
+                {logoTemplates.map((template) => <SelectOption key={template.id} value={template.id} label={template.name} />)}
+              </Select></div>
+              <Button className="!h-9 shrink-0 text-xs" disabled={uploadingLogo} onClick={() => openTemplateDialog(null)}><Plus size={14} /> Create</Button>
             </div></Field>
-            <Field label="Extra text"><div className="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
-              <Input value={project.extraText} maxLength={300} placeholder="Extra text" onChange={(event) => change({ extraText: event.target.value })} />
-              <Select value={String(project.extraSize)} onChange={(value) => change({ extraSize: Number(value) })}>
-                {OVERLAY_SIZES.map((size) => <SelectOption key={size} value={String(size)} label={`${size}%`} />)}
-              </Select>
-            </div></Field>
-            <Field label="Logo">{project.logoUrl
-              ? <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <Select value={String(project.logoSize)} onChange={(value) => change({ logoSize: Number(value) })}>
-                    {LOGO_SIZES.map((size) => <SelectOption key={size} value={String(size)} label={`${size}% wide`} />)}
-                  </Select>
-                  <Select value={String(project.logoOpacity)} onChange={(value) => change({ logoOpacity: Number(value) })}>
-                    {OPACITIES.map((opacity) => <SelectOption key={opacity} value={String(opacity)} label={`${Math.round(opacity * 100)}% opacity`} />)}
-                  </Select>
-                </div>
-                <div className="flex gap-2">
-                  <LoadingButton loading={uploadingLogo} className="!h-8 flex-1 text-xs" onClick={() => pickLogo({ multiple: false })}><ImagePlus size={14} /> Replace</LoadingButton>
-                  <Button variant="ghost" className="!h-8 !px-2" aria-label="Remove logo" onClick={() => void dropLogo()}><Trash2 size={14} /></Button>
-                </div>
+            {activeTemplate && <div className="flex items-center gap-3 rounded-lg border border-line bg-sunken p-2.5 text-xs text-fg-3">
+              {project.logoUrl && <Image src={project.logoUrl} alt="Selected logo" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-fg">{activeTemplate.name}</div>
+                <div className="mt-1 truncate"><span className="font-medium text-fg-2">Watermark:</span> {project.logoWatermarkText || "None"}</div>
               </div>
-              : <LoadingButton loading={uploadingLogo} className="!h-8 w-full text-xs" onClick={() => pickLogo({ multiple: false })}><ImagePlus size={14} /> Add logo</LoadingButton>}
-            </Field>
-          </section>
-
-          <section className="rounded-xl border border-line bg-panel p-4">
-            <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold">Blur areas</h2>
+              <Button variant="ghost" aria-label="Edit logo template" className="!h-8 !w-8 !p-0" onClick={() => openTemplateDialog(activeTemplate)}><Pencil size={15} /></Button>
+              <Button variant="danger" aria-label="Delete logo template" disabled={deletingLogoTemplate} className="!h-8 !w-8 !p-0" onClick={() => void deleteTemplate(activeTemplate.id)}><Trash2 size={15} /></Button>
+            </div>}
+            <label className="flex items-center justify-between gap-3"><span><span className="block text-sm font-medium">Add Logo</span><span className="text-xs text-fg-3">Overlay a saved template or one-off brand mark.</span></span>
+              <Switch checked={project.logoEnabled} onChange={(checked) => checked ? change({ logoEnabled: true }) : void dropLogo()} /></label>
+            {project.logoEnabled && <>
+              {!activeTemplate && <Field label="Brand logo file"><div className="flex flex-wrap items-center gap-2">
+                {project.logoUrl && <Image src={project.logoUrl} alt="Logo" width={40} height={40} unoptimized className="h-10 w-10 rounded border border-line object-contain" />}
+                <LoadingButton loading={uploadingLogo} className="!h-9 text-xs" onClick={() => pickLogo({ multiple: false })}><Upload size={14} /> {project.logoUrl ? "Replace" : "Upload logo"}</LoadingButton>
+                {project.logoUrl && <Button variant="danger" aria-label="Clear logo" className="!h-9 !w-9 !p-0" onClick={() => void dropLogo()}><X size={16} /></Button>}
+              </div></Field>}
+              {!activeTemplate && <Field label="Watermark text (optional)"><Input value={project.logoWatermarkText ?? ""} maxLength={120} placeholder="Text over the logo" onChange={(event) => change({ logoWatermarkText: event.target.value })} /></Field>}
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Placement"><Select value={project.logoPlacement} onChange={(value) => change({ logoPlacement: value as RecapV2Project["logoPlacement"] })}>
+                  {MOVIE_RECAP_LOGO_PLACEMENTS.map((item) => <SelectOption key={item.id} value={item.id} label={item.name} />)}
+                </Select></Field>
+                <Field label="Opacity"><Select value={String(project.logoOpacity)} onChange={(value) => change({ logoOpacity: Number(value) })}>
+                  {LOGO_OPACITIES.map((opacity) => <SelectOption key={opacity} value={String(opacity)} label={`${opacity}%`} />)}
+                </Select></Field>
+              </div>
+            </>}
+            </>}
+            {tab === "blur" && <div>
+            <div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium">Blur areas</span>
               <Button className="!h-8 !px-2" disabled={project.blurRegions.length >= 8} onClick={() => { change({ blurRegions: [...project.blurRegions, { x: 8, y: 78, width: 84, height: 14 }] }); setSelectedBlur(project.blurRegions.length); setView("output"); }}><Plus size={14} /> Add</Button>
             </div>
             <p className="mb-2 text-xs text-fg-3">Drag over the source&apos;s burned-in subtitles or watermark.</p>
@@ -402,6 +487,7 @@ export function RecapV2Editor({ projectId }: { projectId: string }) {
               <Button variant={selectedBlur === index ? "primary" : "secondary"} className="!h-8 flex-1 !justify-start !px-2 text-xs" onClick={() => setSelectedBlur(index)}>Area {index + 1} · {Math.round(rect.width)} × {Math.round(rect.height)}%</Button>
               <Button variant="ghost" className="!h-8 !px-2" aria-label={`Remove blur area ${index + 1}`} onClick={() => { change({ blurRegions: project.blurRegions.filter((_, i) => i !== index) }); setSelectedBlur(null); }}><Trash2 size={14} /></Button>
             </div>)}
+            </div>}
           </section>
         </aside>
       </div>

@@ -5,6 +5,53 @@ Covers: `app/(app)/(recap-v2)/**`, `app/api/(recap-v2)/**`,
 `lib/prompts/recap-v2-translation.ts`, `lib/video-framing.ts`, and the
 `recap_v2_projects` migrations (`20261114120000_recap_v2_restore.sql`).
 
+## 2026-11-15 — No Title / Extra text; settings in V1-style tabs
+
+**Decision, by the user:** Title and Extra text are removed completely (UI,
+preview, render, PATCH, and the `title_*` / `extra_*` columns, dropped in
+`20261115120000_recap_v2_v1_logo.sql`). The settings panel is one card with
+Movie Recap's icon-only tab row: Voice, Frame, Subtitle, Logo, Blur.
+
+**Consequence:** this supersedes the tool's "Title / Extra text" kept in the
+2026-11-14 restore. Text on the video is now only the captions and the logo's
+watermark. The Splitter still has its own draggable text; its
+`OverlayHandle` now lives in `components/splitter/`.
+
+## 2026-11-15 — The logo works like Movie Recap's (V1), not the tool's
+
+**Decision, by the user:** Recap V2's logo is Movie Recap's logo system:
+a logo template (`movie_recap_logo_templates`: select, Create, Edit, Delete)
+or a one-off file, an Add Logo switch, an optional watermark text, one of
+four corner placements, and opacity 0–100. It draws in Movie Recap's fixed
+box (`MOVIE_RECAP_LOGO_BOX`) and the watermark is Movie Recap's centred
+30% white capitals (`MOVIE_RECAP_WATERMARK`). Title and Extra text stayed the
+tool's draggable overlays at first (removed later the same day).
+
+This supersedes the 2026-11-14 "Production tools" logo (free drag, size %),
+which was the tool's; migration `20261115120000_recap_v2_v1_logo.sql` drops
+`logo_size`/`logo_x`/`logo_y` and rescales `logo_opacity` from 0–1 to 0–100.
+
+**Rejected:** a "Saved logos" picker on top of the tool's draggable logo (built
+the same day, replaced by this).
+
+**Consequences:**
+- The template API (`movie-recap-logo-templates`) also takes the image inline
+  as base64 (`lib/logo-upload.ts`), since a V2 project has no Movie Recap
+  project to copy a logo from. Templates are shared between the two tools.
+- Applying a template copies its file and watermark into the project, so a
+  later template edit does not change a project until it is applied again.
+  Deleting the selected template removes the logo from this project, as
+  Movie Recap does.
+- An "original" frame uses the 16:9 or 9:16 logo/watermark sizes by its shape.
+
+## 2026-11-15 — Smaller text sizes: 1% and 1.5%
+
+**Decision, by the user:** caption sizes start at 1% (then 1.5, 2, 2.6 …) and
+Title/Extra sizes at 1% (then 1.5, 2 …). The DB and PATCH already allowed 1%.
+
+**Consequence:** the render clamps an ASS Fontsize below 12, so at 480p a 1%
+caption (≈10.5) draws slightly larger than the preview. Not a bug.
+
 ## 2026-11-14 — Translation runs on free Gemini keys, not OpenAI
 
 **Decision, by the user:** OpenAI cost about $0.30 per 10 minutes of source
@@ -65,8 +112,8 @@ used.
   memory chunk is left out instead of failing the step.
 - **Output**: Ratio adds Original; Fill is Blur background / Black bars / Crop to
   fill; Quality 1080/720/480 sets the short side; Flip works on every ratio.
-- **Production tools**: Title, Extra text and a Logo, placed by dragging on the
-  preview; Voice volume 50–300%; an SRT is written with every render
+- **Production tools**: Title and Extra text placed by dragging on the preview
+  (both removed, and the logo replaced by Movie Recap's, 2026-11-15); Voice volume 50–300%; an SRT is written with every render
   (download from the editor; English glosses in ( ) are left off captions).
 - **Edit Text**: lines with English or another script are outlined, and "Next
   problem" jumps to them. A re-render re-voices only changed lines (the clip

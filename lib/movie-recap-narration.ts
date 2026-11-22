@@ -8,6 +8,7 @@ import { getObjectBytes, movieRecapNarrationKey, movieRecapNarrationTimingKey, p
 import { synthesize } from "./tts/synthesize";
 import type { Voice } from "./tts/types";
 import { FFMPEG, FFPROBE, run } from "./movie-recap-ffmpeg";
+import { estimateSpokenSeconds } from "./movie-recap-speech";
 import {
   MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   MOVIE_RECAP_NARRATION_SAMPLE_RATE,
@@ -177,6 +178,36 @@ export async function narrationClip({
   // cache whatever it actually chose, not `wavPath`.
   await putObject(cacheKey, await readFile(/* turbopackIgnore: true */ trimmed.path), "audio/wav");
   return { path: trimmed.path, durationSeconds: trimmed.durationSeconds, cached: false };
+}
+
+// Stands in for a beat the voice provider refused, so one bad line costs that
+// line instead of the whole run. Estimated length keeps the picture laid out.
+export async function silentNarrationClip({
+  text,
+  slot,
+  workDir,
+  signal,
+}: {
+  text: string;
+  slot: number | string;
+  workDir: string;
+  signal?: AbortSignal;
+}) {
+  const durationSeconds = estimateSpokenSeconds(text);
+  const wavPath = path.join(workDir, `narration-${slot}-silent.wav`);
+  await run(FFMPEG, [
+    "-y", "-f", "lavfi", "-i", `anullsrc=r=${MOVIE_RECAP_NARRATION_SAMPLE_RATE}:cl=mono`,
+    "-t", durationSeconds.toFixed(3), "-c:a", "pcm_s16le", wavPath,
+  ], signal);
+  return { path: wavPath, durationSeconds, cached: false };
+}
+
+// A master holding silence for a failed beat must never be served for the same
+// words once they speak, so those beats hash under a marked text.
+const FAILED_BEAT_MARK = "\u0000voice-failed\u0000";
+
+export function narrationMasterTexts(beats: { text: string; voiceError?: string }[]) {
+  return beats.map((beat) => (beat.voiceError ? `${FAILED_BEAT_MARK}${beat.text}` : beat.text));
 }
 
 export type MovieRecapNarrationBeatTiming = {
