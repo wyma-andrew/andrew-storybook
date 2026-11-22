@@ -7,6 +7,7 @@ import type { MovieRecapProject, MovieRecapSpeechLanguage } from "@/lib/api/type
 import { Button as AppButton, LoadingButton } from "@/components/ui/Button";
 import { MOVIE_RECAP_SCENE_TAG, formatMovieRecapSourceTranscript } from "@/lib/movie-recap-source-transcript";
 import { parseTimestampedBlocks } from "@/lib/movie-recap-manual-script";
+import { MOVIE_RECAP_MAX_NARRATION_LINE_CHARS } from "@/lib/constants/movie-recap";
 import { MovieRecapTranscriptProgress } from "./MovieRecapTranscriptProgress";
 import { RecapLengthMenu } from "./RecapLengthMenu";
 import { recommendedRecapShare } from "@/lib/movie-recap-recap-length";
@@ -17,9 +18,6 @@ function cleanImportedTranscript(raw: string) {
   return formatMovieRecapSourceTranscript(raw.replace(/&#x20;|&#32;|&nbsp;/gi, " "));
 }
 
-// The VoxCPM worker rejects longer text with a 422 that is not retried, failing
-// the whole render at that beat. workers/voice-lab/app.py, history/movie-recap.md.
-const MAX_NARRATION_LINE_CHARS = 600;
 
 function formatStamp(seconds: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
@@ -322,7 +320,7 @@ export function MovieRecapTranscript({
   const text = project.transcriptText ?? "";
   const script = project.transcriptScript ?? "";
   const story = project.transcriptStory ?? "";
-  const longLines = parseTimestampedBlocks(story, Infinity).filter((block) => block.text.length > MAX_NARRATION_LINE_CHARS);
+  const longLines = parseTimestampedBlocks(story, Infinity).filter((block) => block.text.length > MOVIE_RECAP_MAX_NARRATION_LINE_CHARS);
   // Asked every time: the speech worker depends on the film's language, and a
   // subtitle track, when the source has one, is used whichever is chosen.
   function confirmReadSource(dialogueOnly: boolean) {
@@ -556,7 +554,7 @@ export function MovieRecapTranscript({
               <div className="mt-3 flex items-start gap-3 rounded-lg border border-line bg-panel p-3">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0 text-warn" />
                 <div className="min-w-0 flex-1 text-sm text-fg-2">
-                  {longLines.length === 1 ? "This line is" : "These lines are"} over {MAX_NARRATION_LINE_CHARS} characters and will fail voice generation. Split{" "}
+                  {longLines.length === 1 ? "This line is" : "These lines are"} over {MOVIE_RECAP_MAX_NARRATION_LINE_CHARS} characters and will fail voice generation. Split{" "}
                   {longLines.length === 1 ? "it" : "each one"} into shorter lines with their own timestamps.
                   <ul className="mt-1.5 space-y-0.5">
                     {longLines.map((block) => (

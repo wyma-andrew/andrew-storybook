@@ -18,11 +18,11 @@ app = modal.App("voice-lab")
 hf_cache = modal.Volume.from_name("voice-lab-hf-cache", create_if_missing=True)
 
 
-# Tried in order. L40S alone waited 6+ min for capacity, past Modal's 150 s web
-# limit; see history/voice-lab.md 2026-11-13. All three support bf16.
+# Tried in order; L4 only covers an A10G capacity wait. Not L40S (cost) or T4
+# (no bf16, VoxCPM2's dtype). See history/voice-lab.md 2026-11-22.
 GPU_FUNCTION = dict(
     image=image,
-    gpu=os.environ.get("VOICE_LAB_GPU", "L40S,L4,A10G").split(","),
+    gpu=os.environ.get("VOICE_LAB_GPU", "A10G,L4").split(","),
     cpu=1,
     memory=8192,
     volumes={"/cache": hf_cache},

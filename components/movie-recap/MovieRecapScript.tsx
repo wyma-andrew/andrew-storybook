@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Undo2, X } from "lucide-react";
+import { AlertTriangle, AudioLines, ChevronDown, ChevronRight, Copy, FileText, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Trash2, Undo2, X } from "lucide-react";
 import { ConfirmDialog, Menu, MenuItem, MenuTrigger, Textarea, toast } from "@geckoui/geckoui";
 import { Button, LoadingButton } from "@/components/ui/Button";
 import type { MovieRecapProject } from "@/lib/api/types";
 import type { MovieRecapSceneTimingPlan } from "@/lib/movie-recap-scene-plan";
-import { MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap";
+import { MOVIE_RECAP_MAX_NARRATION_LINE_CHARS, MOVIE_RECAP_NARRATION_PRELOAD_BEATS } from "@/lib/constants/movie-recap";
 import { formatDuration } from "@/lib/movie-recap";
 import { apiClient } from "@/lib/spoosh";
 import { audioUrlFromBase64 } from "@/lib/tts/audio-url";
@@ -526,6 +526,11 @@ export function MovieRecapScript({
                           <RefreshCw size={14} /> Re Build this beat
                         </LoadingButton>
                       )}
+                      {beat.voiceError && (texts[index] ?? "").length > MOVIE_RECAP_MAX_NARRATION_LINE_CHARS && (
+                        <Button onClick={() => void copyShortenPrompt(texts[index] ?? "")}>
+                          <Copy size={14} aria-hidden="true" /> Copy shorten prompt
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -565,6 +570,29 @@ export function MovieRecapScript({
 // Rebuilding goes back to the Transcript step's text, so every beat edited here
 // is lost. Normal work — rebuilding one line — reads the beats below
 // and never touches the transcript, which is why only this one asks.
+// Target sits under the hard cap because models overshoot a character budget.
+function buildShortenPrompt(text: string) {
+  return `Rewrite this Burmese movie-recap narration line so it is at most 500 characters (the hard limit is ${MOVIE_RECAP_MAX_NARRATION_LINE_CHARS}; it is ${text.length} now).
+
+RULES
+1. Keep every event, name, and the order they happen in. Drop repetition, filler, and side detail.
+2. Keep the same storytelling tone and spoken Burmese style.
+3. At most 6 clauses separated by "၊". End with "။".
+4. Output one line only: the rewritten narration. No timestamp, no quotes, no explanation.
+
+LINE
+${text}`;
+}
+
+async function copyShortenPrompt(text: string) {
+  try {
+    await navigator.clipboard.writeText(buildShortenPrompt(text));
+    toast.success("Shorten prompt copied.");
+  } catch {
+    toast.error("Could not copy the shorten prompt.");
+  }
+}
+
 function confirmRevoice(run: () => void, voiceName: string) {
   ConfirmDialog.show({
     title: `Re-voice with ${voiceName}?`,

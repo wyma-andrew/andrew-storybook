@@ -38,7 +38,31 @@ fails every time. Changes:
   unexpected errors still exit, since those are the ones that might leave the
   GPU in a bad state.
 
+## 2026-11-22 — A10G first, then L4; L40S dropped
+
+**Decision, chosen by the user:** the worker's `gpu` list is `A10G, L4`. L40S
+is no longer tried. L4 is the fallback when A10G has no capacity.
+
+**Why:** to cut GPU cost. Prices from modal.com/pricing on 2026-11-22, per
+second: L40S $0.000542 (about $1.95/h), A10 $0.000306 (about $1.10/h), L4
+$0.000222 (about $0.80/h). Dropping L40S also removes its capacity waits from
+the 2026-11-13 entry. A10G was put before L4 because VoxCPM2 speaks token by
+token, which is limited by memory bandwidth: A10G has about 600 GB/s and L4
+about 300 GB/s. A10G costs about 1.4 times L4 per second, so if it is
+1.5 to 2 times faster it costs the same or less per run and finishes sooner.
+That is an estimate from spec sheets, not a measurement.
+
+**Rejected:** L4 first. It was set that way the same day and changed before
+deploy on the bandwidth reasoning above. T4 is cheaper again, but it has no
+native bf16 and measured about 16 s per line (see 2026-11-11).
+
+**Consequence:** a run is slower than on L40S. Neither A10G nor L4 speed has
+been measured. Compare `generationMs` against an L40S run. If A10G is not
+clearly faster than L4, put L4 first.
+
 ## 2026-11-13 — GPU fallback L40S → L4 → A10G; no warm-up
+
+**Superseded 2026-11-22** (L40S dropped from the list; the capacity reasoning below still holds).
 
 **Decision, chosen by the user:** the worker's `gpu` is the list `L40S, L4, A10G`.
 Modal takes the first one that has capacity. The warm-up from 2026-11-12

@@ -32,6 +32,13 @@ Before, the user lost 299 voiced beats and could not see which line to fix.
   does not try to voice them again.
 - Cancel and abort still end the run. Only provider errors are caught per beat.
 
+**Same day: copy a shorten prompt.** A failed beat whose box text is over
+`MOVIE_RECAP_MAX_NARRATION_LINE_CHARS` shows a "Copy shorten prompt" button.
+The prompt asks for at most 500 characters, under the 600 cap, because models
+overshoot a character budget. It is a copy only, the same as the translation
+prompt; the app does not call a model to rewrite the line. The button keys off
+the box's current length, so it goes away once the pasted rewrite fits.
+
 ## 2026-11-22 — Translation prompt caps line length without splitting
 
 **Decision, chosen by the user:** TIMESTAMP RULES gained rule 4: at most 6

@@ -168,6 +168,10 @@ export const MOVIE_RECAP_NARRATION_PLAYBACK_RATE = 1.05;
 // playback normally advances without waiting on R2 or ffmpeg.
 export const MOVIE_RECAP_NARRATION_PRELOAD_BEATS = 3;
 
+// The VoxCPM worker rejects longer text with a 422 that is not retried.
+// Mirrors GenerateRequest.text in workers/voice-lab/app.py.
+export const MOVIE_RECAP_MAX_NARRATION_LINE_CHARS = 600;
+
 // How wide a ribbon group is: consecutive timestamped blocks are merged until
 // the group spans at least this long, and the ribbon shares footage inside it.
 //
