@@ -137,6 +137,7 @@ export function MovieRecapScript({
     }
   }, [scriptSignature]);
 
+  const hasFailedBanner = failedBeats.length > 0 && !running;
   useEffect(() => {
     const urls = previewUrls.current;
     const promises = previewPromises.current;
@@ -338,26 +339,28 @@ export function MovieRecapScript({
             <MovieRecapRenderProgress project={project} phase="script" />
           </div>
         )}
-        {failedBeats.length > 0 && !running && (
-          <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg p-3">
-            <div className="flex items-start gap-2 text-sm text-danger">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>
-                {failedBeats.length} beat{failedBeats.length === 1 ? "" : "s"} could not be voiced and {failedBeats.length === 1 ? "is" : "are"} silent.
-                Fix the line and Re Build {failedBeats.length === 1 ? "it" : "each one"} before rendering.
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 pl-6">
-              {failedBeats.map((index) => (
-                <Button
-                  key={index}
-                  className="!h-7 !px-2 text-xs"
-                  onClick={() => beatRefs.current.get(index)?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                >
-                  Beat {index + 1}
-                </Button>
-              ))}
-            </div>
+        {hasFailedBanner && (
+          // Negative top cancels MovieRecapWizard's scroll-container padding, which
+          // would otherwise leave a gap above the stuck banner.
+          <div className="sticky -top-5 z-10 mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 shadow-lg md:-top-8">
+            <span
+              className="flex items-center gap-2 text-sm text-danger"
+              title="These beats could not be voiced and are silent. Fix each line and Re Build it before rendering."
+            >
+              <AlertTriangle size={16} className="shrink-0" />
+              {failedBeats.length} silent
+            </span>
+            {failedBeats.map((index) => (
+              <Button
+                key={index}
+                className="!h-7 !px-2 text-xs"
+                disabled={savingBeats.has(index)}
+                onClick={() => beatRefs.current.get(index)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              >
+                {savingBeats.has(index) && <Loader2 size={12} className="animate-spin" />}
+                Beat {index + 1}
+              </Button>
+            ))}
           </div>
         )}
         {project.scriptStatus === "failed" && project.scriptError && (

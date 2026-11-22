@@ -15,7 +15,9 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 carries on. That beat gets `voiceError` and `audioStale`, and its slot in the
 narration master is silence of the estimated spoken length. The other beats
 are voiced as normal. Narrative Script shows a red banner with one button per
-failed beat that scrolls to it. Each failed beat has a red border and the
+failed beat that scrolls to it. The banner is one compact row and sticky; a
+version that grew back to full text when scrolled to the top flickered and was
+dropped. A beat's button is disabled while that beat rebuilds. Each failed beat has a red border and the
 error under its header. Re Build clears the error once the line speaks.
 
 **Why:** beat 300 of 476 failed and the whole run ended with nothing to show.
