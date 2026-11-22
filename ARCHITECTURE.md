@@ -257,12 +257,11 @@ fixed 1.0x post-synthesis narration rate;
 source duration never changes it. Picture follows each resulting beat duration:
 it uses a 0.75x baseline, slows shortage beats to the configured minimum and
 speeds surplus beats up to 1.1x, then trims or freezes whatever is left. Editing and choosing **Re Build
-this beat** re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`),
-replaces its section in the existing master, and shifts later timing boundaries
-by the duration delta. **Re Build N beats** (`POST
-movie-recaps/:id/script/beats/rebuild`, batches of 8) does the same for many
-beats with one master download and upload per batch. A missing, incompatible, or invalid master falls back to
-a bounded-parallel rebuild from raw caches. Raw provider-output duration is
+this beat** re-synthesizes only that beat (`POST movie-recaps/:id/script/beat`)
+and saves its length at the configured rate; **Re Build N beats** (`POST
+movie-recaps/:id/script/beats/rebuild`, batches of 4) does the same for many.
+Neither touches the narration master: the render builds it from the cached raw
+clips, and a cached master is reused only when every beat's text matches. Raw provider-output duration is
 stored per beat so unchanged audio does not need measuring again; video speed is
 absent from both audio cache keys. Each saved beat has an inline playable preview from
 `POST movie-recaps/:id/script/beat/preview`; it reuses the raw beat cache and

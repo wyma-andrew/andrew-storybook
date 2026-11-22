@@ -34,8 +34,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let failed: number[];
   try {
-    ({ failed } = await saveMovieRecapBeat(db, project, index, text, { measure, episodeId: episode?.id ?? null }));
+    ({ failed } = await saveMovieRecapBeat(db, project, index, text, { measure, episodeId: episode?.id ?? null, signal: req.signal }));
   } catch (checkError) {
+    if (req.signal.aborted) return new NextResponse(null, { status: 499 });
     return NextResponse.json(
       { error: checkError instanceof Error ? checkError.message : "Could not save that beat." },
       { status: 400 }

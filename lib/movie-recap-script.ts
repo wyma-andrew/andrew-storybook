@@ -4,17 +4,17 @@ import path from "node:path";
 import { detectContentCrop } from "./movie-recap-crop";
 import { downloadMovieRecapSource } from "./movie-recap-source-download";
 import { parseTimestampedBlocks } from "./movie-recap-manual-script";
-import { mapConcurrent } from "./map-concurrent";
 import {
   ensureNarrationMaster,
   narrationClip,
   narrationHash,
   narrationMasterObjectKeys,
   narrationMasterTexts,
-  replaceNarrationMasterBeats,
+  narrationDurationAtRate,
   silentNarrationClip,
 } from "./movie-recap-narration";
 import { trimFailureMessage } from "./movie-recap";
+import { estimateSpokenSeconds } from "./movie-recap-speech";
 import { writeMovieRecapScript, type RecapColumnSnapshot } from "./movie-recap-episode";
 import { deleteObject, deletePrefix, movieRecapAssetPrefix, movieRecapNarrationKey, movieRecapObjectKey, putObject } from "./r2";
 import { resolveMovieRecapVoice } from "./tts/voices";
@@ -47,14 +47,6 @@ function narrationTimelineRates() {
     videoSpeed: MOVIE_RECAP_PLAYBACK_SPEED,
     narrationRate: MOVIE_RECAP_NARRATION_PLAYBACK_RATE,
   };
-}
-
-function savedRawDuration(beat: MovieRecapNarrationSegment) {
-  if (beat.rawAudioS && beat.rawAudioS > 0) return beat.rawAudioS;
-  if (beat.audioS && beat.audioS > 0 && beat.narrationRate && beat.narrationRate > 0) {
-    return beat.audioS * beat.narrationRate;
-  }
-  return undefined;
 }
 
 // Same reasoning as the render's own map: one script run per project, reachable
@@ -364,9 +356,9 @@ export async function saveMovieRecapBeat(
   project: MovieRecapProject,
   index: number,
   text: string,
-  { measure, episodeId = null }: { measure: boolean; episodeId?: string | null }
+  { measure, episodeId = null, signal }: { measure: boolean; episodeId?: string | null; signal?: AbortSignal }
 ) {
-  if (measure) return rebuildMovieRecapBeats(db, project, [{ index, text }], episodeId);
+  if (measure) return rebuildMovieRecapBeats(db, project, [{ index, text }], episodeId, signal);
   const script = project.renderScript ?? [];
   if (!script[index]) throw new Error("That beat is not in the saved script.");
   const updated = script.map((entry, i) => (i === index ? { ...entry, text, audioStale: true } : entry));
@@ -374,14 +366,19 @@ export async function saveMovieRecapBeat(
   return { script: updated, failed: [] as number[] };
 }
 
-// Speaks each edited beat, then patches the narration master once for all of
-// them. A beat the voice provider refuses gets `voiceError` and silence, the same
-// as in a script run, so one bad line does not lose the others.
+// Speaks each edited beat and saves its measured length; the narration master
+// is not touched. Each beat's timing is its clip's length at the configured rate,
+// which is exactly what the master's timing map holds, so the render builds the
+// master from the cached clips on GitHub Actions. Patching the ~140 MB master
+// here meant moving it through the user's own connection for every edit
+// (history/movie-recap.md 2026-11-22). A beat the voice provider refuses gets
+// `voiceError` and an estimated length, as in a script run.
 export async function rebuildMovieRecapBeats(
   db: Db,
   project: MovieRecapProject,
   edits: { index: number; text: string }[],
-  episodeId: string | null = null
+  episodeId: string | null = null,
+  signal?: AbortSignal
 ) {
   const script = project.renderScript ?? [];
   const byIndex = new Map(edits.map((edit) => [edit.index, edit.text.trim()]));
@@ -396,99 +393,36 @@ export async function rebuildMovieRecapBeats(
   try {
     const voice = resolveMovieRecapVoice(project.voiceProfileId);
     const rates = narrationTimelineRates();
-    let updated: MovieRecapNarrationSegment[] = script.map((entry, i) => (byIndex.has(i)
-      ? { ...entry, text: byIndex.get(i)!, voiceError: undefined }
-      : entry));
-    const clips = new Map<number, Awaited<ReturnType<typeof narrationClip>>>();
+    const updated: MovieRecapNarrationSegment[] = [...script];
     const failed: number[] = [];
     // One at a time: the voice worker runs a single container.
     for (const index of indexes) {
-      const text = updated[index].text;
+      const text = byIndex.get(index)!;
+      let rawAudioS: number;
+      let voiceError: string | undefined;
       try {
-        clips.set(index, await narrationClip({ projectId: project.id, voice, text, slot: `beat-${index}`, workDir }));
+        rawAudioS = (await narrationClip({ projectId: project.id, voice, text, slot: `beat-${index}`, workDir, signal })).durationSeconds;
       } catch (error) {
-        const message = trimFailureMessage(error instanceof Error ? error.message : String(error));
-        console.error(`[MovieRecapScript] project=${project.id} rebuild beat ${index + 1} voice=${voice.id} failed: ${message}`);
-        clips.set(index, await silentNarrationClip({ text, slot: `beat-${index}`, workDir }));
-        updated[index] = { ...updated[index], voiceError: message };
+        if (signal?.aborted) throw error;
+        voiceError = trimFailureMessage(error instanceof Error ? error.message : String(error));
+        console.error(`[MovieRecapScript] project=${project.id} rebuild beat ${index + 1} voice=${voice.id} failed: ${voiceError}`);
+        rawAudioS = estimateSpokenSeconds(text);
         failed.push(index);
       }
+      updated[index] = {
+        ...script[index],
+        text,
+        voiceError,
+        audioStale: Boolean(voiceError),
+        rawAudioS,
+        audioS: round2(narrationDurationAtRate(rawAudioS, rates.narrationRate)),
+        narrationRate: rates.narrationRate,
+        videoSpeed: rates.videoSpeed,
+        voiceId: project.voiceProfileId,
+      };
     }
-
-    const previousRate = script[indexes[0]].narrationRate;
-    const replacedMaster = await replaceNarrationMasterBeats({
-      projectId: project.id,
-      voice,
-      previousTexts: narrationMasterTexts(script),
-      nextTexts: narrationMasterTexts(updated),
-      replacements: indexes.map((beatIndex) => ({ beatIndex, clip: clips.get(beatIndex)! })),
-      workDir,
-      previousPlaybackRate: previousRate,
-      playbackRate: rates.narrationRate,
-    });
-    let master: Awaited<ReturnType<typeof ensureNarrationMaster>> | null = replacedMaster;
-    let rawDurations = updated.map((entry, i) => clips.get(i)?.durationSeconds ?? savedRawDuration(entry));
-
-    if (!master) {
-      const allClips = await mapConcurrent(updated, 6, (entry, i) => {
-        const clip = clips.get(i);
-        if (clip) return Promise.resolve(clip);
-        return entry.voiceError
-          ? silentNarrationClip({ text: entry.text, slot: `beat-master-${i}`, workDir })
-          : narrationClip({
-            projectId: project.id,
-            voice,
-            text: entry.text,
-            slot: `beat-master-${i}`,
-            workDir,
-            knownDurationSeconds: rawDurations[i],
-          });
-      });
-      rawDurations = allClips.map((clip) => clip.durationSeconds);
-      master = await ensureNarrationMaster({
-        projectId: project.id,
-        voice,
-        texts: narrationMasterTexts(updated),
-        workDir,
-        clips: allClips,
-        playbackRate: rates.narrationRate,
-      });
-    }
-    const supersededMaster = replacedMaster?.previousKeys ?? narrationMasterObjectKeys(
-      project.id,
-      voice,
-      narrationMasterTexts(script),
-      previousRate ?? rates.narrationRate
-    );
-    updated = updated.map((entry, i) => ({
-      ...entry,
-      rawAudioS: rawDurations[i],
-      audioS: round2(master.timings[i].durationS),
-      narrationRate: rates.narrationRate,
-      videoSpeed: rates.videoSpeed,
-      // The master is rebuilt in the current voice, so every beat now is.
-      voiceId: project.voiceProfileId,
-      ...(byIndex.has(i) ? { audioStale: Boolean(entry.voiceError) } : {}),
-    }));
+    signal?.throwIfAborted();
     await writeMovieRecapScript(db, project.id, episodeId, updated);
-
-    // Masters are content-addressed under the project, so an episode's old
-    // master can be the main script's or another episode's current one.
-    if (!episodeId) {
-      const currentMaster = narrationMasterObjectKeys(
-        project.id,
-        voice,
-        narrationMasterTexts(updated),
-        MOVIE_RECAP_NARRATION_PLAYBACK_RATE
-      );
-      const obsoleteKeys = [supersededMaster.timingKey];
-      if (supersededMaster.audioKey !== project.renderAudioObjectKey) obsoleteKeys.push(supersededMaster.audioKey);
-      await Promise.allSettled(
-        obsoleteKeys
-          .filter((key) => key !== currentMaster.audioKey && key !== currentMaster.timingKey)
-          .map(deleteObject)
-      );
-    }
     return { script: updated, failed };
   } finally {
     await rm(workDir, { recursive: true, force: true });

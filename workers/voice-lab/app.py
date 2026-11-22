@@ -58,7 +58,9 @@ def get_model():
             MODEL_ID,
             device=DEVICE,
             optimize=OPTIMIZE and DEVICE.startswith("cuda"),
-            load_denoiser=DEVICE.startswith("cuda"),
+            # generate() never passes denoise=True, and loading it fetched a model from
+            # ModelScope on every cold start, which rate-limits with a 403.
+            load_denoiser=False,
         )
     return _model
 

@@ -122,7 +122,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5;
 // Mirrors the server's own limit (the PATCH route), so the Add button stops at
 // the same place the request would have been refused.
 const MAX_BLUR_REGIONS = 8;
-const BEAT_REBUILD_BATCH = 8;
+const BEAT_REBUILD_BATCH = 4;
 const SCRIPT_MODES = ["normal", "episode"] as const;
 
 type CustomizeTab = "aspect" | "subtitle" | "logo" | "blur";
@@ -209,13 +209,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
   const { trigger: clearScript } = useWrite((api) => api("movie-recaps/:id/script/clear").POST());
   const { trigger: readTranscript } = useWrite((api) => api("movie-recaps/:id/transcript").POST());
   const { trigger: cancelTranscript, loading: cancellingTranscript } = useWrite((api) => api("movie-recaps/:id/transcript/cancel").POST());
-  const { trigger: rebuildBeat, tasks: beatRebuilds, removeSettled: removeSettledBeatRebuilds } = useQueue(
+  const { trigger: rebuildBeat, tasks: beatRebuilds, remove: removeBeatRebuild, removeSettled: removeSettledBeatRebuilds } = useQueue(
     (api) => api("movie-recaps/:id/script/beat").POST(),
     { concurrency: 1 },
   );
   const { trigger: cancelScript, loading: cancellingScript } = useWrite((api) => api("movie-recaps/:id/script/cancel").POST());
   const { trigger: applyBeats, loading: applyingBeats } = useWrite((api) => api("movie-recaps/:id/script/beats").POST());
-  const { trigger: rebuildBeats } = useWrite((api) => api("movie-recaps/:id/script/beats/rebuild").POST());
+  const { trigger: rebuildBeats, abort: abortRebuildBeats } = useWrite((api) => api("movie-recaps/:id/script/beats/rebuild").POST());
   const { trigger: cancelRender, loading: cancelling } = useWrite((api) => api("movie-recaps/:id/render/cancel").POST());
   const { trigger: pollProject } = useRead((api) => api("movie-recaps/:id").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
   const { trigger: pollProgress } = useRead((api) => api("movie-recaps/:id/progress").GET({ params: { id: initialProject?.id ?? "" } }), { enabled: false });
@@ -577,6 +577,7 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     const episodeId = scriptEpisode?.id;
     try {
       const result = await rebuildBeat({ params: { id: projectId }, body: { index, text, measure: true, episodeId } });
+      if (result.aborted) return;
       if (result.error || !result.data) toast.error(result.error?.error ?? "Could not save that beat.");
       else {
         setProject(withoutEpisode(result.data));
@@ -587,6 +588,13 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
       pendingBeatIndexes.current.delete(index);
       removeSettledBeatRebuilds();
     }
+  }
+
+  // Aborting the request aborts the route too (req.signal), which stops before
+  // the script is written, so a stopped beat keeps its saved text and audio.
+  function stopBeat(index: number) {
+    const task = beatRebuilds.find((item) => (item.status === "pending" || item.status === "running") && (item.input?.body as { index?: number } | undefined)?.index === index);
+    if (task) removeBeatRebuild(task.id);
   }
 
   async function rebuildScriptBeats(edits: { index: number; text: string }[]) {
@@ -600,12 +608,11 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
     try {
       // Batches keep each request inside the route's time limit; every batch is
       // still one master round trip instead of one per beat.
-      // Stop takes effect between batches: the batch in flight is already
-      // writing the master on the server, so aborting it would only hide that.
       for (let start = 0; start < edits.length && !stopRebuild.current; start += BEAT_REBUILD_BATCH) {
         const batch = edits.slice(start, start + BEAT_REBUILD_BATCH);
         setBatchRebuilding(batch.map((edit) => edit.index));
         const result = await rebuildBeats({ params: { id: projectId }, body: { edits: batch, episodeId } });
+        if (result.aborted) break;
         if (result.error || !result.data) {
           toast.error(result.error?.error ?? "Could not rebuild those beats.");
           break;
@@ -1129,10 +1136,12 @@ function MovieRecapEditor({ initialProject }: { initialProject: MovieRecapProjec
                   onSave={saveScriptBeat}
                   onRebuildAll={(edits) => void rebuildScriptBeats(edits)}
                   rebuildingAll={rebuildingAll}
+                  onStopBeat={stopBeat}
                   stoppingRebuild={stoppingRebuild}
                   onStopRebuild={() => {
                     stopRebuild.current = true;
                     setStoppingRebuild(true);
+                    abortRebuildBeats();
                   }}
                   onCancel={cancelScriptRun}
                   onDirtyChange={setDirtyBeats}

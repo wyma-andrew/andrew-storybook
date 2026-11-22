@@ -8,37 +8,51 @@ Covers: `app/(app)/(movie-recap)/movie-recap/**`,
 `scripts/recap-job.ts`, `.github/workflows/recap-job.yml`, and the `movie_recap_projects`,
 `movie_recap_range_renders`, `movie_recap_episodes` and `movie_recap_social_posts` migrations.
 
-## 2026-11-22 — Re Build several beats in one request
+## 2026-11-22 — Re Build no longer touches the narration master
 
-**Decision, chosen by the user:** Narrative Script shows `Re Build N beats`
-when more than one beat is edited or stale. It sends them to
-`script/beats/rebuild`, which speaks each one, then patches the narration
-master once (`replaceNarrationMasterBeats`). The per-beat `Re Build this beat`
-stays and uses the same path with one beat. This adds to the 2026-09-21 "one
-action per beat" decision and does not replace it.
+**Decision, chosen by the user:** `Re Build this beat` and `Re Build N beats`
+speak the edited beats, then save each beat's text, `rawAudioS`, and `audioS`
+(the clip's length at the configured rate). They do not download, patch, or
+upload the narration master. The render builds the master from the cached raw
+clips with `ensureNarrationMaster`, on GitHub Actions. This supersedes the
+2026-09-21 rule that Re Build "rebuilds the combined narration master from
+cached neighbouring beats".
 
 **Why:** the master is the whole film's narration, about 140 MB of WAV for a
-49-minute recap. Every single-beat Re Build downloaded it from R2, cut it, and
-uploaded it again, so ten edits moved it ten times. Now each batch moves it
-once.
+49-minute recap. Patching it ran in the user's local `next dev`, so every Re
+Build pulled the master down and pushed it back up over the user's own
+connection. Measured at about 160 KB/s on 2026-11-22: about 15 minutes for the
+download alone, after Modal had finished the voice in under a minute. Old
+requests also kept downloading after Stop, because the R2 read takes no abort
+signal, and they shared the bandwidth.
+
+**Why the timing stays right:** the master's timing map is the beats' clips
+laid end to end, each at `narrationDurationAtRate(rawAudioS, rate)`. Saving that
+same number per beat gives the same `audioS` the master would. The render still
+re-reads the master timings and rewrites any beat whose `audioS` differs.
+
+**Rejected:** the same day's first version, which batched beats so the master
+moved once per batch (`replaceNarrationMasterBeats`). It still moved 140 MB per
+batch over the same connection. Removed with `replaceNarrationBeatTiming`.
 
 **Constraints a later change must keep:**
-- The client sends batches of 8 (`BEAT_REBUILD_BATCH`) so each request stays
-  inside the route's 300 s limit.
+- The first render after edits rebuilds the master from clips. That is a cache
+  miss on GitHub Actions, not on the user's machine.
+- A superseded master is no longer deleted on Re Build. It is content-addressed,
+  so it is unused rather than wrong.
+- The client sends batches of 4 (`BEAT_REBUILD_BATCH`). A long line takes up to
+  about a minute to voice, and each request has to fit the route's 300 s.
 - Beats are spoken one after another; the voice worker runs a single
   container.
-- While it runs the button becomes `Stop`. Stop skips the batches not yet sent;
-  the batch in flight finishes, because the server is already writing its
-  master and aborting the request would only hide that result.
-- A beat the voice refuses is saved with `voiceError` and silence, as in a
-  script run, and the rest of the batch goes on. This now applies to the
-  single-beat Re Build too: before, a refusal returned an error and did not
-  save the text. The client shows a toast naming the failed beats.
-- The patched master's length check allows one frame of drift per replaced
-  beat, since each cut can round.
-
-**Rejected for now:** storing the master as FLAC to shrink the transfer. It
-would need the render and the cache keys to change with it.
+- While it runs, `Re Build N beats` becomes `Stop`, and each rebuilding beat has
+  its own `Stop`. Stop aborts the request; the route passes `req.signal` into
+  the rebuild, which checks it before writing the script, so a stopped beat
+  keeps its saved text and audio. If the abort lands after the write, the save
+  stands and the page catches up on reload.
+- A beat the voice refuses is saved with `voiceError`, `audioStale`, and an
+  estimated length, as in a script run, and the rest of the batch goes on. This
+  applies to the single-beat Re Build too: before, a refusal returned an error
+  and did not save the text. The client shows a toast naming the failed beats.
 
 ## 2026-11-22 — One beat's voice failure no longer fails the script run
 
@@ -62,8 +76,8 @@ Before, the user lost 299 voiced beats and could not see which line to fix.
 - A render refuses while any beat has `voiceError`. Silence in a finished video
   is a defect, not a result. The render's own master key uses unmarked text, so
   it could not reuse the silent master in any case.
-- Rebuilding one beat while others still fail keeps those others silent. It
-  does not try to voice them again.
+- Rebuilding one beat while others still fail does not try to voice the
+  others again.
 - Cancel and abort still end the run. Only provider errors are caught per beat.
 
 **Same day: copy a shorten prompt.** A failed beat whose box text is over
@@ -72,6 +86,13 @@ The prompt asks for at most 500 characters, under the 600 cap, because models
 overshoot a character budget. It is a copy only, the same as the translation
 prompt; the app does not call a model to rewrite the line. The button keys off
 the box's current length, so it goes away once the pasted rewrite fits.
+
+**Same day: live length under each beat box.** Every beat shows
+`N/600 characters`, red when over. Over the cap, `Re Build this beat` is
+disabled and the beat is left out of `Re Build N beats`, and the shorten-prompt
+button shows whether or not the beat has failed yet. A long line used to go to
+the worker, come back as a 422, and still trigger a full master round trip to
+store its silence.
 
 ## 2026-11-22 — Translation prompt caps line length without splitting
 
@@ -6519,6 +6540,8 @@ An unsaved beat also stops it, because silently playing the previously saved
 line under edited text would make review untrustworthy.
 
 ## 2026-09-21 (later) — beat edits have one action: Re Build this beat
+
+**Partly superseded 2026-11-22:** Re Build no longer rebuilds the narration master; the render does.
 
 **Decision, by the user:** `Re-check this beat` no longer exists as a product
 action. An edited or stale beat offers one primary action labelled exactly

@@ -36,6 +36,7 @@ export function MovieRecapScript({
   onSave,
   onRebuildAll,
   rebuildingAll,
+  onStopBeat,
   stoppingRebuild,
   onStopRebuild,
   onCancel,
@@ -61,8 +62,10 @@ export function MovieRecapScript({
   /** Rebuilds every listed beat with one narration master update per batch. */
   onRebuildAll: (edits: { index: number; text: string }[]) => void;
   rebuildingAll: boolean;
+  /** Stops this beat's Re Build, queued or running; its saved line is kept. */
+  onStopBeat: (index: number) => void;
   stoppingRebuild: boolean;
-  /** Skips the batches not yet sent; the one in flight still finishes. */
+  /** Aborts the batch in flight and skips the rest. */
   onStopRebuild: () => void;
   onCancel: () => void;
   /** How many beats have unsaved edits, so the wizard can guard leaving the step. */
@@ -116,7 +119,7 @@ export function MovieRecapScript({
   // by beat is not undoing it.
   const rebuildable = script.flatMap((beat, index) => {
     const text = texts[index]?.trim() ?? "";
-    return text && (text !== beat.text || beat.audioStale) ? [{ index, text }] : [];
+    return text && text.length <= MOVIE_RECAP_MAX_NARRATION_LINE_CHARS && (text !== beat.text || beat.audioStale) ? [{ index, text }] : [];
   });
   const restorableAll = script
     .map((beat, index) => ({ index, text: beat.originalText ?? "" }))
@@ -469,6 +472,8 @@ export function MovieRecapScript({
               // Offered against the BOX, so it disappears the moment the original
               // is back in it — whether that came from this button or by hand.
               const restorable = Boolean(beat.originalText) && texts[index] !== beat.originalText;
+              const length = (texts[index] ?? "").trim().length;
+              const tooLong = length > MOVIE_RECAP_MAX_NARRATION_LINE_CHARS;
               return (
                 <div
                   key={index}
@@ -504,9 +509,9 @@ export function MovieRecapScript({
                       )}
                     </Button>
                     {beat.audioStale && !changed && !beat.voiceError && <span className="text-fg-2">· audio needs rebuilding</span>}
-                    {changed && <span className="text-fg-2">· edited, unsaved</span>}
+                    {changed && !savingBeats.has(index) && <span className="text-fg-2">· edited, unsaved</span>}
                   </div>
-                  {beat.voiceError && (
+                  {beat.voiceError && !savingBeats.has(index) && (
                     <p className="mb-2 flex items-start gap-1.5 text-xs text-danger">
                       <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                       <span>No audio: {beat.voiceError} ({beat.text.length} characters)</span>
@@ -518,9 +523,12 @@ export function MovieRecapScript({
                     disabled={busy || savingBeats.has(index)}
                     onChange={(event) => setTexts(texts.map((text, i) => (i === index ? event.target.value : text)))}
                   />
+                  <p className={`mt-1 text-right text-xs tabular-nums ${tooLong ? "text-danger" : "text-fg-3"}`}>
+                    {length}/{MOVIE_RECAP_MAX_NARRATION_LINE_CHARS} characters{tooLong ? " · too long for the voice, shorten it before Re Build" : ""}
+                  </p>
                   {(changed || restorable || beat.audioStale) && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {changed && (
+                      {changed && !savingBeats.has(index) && (
                         <Button
                           disabled={savingBeats.has(index)}
                           onClick={() =>
@@ -530,7 +538,7 @@ export function MovieRecapScript({
                           <X size={14} /> Cancel
                         </Button>
                       )}
-                      {restorable && (
+                      {restorable && !savingBeats.has(index) && (
                         // Puts the original back in the BOX, not in the row: the
                         // restore is reviewed and then saved like any other edit,
                         // so it costs nothing until it is wanted.
@@ -546,13 +554,18 @@ export function MovieRecapScript({
                           variant="primary"
                           loading={savingBeats.has(index)}
                           loadingText={checking.has(index) ? "Rebuilding…" : "Queued…"}
-                          disabled={busy || !texts[index]?.trim() || savingBeats.has(index)}
+                          disabled={busy || !texts[index]?.trim() || tooLong || savingBeats.has(index)}
                           onClick={() => onSave(index, texts[index])}
                         >
                           <RefreshCw size={14} /> Re Build this beat
                         </LoadingButton>
                       )}
-                      {beat.voiceError && (texts[index] ?? "").length > MOVIE_RECAP_MAX_NARRATION_LINE_CHARS && (
+                      {savingBeats.has(index) && !rebuildingAll && (
+                        <Button onClick={() => onStopBeat(index)}>
+                          <Square size={14} /> Stop
+                        </Button>
+                      )}
+                      {!savingBeats.has(index) && tooLong && (
                         <Button onClick={() => void copyShortenPrompt(texts[index] ?? "")}>
                           <Copy size={14} aria-hidden="true" /> Copy shorten prompt
                         </Button>

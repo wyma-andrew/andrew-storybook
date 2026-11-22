@@ -31,8 +31,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   let failed: number[];
   try {
-    ({ failed } = await rebuildMovieRecapBeats(db, project, edits, episode?.id ?? null));
+    ({ failed } = await rebuildMovieRecapBeats(db, project, edits, episode?.id ?? null, req.signal));
   } catch (rebuildError) {
+    if (req.signal.aborted) return new NextResponse(null, { status: 499 });
     return NextResponse.json(
       { error: rebuildError instanceof Error ? rebuildError.message : "Could not rebuild those beats." },
       { status: 400 }

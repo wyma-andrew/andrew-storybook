@@ -38,6 +38,20 @@ fails every time. Changes:
   unexpected errors still exit, since those are the ones that might leave the
   GPU in a bad state.
 
+## 2026-11-22 — Denoiser not loaded
+
+**Decision:** `VoxCPM.from_pretrained(..., load_denoiser=False)`.
+
+**Why:** the worker never asks for denoising (`generate()` defaults to
+`denoise=False` and app.py does not pass it), but loading the denoiser
+downloaded ZipEnhancer from modelscope.cn on every cold start. ModelScope
+answered with a 403 rate limit ("操作过于频繁"), so `/generate` failed with a 500
+after about 35 s. Dropping it also shortens each cold start.
+
+**If denoising is wanted later:** cache the ModelScope model on the volume
+(`MODELSCOPE_CACHE` under `/cache`) and pass it as a local path; do not go back
+to fetching it per cold start.
+
 ## 2026-11-22 — Scaledown 30 s → 120 s
 
 **Decision, chosen by the user:** `scaledown_window` is 120 s.
